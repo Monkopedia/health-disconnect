@@ -1,10 +1,12 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.material3.CardDefaults
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BasalBodyTemperatureRecord
@@ -19,7 +21,6 @@ import androidx.health.connect.client.records.CervicalMucusRecord
 import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ElevationGainedRecord
-import androidx.health.connect.client.records.ExerciseLap
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
@@ -46,13 +47,27 @@ import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.WheelchairPushesRecord
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.launch
 
 class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
 
     private val providerPackageName = "com.google.android.apps.healthdata"
     val availabilityStatus: Int
-        get() =
-            HealthConnectClient.getSdkStatus(getApplication(), providerPackageName)
+        get() = HealthConnectClient.getSdkStatus(getApplication(), providerPackageName)
+    val requestPermissionActivityContract =
+        PermissionController.createRequestPermissionResultContract()
 
     fun launchUpdate() {
         val uriString =
@@ -68,13 +83,44 @@ class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
         )
     }
 
-
     val healthConnectClient by lazy {
         HealthConnectClient.getOrCreate(context)
     }
+    private var ignoredPermissions = MutableStateFlow(false)
+    private var checkTrigger = MutableSharedFlow<Unit>()
+    val needsPermissions: Flow<Boolean>
+        get() = if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE) {
+            combine(
+                checkTrigger.onStart { emit(Unit) }.flatMapLatest {
+                    flow {
+                        while (true) {
+                            val grantedPermissions =
+                                healthConnectClient.permissionController.getGrantedPermissions()
+                            emit(grantedPermissions.containsAll(PERMISSIONS))
+                            delay(CHECK_RATE)
+                        }
+                    }
+                },
+                ignoredPermissions
+            ) { grantedPermissions, ignoredPermissions ->
+                !grantedPermissions && !ignoredPermissions
+            }
+        } else {
+            flowOf(false)
+        }
 
+    fun ignorePermissions() {
+        ignoredPermissions.value = true
+    }
+
+    fun onResult(granted: Set<String>) {
+        viewModelScope.launch {
+            checkTrigger.emit(Unit)
+        }
+    }
 
     companion object {
+        private val CHECK_RATE = 30.seconds
         val PERMISSIONS =
             setOf(
                 HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class),
@@ -116,7 +162,7 @@ class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
                 HealthPermission.getReadPermission(TotalCaloriesBurnedRecord::class),
                 HealthPermission.getReadPermission(Vo2MaxRecord::class),
                 HealthPermission.getReadPermission(WeightRecord::class),
-                HealthPermission.getReadPermission(WheelchairPushesRecord::class),
+                HealthPermission.getReadPermission(WheelchairPushesRecord::class)
             )
     }
 }

@@ -2,10 +2,10 @@ package com.monkopedia.healthdisconnect.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-val Purple80 = Color(0xFFD0BCFF)
-val PurpleGrey80 = Color(0xFFCCC2DC)
-val Pink80 = Color(0xFFEFB8C8)
+val Orange = Color(0xFFf57c00)
+val OrangeGrey = Color(0xFF987b5d)
+val Green = Color(0xFF004d40)
 
-val Purple40 = Color(0xFF6650a4)
-val PurpleGrey40 = Color(0xFF625b71)
-val Pink40 = Color(0xFF7D5260)
+val DarkOrange = Color(0xFFbf360c)
+val DarkOrangeGrey = Color(0xFF7b5a50)
+val LightGreen = Color(0xFF26a69a)
