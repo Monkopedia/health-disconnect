@@ -1,4 +1,4 @@
-package com.monkopedia.healthdisconnect
+package com.monkopedia.healthdisconnect.ui
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Box
@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 
 @Composable

@@ -1,4 +1,4 @@
-package com.monkopedia.healthdisconnect
+package com.monkopedia.healthdisconnect.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
