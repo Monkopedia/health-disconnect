@@ -61,15 +61,17 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
         }
     }
 
-    fun dataView(id: Int): Flow<DataView> {
-        return flows.updateAndGet {
-            it.takeIf { id in it } ?: (it + (id to createDataView(id)))
-        }[id]!!
+    fun dataView(id: Int): Flow<DataView> = flows.updateAndGet {
+        it.takeIf { id in it } ?: (it + (id to createDataView(id)))
+    }[id]!!
+
+    suspend fun updateView(view: DataView) {
+        dataStore.updateData { list ->
+            list.copy(views = list.views + (view.id to view))
+        }
     }
 
-    private fun createDataView(id: Int): Flow<DataView> {
-        return dataStore.data.map { it.views[id]!! }
-    }
+    private fun createDataView(id: Int): Flow<DataView> = dataStore.data.map { it.views[id]!! }
 
     companion object {
         val Context.dataViewInfoDataStore by dataStore("dataInfoStore", DataViewListSerializer)

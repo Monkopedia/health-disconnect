@@ -181,7 +181,7 @@ class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
             HeartRateVariabilityRmssdRecord::class to "Heart rate variability",
             HeightRecord::class to "Height",
             HydrationRecord::class to "Hydration",
-            IntermenstrualBleedingRecord::class to  "Intermenstrual bleeding",
+            IntermenstrualBleedingRecord::class to "Intermenstrual bleeding",
             LeanBodyMassRecord::class to "Lean body mass",
             MenstruationFlowRecord::class to "Menstruation flow",
             MenstruationPeriodRecord::class to "Menstruation period",

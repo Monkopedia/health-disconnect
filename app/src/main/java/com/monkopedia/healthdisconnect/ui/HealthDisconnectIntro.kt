@@ -34,7 +34,11 @@ import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 @Composable
 fun HealthDisconnectIntro(onClick: () -> Unit = {}) {
     val italicPrimary =
-        SpanStyle(color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+        SpanStyle(
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+            fontStyle = FontStyle.Italic
+        )
     val boldSecondary =
         SpanStyle(color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
     Column(
@@ -143,7 +147,12 @@ fun HealthDisconnectIntro(onClick: () -> Unit = {}) {
         Spacer(modifier = Modifier.weight(1f))
 
         Button(onClick = onClick, Modifier.padding(16.dp)) {
-            Text("Let's Go!", Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
+            Text(
+                "Let's Go!",
+                Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

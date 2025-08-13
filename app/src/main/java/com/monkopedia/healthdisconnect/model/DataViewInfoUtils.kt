@@ -12,5 +12,5 @@ val DataView?.isConfigValid: Boolean
 
 val RecordSelection.isValidConfig: Boolean
     get() {
-        return false
+        return fqn.isNotBlank()
     }
