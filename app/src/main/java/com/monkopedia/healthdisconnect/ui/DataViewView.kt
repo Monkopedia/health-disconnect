@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -745,112 +746,119 @@ private fun LazyListScope.viewConfigurationSection(
                 val fqn = selection.fqn
                 if (index > 0) {
                     Spacer(Modifier.height(4.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(6.dp))
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onReplaceMetric(fqn) }
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = {
-                            if (selectedSelections.size <= 1) {
-                                onShowDeleteViewConfirmation()
-                            } else {
-                                onSelectedSelectionsChanged(
-                                    selectedSelections.filterNot { it.fqn == fqn }
+                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onReplaceMetric(fqn) }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = {
+                                    if (selectedSelections.size <= 1) {
+                                        onShowDeleteViewConfirmation()
+                                    } else {
+                                        onSelectedSelectionsChanged(
+                                            selectedSelections.filterNot { it.fqn == fqn }
+                                        )
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = stringResource(R.string.data_view_remove_metric),
+                                    tint = MaterialTheme.colorScheme.primary
                                 )
                             }
                         }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Delete,
-                            contentDescription = stringResource(R.string.data_view_remove_metric),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        EnumCycleRow(
+                            label = stringResource(R.string.data_view_label_aggregation),
+                            value = settings.aggregation
+                        ) { newValue ->
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        it.copy(metricSettings = settings.copy(aggregation = newValue))
+                                    } else it
+                                }
+                            )
+                        }
+                        EnumCycleRow(
+                            label = stringResource(R.string.data_view_label_time_window),
+                            value = settings.timeWindow
+                        ) { newValue ->
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        it.copy(metricSettings = settings.copy(timeWindow = newValue))
+                                    } else it
+                                }
+                            )
+                        }
+                        EnumCycleRow(
+                            label = stringResource(R.string.data_view_label_bucket_size),
+                            value = settings.bucketSize
+                        ) { newValue ->
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        it.copy(metricSettings = settings.copy(bucketSize = newValue))
+                                    } else it
+                                }
+                            )
+                        }
+                        EnumCycleRow(
+                            label = stringResource(R.string.data_view_label_y_axis),
+                            value = settings.yAxisMode
+                        ) { newValue ->
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        it.copy(metricSettings = settings.copy(yAxisMode = newValue))
+                                    } else it
+                                }
+                            )
+                        }
+                        EnumCycleRow(
+                            label = stringResource(R.string.data_view_label_smoothing),
+                            value = settings.smoothing
+                        ) { newValue ->
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        it.copy(metricSettings = settings.copy(smoothing = newValue))
+                                    } else it
+                                }
+                            )
+                        }
+                        EnumCycleRow(
+                            label = stringResource(R.string.data_view_label_units),
+                            value = settings.unitPreference
+                        ) { newValue ->
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        it.copy(metricSettings = settings.copy(unitPreference = newValue))
+                                    } else it
+                                }
+                            )
+                        }
                     }
-                }
-                EnumCycleRow(
-                    label = stringResource(R.string.data_view_label_aggregation),
-                    value = settings.aggregation
-                ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(aggregation = newValue))
-                            } else it
-                        }
-                    )
-                }
-                EnumCycleRow(
-                    label = stringResource(R.string.data_view_label_time_window),
-                    value = settings.timeWindow
-                ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(timeWindow = newValue))
-                            } else it
-                        }
-                    )
-                }
-                EnumCycleRow(
-                    label = stringResource(R.string.data_view_label_bucket_size),
-                    value = settings.bucketSize
-                ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(bucketSize = newValue))
-                            } else it
-                        }
-                    )
-                }
-                EnumCycleRow(
-                    label = stringResource(R.string.data_view_label_y_axis),
-                    value = settings.yAxisMode
-                ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(yAxisMode = newValue))
-                            } else it
-                        }
-                    )
-                }
-                EnumCycleRow(
-                    label = stringResource(R.string.data_view_label_smoothing),
-                    value = settings.smoothing
-                ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(smoothing = newValue))
-                            } else it
-                        }
-                    )
-                }
-                EnumCycleRow(
-                    label = stringResource(R.string.data_view_label_units),
-                    value = settings.unitPreference
-                ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(unitPreference = newValue))
-                            } else it
-                        }
-                    )
                 }
             }
             Spacer(Modifier.height(8.dp))
