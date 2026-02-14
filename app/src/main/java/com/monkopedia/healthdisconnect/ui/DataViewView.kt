@@ -1212,7 +1212,11 @@ private fun MetricOverTimeChart(
         Text(allDates.first().format(labelFormatter), style = MaterialTheme.typography.labelSmall)
         Text(allDates.last().format(labelFormatter), style = MaterialTheme.typography.labelSmall)
     }
-    Column(modifier = Modifier.padding(top = 4.dp)) {
+    HorizontalDivider(
+        modifier = Modifier.padding(top = 6.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+    )
+    Column(modifier = Modifier.padding(top = 6.dp)) {
         seriesList.forEachIndexed { index, series ->
             Text(
                 stringResource(
@@ -1221,8 +1225,8 @@ private fun MetricOverTimeChart(
                     formatAxisValue(series.peakValueInWindow),
                     series.unit?.let { " $it" } ?: ""
                 ),
-                color = seriesColors[index % seriesColors.size],
-                style = MaterialTheme.typography.labelSmall
+                color = seriesColors[index % seriesColors.size].copy(alpha = 0.9f),
+                style = MaterialTheme.typography.bodySmall
             )
         }
     }
