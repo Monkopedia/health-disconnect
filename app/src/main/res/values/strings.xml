@@ -39,4 +39,5 @@
     <string name="data_view_peak_format">%1$s peak: %2$d%3$s</string>
     <string name="data_view_entry_details_title">Entry Details</string>
     <string name="data_view_close">Close</string>
+    <string name="data_view_last_refreshed">Last refreshed: %1$s</string>
 </resources>

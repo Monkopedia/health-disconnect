@@ -76,7 +76,9 @@ import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.YAxisMode
 import com.monkopedia.healthdisconnect.model.isConfigValid
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.max
@@ -103,6 +105,7 @@ fun DataViewView(
     if (view == null) return
     var refreshTick by rememberSaveable(view!!.id) { mutableStateOf(0) }
     var isRefreshing by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var lastRefreshedMillis by rememberSaveable(view!!.id) { mutableStateOf<Long?>(null) }
     val data by healthDataModel.collectData(view!!, refreshTick).collectAsState(initial = null)
     val metricSeriesList = if (data == null) {
         null
@@ -117,6 +120,13 @@ fun DataViewView(
     val isEditing =
         rememberSaveable(view!!.id) { mutableStateOf(!info.isConfigValid || !view.isConfigValid) }
     var selectedEntryForDetails by remember(view!!.id) { mutableStateOf<Record?>(null) }
+    val refreshLabelFormatter = remember { DateTimeFormatter.ofPattern("h:mm:ss a") }
+
+    LaunchedEffect(data) {
+        if (data != null && lastRefreshedMillis == null) {
+            lastRefreshedMillis = System.currentTimeMillis()
+        }
+    }
 
     val refreshScope = rememberCoroutineScope()
     PullToRefreshBox(
@@ -124,9 +134,13 @@ fun DataViewView(
         onRefresh = {
             refreshScope.launch {
                 isRefreshing = true
-                healthDataModel.refreshMetricsWithData()
-                refreshTick += 1
-                isRefreshing = false
+                try {
+                    healthDataModel.refreshMetricsWithData()
+                    refreshTick += 1
+                } finally {
+                    lastRefreshedMillis = System.currentTimeMillis()
+                    isRefreshing = false
+                }
             }
         }
     ) {
@@ -141,6 +155,20 @@ fun DataViewView(
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
+        val refreshedAtText = lastRefreshedMillis?.let { refreshedAt ->
+            Instant.ofEpochMilli(refreshedAt)
+                .atZone(ZoneId.systemDefault())
+                .toLocalTime()
+                .format(refreshLabelFormatter)
+        }
+        if (refreshedAtText != null) {
+            Text(
+                text = stringResource(R.string.data_view_last_refreshed, refreshedAtText),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            )
+        }
         Spacer(Modifier.height(16.dp))
 
         if (view!!.type == ViewType.CHART) {
