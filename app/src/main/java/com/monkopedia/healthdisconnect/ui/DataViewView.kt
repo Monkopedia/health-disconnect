@@ -180,7 +180,8 @@ fun DataViewView(
     val refreshLabelFormatter = remember { DateTimeFormatter.ofPattern("h:mm:ss a") }
     var headerWidthPx by remember(view!!.id) { mutableStateOf(0f) }
     val density = LocalDensity.current
-    val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+    val configuration = LocalConfiguration.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
     val fallbackHeaderWidthPx = with(density) { 160.dp.toPx() }
     val headerTravel = ((if (headerWidthPx > 0f) headerWidthPx else fallbackHeaderWidthPx) * 0.9f) + (screenWidthPx * 0.35f)
     val headerOffsetAbs = abs(headerPageOffset).coerceIn(0f, 1f)
@@ -221,14 +222,20 @@ fun DataViewView(
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                horizontal = 11.dp,
-                vertical = 13.dp
+                start = 11.dp,
+                end = 11.dp,
+                top = 17.dp,
+                bottom = 13.dp
             )
         ) {
             item {
                 Text(
                     text = info!!.name,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = if (configuration.screenWidthDp < 600) {
+                        MaterialTheme.typography.headlineSmall
+                    } else {
+                        MaterialTheme.typography.headlineMedium
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .onSizeChanged { headerWidthPx = it.width.toFloat() }
