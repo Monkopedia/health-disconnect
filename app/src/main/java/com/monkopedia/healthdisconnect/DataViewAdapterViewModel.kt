@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.monkopedia.healthdisconnect.datastore.DataViewListSerializer
 import com.monkopedia.healthdisconnect.datastore.DataViewSerializer
 import com.monkopedia.healthdisconnect.model.DataView
+import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataViewInfo
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
 import kotlin.reflect.KClass
@@ -73,12 +74,15 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
                         val view = dsViews.views[id]
                         if (view != null) {
                             val recJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), view.records)
+                            val settingsJson =
+                                Json.encodeToString(ChartSettings.serializer(), view.chartSettings)
                             viewDao.insert(
                                 com.monkopedia.healthdisconnect.room.DataViewEntity(
                                     id = view.id,
                                     type = view.type.name,
                                     recordsJson = recJson,
-                                    alwaysShowEntries = view.alwaysShowEntries
+                                    alwaysShowEntries = view.alwaysShowEntries,
+                                    settingsJson = settingsJson
                                 )
                             )
                         }
@@ -95,7 +99,16 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
         val newId = nextOrder
         val name = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: "Record"
         val recordsJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(com.monkopedia.healthdisconnect.model.RecordSelection(cls)))
-        viewDao.insert(DataViewEntity(newId, com.monkopedia.healthdisconnect.model.ViewType.CHART.name, recordsJson, false))
+        val settingsJson = Json.encodeToString(ChartSettings.serializer(), ChartSettings())
+        viewDao.insert(
+            DataViewEntity(
+                id = newId,
+                type = com.monkopedia.healthdisconnect.model.ViewType.CHART.name,
+                recordsJson = recordsJson,
+                alwaysShowEntries = false,
+                settingsJson = settingsJson
+            )
+        )
         infoDao.insert(DataViewInfoEntity(newId, name, nextOrder))
     }
 
@@ -110,12 +123,14 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
             ),
             view.records
         )
+        val settingsJson = Json.encodeToString(ChartSettings.serializer(), view.chartSettings)
         viewDao.insert(
             DataViewEntity(
                 id = view.id,
                 type = view.type.name,
                 recordsJson = recordsJson,
-                alwaysShowEntries = view.alwaysShowEntries
+                alwaysShowEntries = view.alwaysShowEntries,
+                settingsJson = settingsJson
             )
         )
     }
@@ -128,11 +143,15 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
                 ),
                 entity.recordsJson
             )
+            val settings = runCatching {
+                Json.decodeFromString(ChartSettings.serializer(), entity.settingsJson)
+            }.getOrDefault(ChartSettings())
             DataView(
                 id = entity.id,
                 type = com.monkopedia.healthdisconnect.model.ViewType.valueOf(entity.type),
                 records = records,
-                alwaysShowEntries = entity.alwaysShowEntries
+                alwaysShowEntries = entity.alwaysShowEntries,
+                chartSettings = settings
             )
         }
 

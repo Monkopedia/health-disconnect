@@ -18,11 +18,13 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.ui.theme.LightGreen
 import com.monkopedia.healthdisconnect.ui.theme.DarkOrange
 import com.monkopedia.healthdisconnect.ui.theme.Typography
@@ -68,12 +70,12 @@ fun NoSdkAvailable() {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "No Health Connect Found!",
+            text = stringResource(R.string.permissions_no_sdk_title),
             style = Typography.headlineMedium,
             textAlign = TextAlign.Center
         )
         Text(
-            text = "It appears this device is not capable of storing Health Connect data. Without this, Health Disconnect is really of no use to you.",
+            text = stringResource(R.string.permissions_no_sdk_body),
             modifier = Modifier.padding(top = 32.dp),
             textAlign = TextAlign.Center
         )
@@ -91,12 +93,12 @@ fun UpdateRequired(onClick: () -> Unit = {}) {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Health Connect Requires an Update",
+            text = stringResource(R.string.permissions_update_required_title),
             style = Typography.headlineMedium,
             textAlign = TextAlign.Center
         )
         Button(onClick = onClick, modifier = Modifier.padding(top = 32.dp)) {
-            Text("Launch Update")
+            Text(stringResource(R.string.permissions_launch_update))
         }
     }
 }
@@ -113,10 +115,10 @@ fun RequestPermissions(onIgnore: () -> Unit = {}, onClick: () -> Unit = {}) {
     ) {
         PermissionRationale()
         Button(onClick = onClick, modifier = Modifier.padding(top = 64.dp)) {
-            Text("Grant Permissions")
+            Text(stringResource(R.string.permissions_grant))
         }
         TextButton(onClick = onIgnore, modifier = Modifier.padding(top = 8.dp)) {
-            Text("Ignore")
+            Text(stringResource(R.string.permissions_ignore))
         }
     }
 }
@@ -125,11 +127,11 @@ fun RequestPermissions(onIgnore: () -> Unit = {}, onClick: () -> Unit = {}) {
 fun PermissionRationale() {
     Text(
         text = buildAnnotatedString {
-            append("Health Disconnect needs access to your ")
+            append(stringResource(R.string.permissions_rationale_prefix))
             withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = DarkOrange)) {
-                append("Health data")
+                append(stringResource(R.string.permissions_rationale_emphasis))
             }
-            append(" in order to display your ")
+            append(stringResource(R.string.permissions_rationale_suffix))
             withStyle(
                 style = SpanStyle(
                     fontStyle = FontStyle.Italic,
@@ -137,7 +139,7 @@ fun PermissionRationale() {
                     color = LightGreen
                 )
             ) {
-                append("Health data")
+                append(stringResource(R.string.permissions_rationale_emphasis))
             }
         },
         style = Typography.headlineMedium,

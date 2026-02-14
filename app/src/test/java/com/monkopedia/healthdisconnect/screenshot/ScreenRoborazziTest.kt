@@ -13,17 +13,25 @@ import com.monkopedia.healthdisconnect.NoSdkAvailable
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.RequestPermissions
 import com.monkopedia.healthdisconnect.UpdateRequired
+import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
+import com.monkopedia.healthdisconnect.model.ChartSettings
+import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.DataViewInfo
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
 import com.monkopedia.healthdisconnect.model.RecordSelection
+import com.monkopedia.healthdisconnect.model.SmoothingMode
+import com.monkopedia.healthdisconnect.model.TimeWindow
+import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.ViewType
+import com.monkopedia.healthdisconnect.model.YAxisMode
 import com.monkopedia.healthdisconnect.ui.CreateViewView
 import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Test
@@ -186,6 +194,221 @@ abstract class BaseScreenRoborazziTest {
         `when`(healthDataModel.metricsWithData)
             .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
         captureScreen("data_view_editing") {
+            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+        }
+    }
+
+    @Test
+    fun dataViewMetricGraphScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            alwaysShowEntries = false,
+            chartSettings = ChartSettings(timeWindow = TimeWindow.DAYS_30)
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Steps"),
+            view = dataView
+        )
+        val healthDataModel = mock(HealthDataModel::class.java)
+        val records = emptyList<Record>()
+        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
+        `when`(healthDataModel.aggregateMetricSeriesList(dataView, records)).thenReturn(
+            listOf(
+                HealthDataModel.MetricSeries(
+                    label = "Steps",
+                    unit = "count",
+                    points = listOf(
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 3400.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 2), 5600.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 3), 6200.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 4), 4800.0)
+                    )
+                )
+            )
+        )
+        `when`(healthDataModel.aggregateMetricSeries(dataView, records)).thenReturn(
+            HealthDataModel.MetricSeries(
+                label = "Steps",
+                unit = "count",
+                points = listOf(
+                    HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 3400.0),
+                    HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 2), 5600.0),
+                    HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 3), 6200.0),
+                    HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 4), 4800.0)
+                )
+            )
+        )
+        `when`(healthDataModel.metricsWithData)
+            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        captureScreen("data_view_metric_graph") {
+            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+        }
+    }
+
+    @Test
+    fun dataViewMetricGraphBarsGridScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            alwaysShowEntries = false,
+            chartSettings = ChartSettings(
+                chartType = ChartType.BARS,
+                showDataPoints = true,
+                yAxisMode = YAxisMode.START_AT_ZERO,
+                smoothing = SmoothingMode.MOVING_AVERAGE_3,
+                unitPreference = UnitPreference.METRIC,
+                backgroundStyle = ChartBackgroundStyle.GRID,
+                timeWindow = TimeWindow.DAYS_90
+            )
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Distance"),
+            view = dataView
+        )
+        val healthDataModel = mock(HealthDataModel::class.java)
+        val records = emptyList<Record>()
+        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
+        `when`(healthDataModel.aggregateMetricSeriesList(dataView, records)).thenReturn(
+            listOf(
+                HealthDataModel.MetricSeries(
+                    label = "Distance",
+                    unit = "kilometers",
+                    points = listOf(
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 4), 2.2),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 11), 3.4),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 18), 4.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 25), 3.1)
+                    )
+                )
+            )
+        )
+        `when`(healthDataModel.aggregateMetricSeries(dataView, records)).thenReturn(
+            HealthDataModel.MetricSeries(
+                label = "Distance",
+                unit = "kilometers",
+                points = listOf(
+                    HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 4), 2.2),
+                    HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 11), 3.4),
+                    HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 18), 4.0),
+                    HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 25), 3.1)
+                )
+            )
+        )
+        `when`(healthDataModel.metricsWithData)
+            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        captureScreen("data_view_metric_graph_bars_grid") {
+            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+        }
+    }
+
+    @Test
+    fun dataViewMetricGraphMultiSeriesScreen() {
+        val firstMetric = PermissionsViewModel.CLASSES.first()
+        val secondMetric = PermissionsViewModel.CLASSES.drop(1).firstOrNull() ?: firstMetric
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(
+                RecordSelection(firstMetric),
+                RecordSelection(secondMetric)
+            ),
+            alwaysShowEntries = false,
+            chartSettings = ChartSettings(timeWindow = TimeWindow.DAYS_30)
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Activity"),
+            view = dataView
+        )
+        val healthDataModel = mock(HealthDataModel::class.java)
+        val records = emptyList<Record>()
+        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
+        `when`(healthDataModel.aggregateMetricSeriesList(dataView, records)).thenReturn(
+            listOf(
+                HealthDataModel.MetricSeries(
+                    label = "Steps",
+                    unit = "count",
+                    points = listOf(
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 3400.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 2), 5600.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 3), 6200.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 4), 4800.0)
+                    )
+                ),
+                HealthDataModel.MetricSeries(
+                    label = "Distance",
+                    unit = "kilometers",
+                    points = listOf(
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 2.1),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 2), 3.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 3), 3.5),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 4), 2.8)
+                    )
+                )
+            )
+        )
+        `when`(healthDataModel.metricsWithData)
+            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        captureScreen("data_view_metric_graph_multi_series") {
+            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+        }
+    }
+
+    @Test
+    fun dataViewMetricGraphBarsMultiSeriesScreen() {
+        val firstMetric = PermissionsViewModel.CLASSES.first()
+        val secondMetric = PermissionsViewModel.CLASSES.drop(1).firstOrNull() ?: firstMetric
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(
+                RecordSelection(firstMetric),
+                RecordSelection(secondMetric)
+            ),
+            alwaysShowEntries = false,
+            chartSettings = ChartSettings(
+                chartType = ChartType.BARS,
+                backgroundStyle = ChartBackgroundStyle.GRID,
+                yAxisMode = YAxisMode.START_AT_ZERO,
+                timeWindow = TimeWindow.DAYS_30
+            )
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Activity Bars"),
+            view = dataView
+        )
+        val healthDataModel = mock(HealthDataModel::class.java)
+        val records = emptyList<Record>()
+        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
+        `when`(healthDataModel.aggregateMetricSeriesList(dataView, records)).thenReturn(
+            listOf(
+                HealthDataModel.MetricSeries(
+                    label = "Steps",
+                    unit = "count",
+                    points = listOf(
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 3200.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 2), 5400.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 3), 6100.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 4), 4700.0)
+                    )
+                ),
+                HealthDataModel.MetricSeries(
+                    label = "Distance",
+                    unit = "kilometers",
+                    points = listOf(
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 2.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 2), 2.8),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 3), 3.4),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 4), 2.6)
+                    )
+                )
+            )
+        )
+        `when`(healthDataModel.metricsWithData)
+            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        captureScreen("data_view_metric_graph_bars_multi_series") {
             DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
         }
     }

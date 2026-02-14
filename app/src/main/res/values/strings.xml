@@ -1,3 +1,42 @@
 <resources>
     <string name="app_name">Health Disconnect</string>
+    <string name="loading_message">Loading…</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_placeholder">This is where the settings will go.</string>
+    <string name="create_view_select_base_metric">Select a base metric:</string>
+
+    <string name="permissions_no_sdk_title">No Health Connect Found!</string>
+    <string name="permissions_no_sdk_body">It appears this device cannot store Health Connect data. Without this, Health Disconnect is not useful on this device.</string>
+    <string name="permissions_update_required_title">Health Connect Requires an Update</string>
+    <string name="permissions_launch_update">Launch Update</string>
+    <string name="permissions_grant">Grant Permissions</string>
+    <string name="permissions_ignore">Ignore</string>
+    <string name="permissions_rationale_prefix">Health Disconnect needs access to your </string>
+    <string name="permissions_rationale_emphasis">Health data</string>
+    <string name="permissions_rationale_suffix"> in order to display your </string>
+
+    <string name="data_view_graph_days">Graph (%1$d days)</string>
+    <string name="data_view_no_graphable">No graphable metric values available yet.</string>
+    <string name="data_view_no_graphable_with_hint">No graphable values in the current filters. Try setting Time window to All.</string>
+    <string name="data_view_showing_first_metrics">Showing first %1$d selected metrics.</string>
+    <string name="data_view_entries_count">Entries (%1$d)</string>
+    <string name="data_view_configuration">View Configuration</string>
+    <string name="data_view_open_entries_default">Open entries by default</string>
+    <string name="data_view_graph_display_header">Graph Display</string>
+    <string name="data_view_record_types_header">Record Types</string>
+    <string name="data_view_label_aggregation">Aggregation</string>
+    <string name="data_view_label_time_window">Time window</string>
+    <string name="data_view_label_bucket_size">Bucket size</string>
+    <string name="data_view_label_chart_type">Chart type</string>
+    <string name="data_view_label_show_data_points">Show data points</string>
+    <string name="data_view_label_y_axis">Y-axis</string>
+    <string name="data_view_label_smoothing">Smoothing</string>
+    <string name="data_view_label_units">Units</string>
+    <string name="data_view_label_background">Background</string>
+    <string name="data_view_save">Save</string>
+    <string name="data_view_cancel">Cancel</string>
+    <string name="data_view_normalized">Normalized</string>
+    <string name="data_view_peak_format">%1$s peak: %2$d%3$s</string>
+    <string name="data_view_entry_details_title">Entry Details</string>
+    <string name="data_view_close">Close</string>
 </resources>

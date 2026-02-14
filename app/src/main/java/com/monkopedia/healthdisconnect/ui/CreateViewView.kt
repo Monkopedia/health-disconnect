@@ -10,12 +10,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.PermissionsViewModel
+import com.monkopedia.healthdisconnect.R
 import kotlinx.coroutines.launch
 
 @Composable
@@ -28,7 +30,7 @@ fun CreateViewView(
     LazyColumn(Modifier.padding(16.dp).padding(top = 16.dp)) {
         item {
             Text(
-                "Select a base metric:",
+                stringResource(R.string.create_view_select_base_metric),
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.padding(bottom = 16.dp)
             )

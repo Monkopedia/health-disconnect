@@ -10,7 +10,8 @@ data class DataViewEntity(
     @PrimaryKey val id: Int,
     val type: String = ViewType.CHART.name,
     val recordsJson: String = "[]",
-    val alwaysShowEntries: Boolean = false
+    val alwaysShowEntries: Boolean = false,
+    val settingsJson: String = "{}"
 )
 
 @Entity(tableName = "data_view_info")
