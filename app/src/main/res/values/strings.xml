@@ -3,7 +3,9 @@
     <string name="loading_message">Loading…</string>
     <string name="settings_title">Settings</string>
     <string name="settings_placeholder">This is where the settings will go.</string>
+    <string name="create_view_title">Create View</string>
     <string name="create_view_select_base_metric">Select a base metric:</string>
+    <string name="rename_view_title">Rename View</string>
 
     <string name="permissions_no_sdk_title">No Health Connect Found!</string>
     <string name="permissions_no_sdk_body">It appears this device cannot store Health Connect data. Without this, Health Disconnect is not useful on this device.</string>
@@ -19,11 +21,24 @@
     <string name="data_view_no_graphable">No graphable metric values available yet.</string>
     <string name="data_view_no_graphable_with_hint">No graphable values in the current filters. Try setting Time window to All.</string>
     <string name="data_view_showing_first_metrics">Showing first %1$d selected metrics.</string>
+    <string name="data_view_showing_latest_entries">Showing latest %1$d of %2$d entries.</string>
     <string name="data_view_entries_count">Entries (%1$d)</string>
+    <string name="data_view_view_entries">View entries</string>
+    <string name="data_view_back">Back</string>
+    <string name="data_view_entries_for">Entries - %1$s</string>
     <string name="data_view_configuration">View Configuration</string>
     <string name="data_view_open_entries_default">Open entries by default</string>
     <string name="data_view_graph_display_header">Graph Display</string>
     <string name="data_view_record_types_header">Record Types</string>
+    <string name="data_view_no_selected_metrics">No metrics selected.</string>
+    <string name="data_view_add_metric">Add metric</string>
+    <string name="data_view_remove_metric">Remove metric</string>
+    <string name="data_view_select_metric_to_add">Select a metric to add</string>
+    <string name="data_view_select_replacement_metric">Select replacement metric</string>
+    <string name="data_view_no_more_metrics_to_add">All available metrics are already added.</string>
+    <string name="data_view_delete_view_title">Delete View?</string>
+    <string name="data_view_delete_view_body">Removing the last metric will delete this view. Do you want to continue?</string>
+    <string name="data_view_delete">Delete</string>
     <string name="data_view_label_aggregation">Aggregation</string>
     <string name="data_view_label_time_window">Time window</string>
     <string name="data_view_label_bucket_size">Bucket size</string>
@@ -36,7 +51,7 @@
     <string name="data_view_save">Save</string>
     <string name="data_view_cancel">Cancel</string>
     <string name="data_view_normalized">Normalized</string>
-    <string name="data_view_peak_format">%1$s peak: %2$d%3$s</string>
+    <string name="data_view_peak_format">%1$s peak: %2$s%3$s</string>
     <string name="data_view_entry_details_title">Entry Details</string>
     <string name="data_view_close">Close</string>
     <string name="data_view_last_refreshed">Last refreshed: %1$s</string>

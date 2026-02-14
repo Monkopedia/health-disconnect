@@ -17,6 +17,9 @@ interface DataViewDao {
 
     @Update
     suspend fun update(view: DataViewEntity)
+
+    @Query("DELETE FROM data_views WHERE id = :id")
+    suspend fun deleteById(id: Int)
 }
 
 @Dao
@@ -35,4 +38,10 @@ interface DataViewInfoDao {
 
     @Query("SELECT COUNT(*) FROM data_views")
     suspend fun viewCount(): Int
+
+    @Query("UPDATE data_view_info SET name = :name WHERE id = :id")
+    suspend fun updateName(id: Int, name: String)
+
+    @Query("DELETE FROM data_view_info WHERE id = :id")
+    suspend fun deleteById(id: Int)
 }

@@ -27,12 +27,14 @@ import com.monkopedia.healthdisconnect.model.ViewType
 import com.monkopedia.healthdisconnect.model.YAxisMode
 import com.monkopedia.healthdisconnect.ui.CreateViewView
 import com.monkopedia.healthdisconnect.ui.DataViewView
+import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,9 +109,119 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun dataViewAdapterCreateTrailingScreen() {
+        val info = DataViewInfo(id = 1, name = "Steps")
+        val view = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            alwaysShowEntries = false
+        )
+        val viewModel = mock(DataViewAdapterViewModel::class.java)
+        `when`(viewModel.dataViews).thenReturn(
+            MutableStateFlow(DataViewInfoList(dataViews = mapOf(1 to info), ordering = listOf(1)))
+        )
+        `when`(viewModel.dataView(1)).thenReturn(MutableStateFlow(view))
+        captureScreen("data_view_adapter_create_trailing") {
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                showSettings = {},
+                initialPage = 1
+            )
+        }
+    }
+
+    @Test
+    fun dataViewAdapterHeaderPagerFirstScreen() {
+        val viewModel = mockDataViewAdapterWithViews(
+            infos = listOf(
+                DataViewInfo(id = 1, name = "Steps"),
+                DataViewInfo(id = 2, name = "Weight")
+            )
+        )
+        captureScreen("data_view_adapter_header_first") {
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                showSettings = {},
+                initialPage = 0
+            )
+        }
+    }
+
+    @Test
+    fun dataViewAdapterHeaderPagerSecondScreen() {
+        val viewModel = mockDataViewAdapterWithViews(
+            infos = listOf(
+                DataViewInfo(id = 1, name = "Steps"),
+                DataViewInfo(id = 2, name = "Weight")
+            )
+        )
+        captureScreen("data_view_adapter_header_second") {
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                showSettings = {},
+                initialPage = 1
+            )
+        }
+    }
+
+    @Test
+    fun dataViewAdapterHeaderPagerCreateScreen() {
+        val viewModel = mockDataViewAdapterWithViews(
+            infos = listOf(
+                DataViewInfo(id = 1, name = "Steps"),
+                DataViewInfo(id = 2, name = "Weight")
+            )
+        )
+        captureScreen("data_view_adapter_header_create") {
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                showSettings = {},
+                initialPage = 2
+            )
+        }
+    }
+
+    @Test
+    fun dataViewAdapterHeaderPagerOffset45Screen() {
+        val viewModel = mockDataViewAdapterWithViews(
+            infos = listOf(
+                DataViewInfo(id = 1, name = "Steps"),
+                DataViewInfo(id = 2, name = "Weight")
+            )
+        )
+        captureScreen("data_view_adapter_header_offset_45") {
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                showSettings = {},
+                initialPage = 0,
+                initialPageOffsetFraction = 0.45f
+            )
+        }
+    }
+
+    @Test
+    fun dataViewAdapterHeaderPagerOffset65Screen() {
+        val viewModel = mockDataViewAdapterWithViews(
+            infos = listOf(
+                DataViewInfo(id = 1, name = "Steps"),
+                DataViewInfo(id = 2, name = "Weight")
+            )
+        )
+        captureScreen("data_view_adapter_header_offset_65") {
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                showSettings = {},
+                initialPage = 1,
+                // Equivalent to being ~65% transitioned away from previous page.
+                initialPageOffsetFraction = -0.35f
+            )
+        }
+    }
+
+    @Test
     fun lazyNavigationLoadingScreen() {
         val viewModel = mockLazyNavigationModel(
-            showingSettings = false,
             isLoading = true,
             isShowingIntro = false
         )
@@ -121,7 +233,6 @@ abstract class BaseScreenRoborazziTest {
     @Test
     fun lazyNavigationIntroScreen() {
         val viewModel = mockLazyNavigationModel(
-            showingSettings = false,
             isLoading = false,
             isShowingIntro = true
         )
@@ -148,6 +259,58 @@ abstract class BaseScreenRoborazziTest {
             .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(6)))
         captureScreen("create_view_options") {
             CreateViewView(viewModel = viewModel, healthDataModel = healthDataModel)
+        }
+    }
+
+    @Test
+    fun entriesRouteLoadingScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            alwaysShowEntries = false
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Weight"),
+            view = dataView
+        )
+        val healthDataModel = mock(HealthDataModel::class.java)
+        `when`(healthDataModel.collectData(dataView)).thenReturn(emptyFlow())
+        captureScreen("entries_route_loading") {
+            EntriesRouteScreen(
+                viewId = 1,
+                onBack = {},
+                viewModel = viewModel,
+                healthDataModel = healthDataModel
+            )
+        }
+    }
+
+    @Test
+    fun entriesRoutePopulatedScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            alwaysShowEntries = false
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Weight"),
+            view = dataView
+        )
+        val healthDataModel = mock(HealthDataModel::class.java)
+        val records = listOf(
+            mock(Record::class.java),
+            mock(Record::class.java)
+        )
+        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
+        captureScreen("entries_route_populated") {
+            EntriesRouteScreen(
+                viewId = 1,
+                onBack = {},
+                viewModel = viewModel,
+                healthDataModel = healthDataModel
+            )
         }
     }
 
@@ -437,13 +600,30 @@ abstract class BaseScreenRoborazziTest {
         return viewModel
     }
 
+    private fun mockDataViewAdapterWithViews(infos: List<DataViewInfo>): DataViewAdapterViewModel {
+        val dataViews = DataViewInfoList(
+            dataViews = infos.associateBy { it.id },
+            ordering = infos.map { it.id }
+        )
+        val viewModel = mock(DataViewAdapterViewModel::class.java)
+        `when`(viewModel.dataViews).thenReturn(MutableStateFlow(dataViews))
+        infos.forEach { info ->
+            val view = DataView(
+                id = info.id,
+                type = ViewType.CHART,
+                records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+                alwaysShowEntries = false
+            )
+            `when`(viewModel.dataView(info.id)).thenReturn(MutableStateFlow(view))
+        }
+        return viewModel
+    }
+
     private fun mockLazyNavigationModel(
-        showingSettings: Boolean,
         isLoading: Boolean,
         isShowingIntro: Boolean
     ): LazyNavigationModel {
         val viewModel = mock(LazyNavigationModel::class.java)
-        `when`(viewModel.isShowingSettings).thenReturn(MutableStateFlow(showingSettings))
         `when`(viewModel.isLoading).thenReturn(MutableStateFlow(isLoading))
         `when`(viewModel.isShowingIntro).thenReturn(MutableStateFlow(isShowingIntro))
         return viewModel

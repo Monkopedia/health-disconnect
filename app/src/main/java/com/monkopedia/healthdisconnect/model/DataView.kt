@@ -39,6 +39,16 @@ data class ChartSettings(
 )
 
 @Serializable
+data class MetricChartSettings(
+    val aggregation: AggregationMode = AggregationMode.AVERAGE,
+    val timeWindow: TimeWindow = TimeWindow.ALL,
+    val bucketSize: BucketSize = BucketSize.DAY,
+    val yAxisMode: YAxisMode = YAxisMode.AUTO,
+    val smoothing: SmoothingMode = SmoothingMode.OFF,
+    val unitPreference: UnitPreference = UnitPreference.AUTO
+)
+
+@Serializable
 enum class AggregationMode {
     AVERAGE,
     SUM,

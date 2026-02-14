@@ -3,7 +3,7 @@ package com.monkopedia.healthdisconnect.ui
 import android.util.Log
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +15,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -25,10 +29,12 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -39,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.produceState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.AnimatedVisibility
@@ -53,9 +60,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.records.Record
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -70,6 +83,7 @@ import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.ViewType
 import com.monkopedia.healthdisconnect.model.DataView
+import com.monkopedia.healthdisconnect.model.MetricChartSettings
 import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.SmoothingMode
 import com.monkopedia.healthdisconnect.model.TimeWindow
@@ -83,20 +97,25 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 
 private const val ENTRY_DETAILS_LOG_TAG = "HealthDisconnectEntry"
+private const val MAX_VISIBLE_ENTRIES = 500
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataViewView(
     viewModel: DataViewAdapterViewModel,
     page: Int,
-    healthDataModel: HealthDataModel = viewModel()
+    healthDataModel: HealthDataModel = viewModel(),
+    headerPageOffset: Float = 0f,
+    showHeader: Boolean = true,
+    onOpenEntriesRequested: (Int) -> Unit = {}
 ) {
     val info by viewModel.dataViews.map { it?.dataViews?.get(it.ordering[page]) }
         .collectAsState(initial = null)
@@ -106,21 +125,72 @@ fun DataViewView(
     var refreshTick by rememberSaveable(view!!.id) { mutableStateOf(0) }
     var isRefreshing by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var lastRefreshedMillis by rememberSaveable(view!!.id) { mutableStateOf<Long?>(null) }
-    val data by healthDataModel.collectData(view!!, refreshTick).collectAsState(initial = null)
-    val metricSeriesList = if (data == null) {
-        null
-    } else {
-        healthDataModel.aggregateMetricSeriesList(view!!, data!!)
-    }
-    val isShowingEntries = rememberSaveable(view!!.id) { mutableStateOf(view!!.alwaysShowEntries) }
-    val isShowingChart = rememberSaveable(view!!.id) { mutableStateOf(true) }
     var chartSettings by remember(view!!.id, view!!.chartSettings) {
         mutableStateOf(view!!.chartSettings)
     }
+    var selectedSelections by remember(view!!.id, view!!.records, view!!.chartSettings) {
+        mutableStateOf(
+            view!!.records.map { selection ->
+                selection.withDefaultSettings(view!!.chartSettings)
+            }
+        )
+    }
+    var openEntriesByDefault by rememberSaveable(view!!.id) { mutableStateOf(view!!.alwaysShowEntries) }
+    val previewView = remember(
+        view!!.id,
+        view!!.type,
+        chartSettings,
+        selectedSelections,
+        openEntriesByDefault
+    ) {
+        view!!.copy(
+            chartSettings = chartSettings,
+            records = selectedSelections,
+            alwaysShowEntries = openEntriesByDefault
+        )
+    }
+    val data by healthDataModel.collectData(previewView, refreshTick).collectAsState(initial = null)
+    val metricSeriesList by produceState<List<HealthDataModel.MetricSeries>?>(
+        initialValue = null,
+        key1 = previewView,
+        key2 = data
+    ) {
+        val currentView = previewView
+        val currentData = data
+        value = if (currentData == null) {
+            null
+        } else {
+            withContext(Dispatchers.Default) {
+                healthDataModel.aggregateMetricSeriesList(currentView, currentData)
+            }
+        }
+    }
+    val isShowingChart = rememberSaveable(view!!.id) { mutableStateOf(true) }
     val isEditing =
         rememberSaveable(view!!.id) { mutableStateOf(!info.isConfigValid || !view.isConfigValid) }
     var selectedEntryForDetails by remember(view!!.id) { mutableStateOf<Record?>(null) }
+    var showAddMetricDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var showDeleteViewConfirmation by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var replaceMetricTargetFqn by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
+    val actionScope = rememberCoroutineScope()
     val refreshLabelFormatter = remember { DateTimeFormatter.ofPattern("h:mm:ss a") }
+    var headerWidthPx by remember(view!!.id) { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+    val fallbackHeaderWidthPx = with(density) { 160.dp.toPx() }
+    val headerTravel = ((if (headerWidthPx > 0f) headerWidthPx else fallbackHeaderWidthPx) * 0.9f) + (screenWidthPx * 0.35f)
+    val headerOffsetAbs = abs(headerPageOffset).coerceIn(0f, 1f)
+    fun resetEditStateToSaved() {
+        chartSettings = view!!.chartSettings
+        selectedSelections = view!!.records.map { selection ->
+            selection.withDefaultSettings(view!!.chartSettings)
+        }
+        openEntriesByDefault = view!!.alwaysShowEntries
+    }
+    fun metricDefaults(): MetricChartSettings = chartSettings.toMetricChartSettings()
+    fun copiedMetricSettingsForNewSelection(): MetricChartSettings {
+        return selectedSelections.firstOrNull()?.metricSettings ?: metricDefaults()
+    }
 
     LaunchedEffect(data) {
         if (data != null && lastRefreshedMillis == null) {
@@ -144,208 +214,243 @@ fun DataViewView(
             }
         }
     ) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 20.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-        Text(
-            text = info!!.name,
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
-        val refreshedAtText = lastRefreshedMillis?.let { refreshedAt ->
-            Instant.ofEpochMilli(refreshedAt)
-                .atZone(ZoneId.systemDefault())
-                .toLocalTime()
-                .format(refreshLabelFormatter)
-        }
-        if (refreshedAtText != null) {
-            Text(
-                text = stringResource(R.string.data_view_last_refreshed, refreshedAtText),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 11.dp,
+                vertical = 13.dp
             )
-        }
-        Spacer(Modifier.height(16.dp))
-
-        if (view!!.type == ViewType.CHART) {
-            val dayCount = metricSeriesList?.flatMap { it.points }?.map { it.date }?.distinct()?.size ?: 0
-            ToggleSection(stringResource(R.string.data_view_graph_days, dayCount), isShowingChart) {
-                if (data == null) {
-                    LoadingScreen()
-                } else if (metricSeriesList.isNullOrEmpty()) {
-                    val hasAnyEntries = data!!.isNotEmpty()
-                    Text(
-                        stringResource(
-                            if (hasAnyEntries) {
-                                R.string.data_view_no_graphable_with_hint
-                            } else {
-                                R.string.data_view_no_graphable
-                            }
-                        )
-                    )
-                } else {
-                    if (view!!.records.size > HealthDataModel.MAX_CHART_SERIES) {
-                        Text(
-                            stringResource(
-                                R.string.data_view_showing_first_metrics,
-                                HealthDataModel.MAX_CHART_SERIES
-                            ),
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    }
-                    MetricOverTimeChart(metricSeriesList, chartSettings)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-
-        ToggleSection(stringResource(R.string.data_view_entries_count, data?.size ?: 0), isShowingEntries) {
-            if (data == null) {
-                LoadingScreen()
-            } else {
-                val list = data!!
-                LazyColumn(
-                    Modifier
+        ) {
+            item {
+                Text(
+                    text = info!!.name,
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 80.dp, max = 260.dp)
-                ) {
-                    items(list.size) { index ->
-                        val r: Record = list[index]
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedEntryForDetails = r }
-                                .padding(vertical = 2.dp)
-                        ) {
-                            Text(r::class.simpleName ?: r::class.qualifiedName ?: "Record")
-                        }
-                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        ToggleSection(stringResource(R.string.data_view_configuration), isEditing) {
-            val available = healthDataModel.metricsWithData.collectAsState(null).value
-            val all = (available ?: PermissionsViewModel.CLASSES).toList().sortedBy {
-                PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: it.qualifiedName ?: "")
-            }
-            val selected =
-                rememberSaveable(view!!.id) { mutableStateOf(view!!.records.map { it.fqn }) }
-            val scope = rememberCoroutineScope()
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(stringResource(R.string.data_view_open_entries_default))
-                Checkbox(checked = isShowingEntries.value, onCheckedChange = {
-                    isShowingEntries.value =
-                        it
-                })
-            }
-            Spacer(Modifier.height(8.dp))
-            SectionHeading(stringResource(R.string.data_view_graph_display_header))
-            EnumCycleRow(
-                label = stringResource(R.string.data_view_label_aggregation),
-                value = chartSettings.aggregation
-            ) { chartSettings = chartSettings.copy(aggregation = it) }
-            EnumCycleRow(
-                label = stringResource(R.string.data_view_label_time_window),
-                value = chartSettings.timeWindow
-            ) { chartSettings = chartSettings.copy(timeWindow = it) }
-            EnumCycleRow(
-                label = stringResource(R.string.data_view_label_bucket_size),
-                value = chartSettings.bucketSize
-            ) { chartSettings = chartSettings.copy(bucketSize = it) }
-            EnumCycleRow(
-                label = stringResource(R.string.data_view_label_chart_type),
-                value = chartSettings.chartType
-            ) { chartSettings = chartSettings.copy(chartType = it) }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(stringResource(R.string.data_view_label_show_data_points))
-                Checkbox(
-                    checked = chartSettings.showDataPoints,
-                    onCheckedChange = { chartSettings = chartSettings.copy(showDataPoints = it) }
+                        .onSizeChanged { headerWidthPx = it.width.toFloat() }
+                        .graphicsLayer {
+                            translationX = headerPageOffset * headerTravel
+                            alpha = if (showHeader) (1f - (0.35f * headerOffsetAbs)) else 0f
+                            val headerScale = 1f - (0.08f * headerOffsetAbs)
+                            scaleX = headerScale
+                            scaleY = headerScale
+                        },
+                    textAlign = TextAlign.Center
                 )
-            }
-            EnumCycleRow(
-                label = stringResource(R.string.data_view_label_y_axis),
-                value = chartSettings.yAxisMode
-            ) { chartSettings = chartSettings.copy(yAxisMode = it) }
-            EnumCycleRow(
-                label = stringResource(R.string.data_view_label_smoothing),
-                value = chartSettings.smoothing
-            ) { chartSettings = chartSettings.copy(smoothing = it) }
-            EnumCycleRow(
-                label = stringResource(R.string.data_view_label_units),
-                value = chartSettings.unitPreference
-            ) { chartSettings = chartSettings.copy(unitPreference = it) }
-            EnumCycleRow(
-                label = stringResource(R.string.data_view_label_background),
-                value = chartSettings.backgroundStyle
-            ) { chartSettings = chartSettings.copy(backgroundStyle = it) }
-            Spacer(Modifier.height(8.dp))
-            SectionHeading(stringResource(R.string.data_view_record_types_header))
-            Spacer(Modifier.height(4.dp))
-            LazyColumn(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 240.dp)) {
-                items(all.size) { index ->
-                    val cls = all[index]
-                    val fqn = cls.qualifiedName ?: return@items
-                    val label = PermissionsViewModel.RECORD_NAMES[cls] ?: (cls.simpleName ?: fqn)
-                    val checked = selected.value.contains(fqn)
-                    Row(
+                val refreshedAtText = lastRefreshedMillis?.let { refreshedAt ->
+                    Instant.ofEpochMilli(refreshedAt)
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalTime()
+                        .format(refreshLabelFormatter)
+                }
+                if (refreshedAtText != null) {
+                    Text(
+                        text = stringResource(R.string.data_view_last_refreshed, refreshedAtText),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                val list = selected.value.toMutableList()
-                                if (checked) list.remove(fqn) else list.add(fqn)
-                                selected.value = list
-                            }
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .offset(y = (-2).dp),
+                        textAlign = TextAlign.Center
+                    )
+                }
+                Spacer(Modifier.height(11.dp))
+            }
+
+            if (previewView.type == ViewType.CHART) {
+                item {
+                    val dayCount = metricSeriesList?.flatMap { it.points }?.map { it.date }?.distinct()?.size ?: 0
+                    ToggleSection(
+                        labelText = stringResource(R.string.data_view_graph_days, dayCount),
+                        visibleState = isShowingChart,
+                        collapsible = false,
+                        showArrow = false
                     ) {
-                        Text(label)
-                        Checkbox(checked = checked, onCheckedChange = {
-                            val list = selected.value.toMutableList()
-                            if (it) list.add(fqn) else list.remove(fqn)
-                            selected.value = list
-                        })
+                        if (data == null) {
+                            GraphStatePlaceholder(
+                                isLoading = true,
+                                message = stringResource(R.string.loading_message),
+                                reserveLegendRows = previewView.records.size.coerceIn(1, HealthDataModel.MAX_CHART_SERIES)
+                            )
+                        } else if (metricSeriesList.isNullOrEmpty()) {
+                            val hasAnyEntries = data!!.isNotEmpty()
+                            GraphStatePlaceholder(
+                                isLoading = false,
+                                message = stringResource(
+                                    if (hasAnyEntries) {
+                                        R.string.data_view_no_graphable_with_hint
+                                    } else {
+                                        R.string.data_view_no_graphable
+                                    }
+                                ),
+                                reserveLegendRows = previewView.records.size.coerceIn(1, HealthDataModel.MAX_CHART_SERIES)
+                            )
+                        } else {
+                            if (previewView.records.size > HealthDataModel.MAX_CHART_SERIES) {
+                                Text(
+                                    stringResource(
+                                        R.string.data_view_showing_first_metrics,
+                                        HealthDataModel.MAX_CHART_SERIES
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            MetricOverTimeChart(metricSeriesList!!, chartSettings)
+                        }
                     }
-                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = {
-                    val newView = DataView(
-                        id = view!!.id,
-                        type = view!!.type,
-                        records = selected.value.distinct().map { RecordSelection(it) },
-                        alwaysShowEntries = isShowingEntries.value,
-                        chartSettings = chartSettings
-                    )
-                    scope.launch { viewModel.updateView(newView) }
-                    isEditing.value = false
-                }) {
-                    Text(stringResource(R.string.data_view_save))
+
+                entriesSection(data = data, onOpenEntries = { onOpenEntriesRequested(view!!.id) })
+
+                viewConfigurationSection(
+                    viewModel = viewModel,
+                    healthDataModel = healthDataModel,
+                    view = view!!,
+                    previewView = previewView,
+                    isEditing = isEditing,
+                    chartSettings = chartSettings,
+                    onChartSettingsChanged = { chartSettings = it },
+                    selectedSelections = selectedSelections,
+                    onSelectedSelectionsChanged = { selectedSelections = it },
+                    openEntriesByDefault = openEntriesByDefault,
+                    onOpenEntriesByDefaultChanged = { openEntriesByDefault = it },
+                    onResetEditStateToSaved = { resetEditStateToSaved() },
+                    onShowAddMetricDialog = { showAddMetricDialog = true },
+                    onShowDeleteViewConfirmation = { showDeleteViewConfirmation = true },
+                    onReplaceMetric = { replaceMetricTargetFqn = it }
+                )
+        }
+    }
+
+    if (showAddMetricDialog) {
+        val available = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
+        val allForDialog = (available ?: PermissionsViewModel.CLASSES).toList().sortedBy {
+            PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: it.qualifiedName ?: "")
+        }
+        val existingSelections = selectedSelections.map { it.fqn }.toSet()
+        val unselected = allForDialog.filter { cls ->
+            val fqn = cls.qualifiedName ?: return@filter false
+            !existingSelections.contains(fqn)
+        }
+        AlertDialog(
+            onDismissRequest = { showAddMetricDialog = false },
+            title = { Text(stringResource(R.string.data_view_select_metric_to_add)) },
+            text = {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
+                    if (unselected.isEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.data_view_no_more_metrics_to_add),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        items(unselected.size) { index ->
+                            val cls = unselected[index]
+                            val fqn = cls.qualifiedName ?: return@items
+                            val label = PermissionsViewModel.RECORD_NAMES[cls] ?: (cls.simpleName ?: fqn)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val newSelection = RecordSelection(
+                                            fqn = fqn,
+                                            metricSettings = copiedMetricSettingsForNewSelection()
+                                        )
+                                        selectedSelections = (selectedSelections + newSelection)
+                                            .distinctBy { it.fqn }
+                                        showAddMetricDialog = false
+                                    }
+                                    .padding(vertical = 10.dp)
+                            ) {
+                                Text(label)
+                            }
+                            HorizontalDivider()
+                        }
+                    }
                 }
-                TextButton(onClick = { isEditing.value = false }) {
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAddMetricDialog = false }) {
+                    Text(stringResource(R.string.data_view_close))
+                }
+            }
+        )
+    }
+
+    val metricToReplace = replaceMetricTargetFqn
+    if (metricToReplace != null) {
+        val available = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
+        val allForDialog = (available ?: PermissionsViewModel.CLASSES).toList().sortedBy {
+            PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: it.qualifiedName ?: "")
+        }
+        val unselected = allForDialog.filter { cls ->
+            val fqn = cls.qualifiedName ?: return@filter false
+            fqn == metricToReplace || selectedSelections.none { it.fqn == fqn }
+        }
+        AlertDialog(
+            onDismissRequest = { replaceMetricTargetFqn = null },
+            title = { Text(stringResource(R.string.data_view_select_replacement_metric)) },
+            text = {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
+                    items(unselected.size) { index ->
+                        val cls = unselected[index]
+                        val replacementFqn = cls.qualifiedName ?: return@items
+                        val label = PermissionsViewModel.RECORD_NAMES[cls] ?: (cls.simpleName ?: replacementFqn)
+                        Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                    selectedSelections = selectedSelections.map { selection ->
+                                        if (selection.fqn == metricToReplace) {
+                                            selection.copy(fqn = replacementFqn)
+                                        } else {
+                                            selection
+                                        }
+                                    }
+                                    replaceMetricTargetFqn = null
+                                }
+                                .padding(vertical = 10.dp)
+                        ) {
+                            Text(label)
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { replaceMetricTargetFqn = null }) {
+                    Text(stringResource(R.string.data_view_close))
+                }
+            }
+        )
+    }
+
+    if (showDeleteViewConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteViewConfirmation = false },
+            title = { Text(stringResource(R.string.data_view_delete_view_title)) },
+            text = { Text(stringResource(R.string.data_view_delete_view_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        actionScope.launch { viewModel.deleteView(view!!.id) }
+                        showDeleteViewConfirmation = false
+                    }
+                ) {
+                    Text(stringResource(R.string.data_view_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteViewConfirmation = false }) {
                     Text(stringResource(R.string.data_view_cancel))
                 }
             }
-        }
-    }
+        )
     }
 
     selectedEntryForDetails?.let { record ->
@@ -371,6 +476,508 @@ fun DataViewView(
     }
 }
 
+private fun LazyListScope.entriesSection(
+    data: List<Record>?,
+    onOpenEntries: () -> Unit
+) {
+    item {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onOpenEntries() }
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.data_view_entries_count, data?.size ?: 0),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = stringResource(R.string.data_view_view_entries),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+        if (data != null && data.size > MAX_VISIBLE_ENTRIES) {
+            Text(
+                stringResource(
+                    R.string.data_view_showing_latest_entries,
+                    MAX_VISIBLE_ENTRIES,
+                    data.size
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+        } else if (data == null) {
+            Text(
+                text = stringResource(R.string.loading_message),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+        HorizontalDivider()
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+fun EntriesRouteScreen(
+    viewId: Int,
+    onBack: () -> Unit,
+    viewModel: DataViewAdapterViewModel = viewModel(),
+    healthDataModel: HealthDataModel = viewModel()
+) {
+    val info by viewModel.dataViews.map { it?.dataViews?.get(viewId) }.collectAsState(initial = null)
+    val view by viewModel.dataView(viewId).collectAsState(initial = null)
+    if (view == null) {
+        LoadingScreen()
+        return
+    }
+    val data by healthDataModel.collectData(view!!).collectAsState(initial = null)
+    var selectedEntryForDetails by remember(viewId) { mutableStateOf<Record?>(null) }
+
+    EntriesScreen(
+        infoName = info?.name ?: "",
+        data = data,
+        onBack = onBack,
+        onEntrySelected = { selectedEntryForDetails = it }
+    )
+
+    selectedEntryForDetails?.let { record ->
+        val details = recordDetailsText(record)
+        LaunchedEffect(record) {
+            Log.d(ENTRY_DETAILS_LOG_TAG, details)
+        }
+        AlertDialog(
+            onDismissRequest = { selectedEntryForDetails = null },
+            title = { Text(stringResource(R.string.data_view_entry_details_title)) },
+            text = { Text(details, style = MaterialTheme.typography.bodySmall) },
+            confirmButton = {
+                TextButton(onClick = { selectedEntryForDetails = null }) {
+                    Text(stringResource(R.string.data_view_close))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun EntriesScreen(
+    infoName: String,
+    data: List<Record>?,
+    onBack: () -> Unit,
+    onEntrySelected: (Record) -> Unit
+) {
+    val clipboardManager = LocalClipboardManager.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 11.dp, vertical = 13.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onBack) {
+                Text(stringResource(R.string.data_view_back))
+            }
+            Text(
+                text = stringResource(R.string.data_view_entries_for, infoName),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.width(48.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        if (data == null) {
+            LoadingScreen()
+            return
+        }
+        LazyColumn(Modifier.fillMaxWidth()) {
+            items(data.size) { index ->
+                val record = data[index]
+                val timestamp = recordTimestampLabel(record)
+                val valuePreview = recordPrimaryValueLabel(record)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            clipboardManager.setText(AnnotatedString(recordDetailsText(record)))
+                            onEntrySelected(record)
+                        }
+                        .padding(vertical = 6.dp)
+                    ,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = record::class.simpleName ?: record::class.qualifiedName ?: "Record",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        if (!timestamp.isNullOrBlank()) {
+                            Text(
+                                text = timestamp,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    if (!valuePreview.isNullOrBlank()) {
+                        Text(
+                            text = valuePreview,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.End,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
+private fun LazyListScope.viewConfigurationSection(
+    viewModel: DataViewAdapterViewModel,
+    healthDataModel: HealthDataModel,
+    view: DataView,
+    previewView: DataView,
+    isEditing: MutableState<Boolean>,
+    chartSettings: ChartSettings,
+    onChartSettingsChanged: (ChartSettings) -> Unit,
+    selectedSelections: List<RecordSelection>,
+    onSelectedSelectionsChanged: (List<RecordSelection>) -> Unit,
+    openEntriesByDefault: Boolean,
+    onOpenEntriesByDefaultChanged: (Boolean) -> Unit,
+    onResetEditStateToSaved: () -> Unit,
+    onShowAddMetricDialog: () -> Unit,
+    onShowDeleteViewConfirmation: () -> Unit,
+    onReplaceMetric: (String) -> Unit
+) {
+    item {
+        val available = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
+        val all = (available ?: PermissionsViewModel.CLASSES).toList().sortedBy {
+            PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: it.qualifiedName ?: "")
+        }
+        val scope = rememberCoroutineScope()
+        val selectedDisplay = selectedSelections.mapNotNull { selection ->
+            val fqn = selection.fqn
+            val cls = all.firstOrNull { it.qualifiedName == fqn } ?: return@mapNotNull null
+            val label = PermissionsViewModel.RECORD_NAMES[cls] ?: (cls.simpleName ?: fqn)
+            selection to label
+        }
+        fun metricDefaults(): MetricChartSettings = chartSettings.toMetricChartSettings()
+
+        ToggleSection(
+            labelText = stringResource(R.string.data_view_configuration),
+            visibleState = isEditing,
+            onToggle = { expanded ->
+                if (!expanded) onResetEditStateToSaved()
+            }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.data_view_open_entries_default))
+                Checkbox(
+                    checked = openEntriesByDefault,
+                    onCheckedChange = { onOpenEntriesByDefaultChanged(it) }
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            SectionHeading(stringResource(R.string.data_view_graph_display_header))
+            EnumCycleRow(
+                label = stringResource(R.string.data_view_label_chart_type),
+                value = chartSettings.chartType
+            ) { onChartSettingsChanged(chartSettings.copy(chartType = it)) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.data_view_label_show_data_points))
+                Checkbox(
+                    checked = chartSettings.showDataPoints,
+                    onCheckedChange = {
+                        onChartSettingsChanged(chartSettings.copy(showDataPoints = it))
+                    }
+                )
+            }
+            EnumCycleRow(
+                label = stringResource(R.string.data_view_label_background),
+                value = chartSettings.backgroundStyle
+            ) { onChartSettingsChanged(chartSettings.copy(backgroundStyle = it)) }
+            Spacer(Modifier.height(8.dp))
+            SectionHeading(stringResource(R.string.data_view_record_types_header))
+            Spacer(Modifier.height(4.dp))
+            if (selectedDisplay.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.data_view_no_selected_metrics),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+            selectedDisplay.forEachIndexed { index, (selection, label) ->
+                val settings = selection.metricSettings ?: metricDefaults()
+                val fqn = selection.fqn
+                if (index > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(4.dp))
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onReplaceMetric(fqn) }
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            if (selectedSelections.size <= 1) {
+                                onShowDeleteViewConfirmation()
+                            } else {
+                                onSelectedSelectionsChanged(
+                                    selectedSelections.filterNot { it.fqn == fqn }
+                                )
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Delete,
+                            contentDescription = stringResource(R.string.data_view_remove_metric),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                EnumCycleRow(
+                    label = stringResource(R.string.data_view_label_aggregation),
+                    value = settings.aggregation
+                ) { newValue ->
+                    onSelectedSelectionsChanged(
+                        selectedSelections.map {
+                            if (it.fqn == selection.fqn) {
+                                it.copy(metricSettings = settings.copy(aggregation = newValue))
+                            } else it
+                        }
+                    )
+                }
+                EnumCycleRow(
+                    label = stringResource(R.string.data_view_label_time_window),
+                    value = settings.timeWindow
+                ) { newValue ->
+                    onSelectedSelectionsChanged(
+                        selectedSelections.map {
+                            if (it.fqn == selection.fqn) {
+                                it.copy(metricSettings = settings.copy(timeWindow = newValue))
+                            } else it
+                        }
+                    )
+                }
+                EnumCycleRow(
+                    label = stringResource(R.string.data_view_label_bucket_size),
+                    value = settings.bucketSize
+                ) { newValue ->
+                    onSelectedSelectionsChanged(
+                        selectedSelections.map {
+                            if (it.fqn == selection.fqn) {
+                                it.copy(metricSettings = settings.copy(bucketSize = newValue))
+                            } else it
+                        }
+                    )
+                }
+                EnumCycleRow(
+                    label = stringResource(R.string.data_view_label_y_axis),
+                    value = settings.yAxisMode
+                ) { newValue ->
+                    onSelectedSelectionsChanged(
+                        selectedSelections.map {
+                            if (it.fqn == selection.fqn) {
+                                it.copy(metricSettings = settings.copy(yAxisMode = newValue))
+                            } else it
+                        }
+                    )
+                }
+                EnumCycleRow(
+                    label = stringResource(R.string.data_view_label_smoothing),
+                    value = settings.smoothing
+                ) { newValue ->
+                    onSelectedSelectionsChanged(
+                        selectedSelections.map {
+                            if (it.fqn == selection.fqn) {
+                                it.copy(metricSettings = settings.copy(smoothing = newValue))
+                            } else it
+                        }
+                    )
+                }
+                EnumCycleRow(
+                    label = stringResource(R.string.data_view_label_units),
+                    value = settings.unitPreference
+                ) { newValue ->
+                    onSelectedSelectionsChanged(
+                        selectedSelections.map {
+                            if (it.fqn == selection.fqn) {
+                                it.copy(metricSettings = settings.copy(unitPreference = newValue))
+                            } else it
+                        }
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = {
+                    val newView = DataView(
+                        id = view.id,
+                        type = previewView.type,
+                        records = selectedSelections.distinctBy { it.fqn }.map { it.withDefaultSettings(chartSettings) },
+                        alwaysShowEntries = openEntriesByDefault,
+                        chartSettings = chartSettings
+                    )
+                    scope.launch { viewModel.updateView(newView) }
+                    isEditing.value = false
+                }) {
+                    Text(stringResource(R.string.data_view_save))
+                }
+                TextButton(onClick = {
+                    onResetEditStateToSaved()
+                    isEditing.value = false
+                }) {
+                    Text(stringResource(R.string.data_view_cancel))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider()
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onShowAddMetricDialog() }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(stringResource(R.string.data_view_add_metric), modifier = Modifier.weight(1f))
+                IconButton(onClick = { onShowAddMetricDialog() }) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = stringResource(R.string.data_view_add_metric),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GraphStatePlaceholder(
+    isLoading: Boolean,
+    message: String,
+    reserveLegendRows: Int
+) {
+    val axisColor: Color = MaterialTheme.colorScheme.outline
+    val gridColor: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+                    .padding(start = 72.dp, end = 8.dp, top = 8.dp, bottom = 8.dp)
+            ) {
+                val leftPad = 8.dp.toPx()
+                val rightPad = 8.dp.toPx()
+                val topPad = 12.dp.toPx()
+                val bottomPad = 24.dp.toPx()
+                val chartWidth = (size.width - leftPad - rightPad).coerceAtLeast(1f)
+                val chartHeight = (size.height - topPad - bottomPad).coerceAtLeast(1f)
+                val rows = 4
+                (0..rows).forEach { row ->
+                    val y = topPad + (chartHeight * row / rows)
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(leftPad, y),
+                        end = Offset(leftPad + chartWidth, y),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+                val columns = 5
+                (0..columns).forEach { column ->
+                    val x = leftPad + (chartWidth * column / columns)
+                    drawLine(
+                        color = gridColor,
+                        start = Offset(x, topPad),
+                        end = Offset(x, topPad + chartHeight),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+                drawLine(
+                    color = axisColor,
+                    start = Offset(leftPad, topPad + chartHeight),
+                    end = Offset(leftPad + chartWidth, topPad + chartHeight),
+                    strokeWidth = 1.dp.toPx()
+                )
+                drawLine(
+                    color = axisColor,
+                    start = Offset(leftPad, topPad),
+                    end = Offset(leftPad, topPad + chartHeight),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(" ", style = MaterialTheme.typography.labelSmall)
+            Text(" ", style = MaterialTheme.typography.labelSmall)
+        }
+        Column(modifier = Modifier.padding(top = 4.dp)) {
+            repeat(reserveLegendRows) {
+                Text(
+                    text = " ",
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun MetricOverTimeChart(
     seriesList: List<HealthDataModel.MetricSeries>,
@@ -384,20 +991,35 @@ private fun MetricOverTimeChart(
     val axisColor: Color = MaterialTheme.colorScheme.outline
     val gridColor: Color = MaterialTheme.colorScheme.outlineVariant
     val normalizedAxisColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
-    val seriesColors = listOf(
-        MaterialTheme.colorScheme.primary,
-        MaterialTheme.colorScheme.tertiary,
-        MaterialTheme.colorScheme.secondary,
-        Color(0xFF2E7D32),
-        Color(0xFFC62828),
-        Color(0xFF1565C0)
-    )
+    val isDarkTheme = isSystemInDarkTheme()
+    val seriesColors = if (isDarkTheme) {
+        listOf(
+            MaterialTheme.colorScheme.primary,
+            Color(0xFFD1B3FF),
+            Color(0xFFFFB74D),
+            Color(0xFF81C784),
+            Color(0xFF4FC3F7),
+            Color(0xFFE57373)
+        )
+    } else {
+        listOf(
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.tertiary,
+            MaterialTheme.colorScheme.secondary,
+            Color(0xFF2E7D32),
+            Color(0xFFC62828),
+            Color(0xFF1565C0)
+        )
+    }
     val labelFormatter = DateTimeFormatter.ofPattern("MMM d")
     val dateIndex = allDates.withIndex().associate { it.value to it.index }
     val useSeparateNormalization = seriesList.size > 1
-    val globalRange = seriesRangeFromPoints(allPoints, settings.yAxisMode)
+    val globalRange = seriesRangeFromPoints(
+        allPoints,
+        seriesList.firstOrNull()?.yAxisMode ?: YAxisMode.AUTO
+    )
     val perSeriesRanges = seriesList.map { series ->
-        seriesRangeFromPoints(series.points, settings.yAxisMode)
+        seriesRangeFromPoints(series.points, series.yAxisMode)
     }
     fun rangeFor(index: Int): ValueRange {
         return if (useSeparateNormalization) perSeriesRanges[index] else globalRange
@@ -569,12 +1191,11 @@ private fun MetricOverTimeChart(
     }
     Column(modifier = Modifier.padding(top = 4.dp)) {
         seriesList.forEachIndexed { index, series ->
-            val seriesPeak = series.points.maxOfOrNull { it.value } ?: 0.0
             Text(
                 stringResource(
                     R.string.data_view_peak_format,
                     "\u25A0 ${series.label}",
-                    seriesPeak.roundToInt(),
+                    formatAxisValue(series.peakValueInWindow),
                     series.unit?.let { " $it" } ?: ""
                 ),
                 color = seriesColors[index % seriesColors.size],
@@ -582,6 +1203,7 @@ private fun MetricOverTimeChart(
             )
         }
     }
+    Spacer(Modifier.height(14.dp))
 }
 
 private data class ValueRange(val min: Double, val max: Double)
@@ -652,6 +1274,21 @@ private fun unitSuffix(unit: String?): String {
     return if (unit.isNullOrBlank()) "" else " $unit"
 }
 
+private fun ChartSettings.toMetricChartSettings(): MetricChartSettings {
+    return MetricChartSettings(
+        aggregation = aggregation,
+        timeWindow = timeWindow,
+        bucketSize = bucketSize,
+        yAxisMode = yAxisMode,
+        smoothing = smoothing,
+        unitPreference = unitPreference
+    )
+}
+
+private fun RecordSelection.withDefaultSettings(chartSettings: ChartSettings): RecordSelection {
+    return if (metricSettings != null) this else copy(metricSettings = chartSettings.toMetricChartSettings())
+}
+
 private fun recordDetailsText(record: Record): String {
     val lines = mutableListOf<String>()
     lines += "Type: ${record::class.qualifiedName ?: record::class.simpleName ?: "Record"}"
@@ -670,6 +1307,94 @@ private fun recordDetailsText(record: Record): String {
         lines += methodLines
     }
     return lines.joinToString("\n")
+}
+
+private fun recordTimestampLabel(record: Record): String? {
+    val names = listOf("getTime", "getStartTime", "getEndTime")
+    val instant = names.asSequence().mapNotNull { method ->
+        runCatching { record.javaClass.getMethod(method).invoke(record) as? Instant }.getOrNull()
+    }.firstOrNull()
+        ?: runCatching { record.metadata.lastModifiedTime }.getOrNull()
+    return instant?.atZone(ZoneId.systemDefault())
+        ?.format(DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a"))
+}
+
+private fun recordPrimaryValueLabel(record: Record): String? {
+    val ignored = setOf(
+        "getClass",
+        "getMetadata",
+        "getZoneOffset",
+        "getStartZoneOffset",
+        "getEndZoneOffset",
+        "getTime",
+        "getStartTime",
+        "getEndTime"
+    )
+    val preferredFields = listOf(
+        "level", "weight", "distance", "energy", "count", "temperature", "rate", "speed"
+    )
+    data class Candidate(val valueText: String, val score: Int)
+    val candidates = mutableListOf<Candidate>()
+    record.javaClass.methods
+        .asSequence()
+        .filter { it.parameterCount == 0 && it.name.startsWith("get") && it.name !in ignored }
+        .forEach { getter ->
+            val field = getter.name.removePrefix("get")
+            val fieldLower = field.lowercase()
+            val baseScore = preferredFields.indexOfFirst { fieldLower.contains(it) }
+                .let { if (it >= 0) 100 - it else 10 }
+            val raw = runCatching { getter.invoke(record) }.getOrNull() ?: return@forEach
+            if (raw is Number) {
+                candidates += Candidate(
+                    valueText = formatAxisValue(raw.toDouble()),
+                    score = baseScore
+                )
+            } else {
+                val unitGetter = raw.javaClass.methods.firstOrNull { unitMethod ->
+                    unitMethod.parameterCount == 0 &&
+                        (unitMethod.name.startsWith("getIn") || unitMethod.name.startsWith("in")) &&
+                        (
+                            Number::class.java.isAssignableFrom(unitMethod.returnType) ||
+                                unitMethod.returnType == java.lang.Double.TYPE ||
+                                unitMethod.returnType == java.lang.Float.TYPE ||
+                                unitMethod.returnType == java.lang.Integer.TYPE ||
+                                unitMethod.returnType == java.lang.Long.TYPE
+                            )
+                }
+                if (unitGetter != null) {
+                    val value = runCatching { (unitGetter.invoke(raw) as? Number)?.toDouble() }.getOrNull()
+                    val unit = unitGetter.name.removePrefix("getIn").removePrefix("in")
+                        .replace(Regex("([a-z])([A-Z])"), "$1 $2")
+                    if (value != null) {
+                        candidates += Candidate(
+                            valueText = "${formatAxisValue(value)} $unit",
+                            score = baseScore + 20
+                        )
+                    }
+                } else {
+                    parseMeasurementFromText(raw.toString())?.let { measurement ->
+                        candidates += Candidate(
+                            valueText = if (measurement.unit.isNullOrBlank()) {
+                                formatAxisValue(measurement.value)
+                            } else {
+                                "${formatAxisValue(measurement.value)} ${measurement.unit}"
+                            },
+                            score = baseScore + 5
+                        )
+                    }
+                }
+            }
+        }
+    return candidates.maxByOrNull { it.score }?.valueText
+}
+
+private data class ParsedMeasurementText(val value: Double, val unit: String?)
+
+private fun parseMeasurementFromText(text: String): ParsedMeasurementText? {
+    val match = Regex("""^\s*([-+]?\d+(?:\.\d+)?)\s*([^\d].+)?\s*$""").find(text) ?: return null
+    val value = match.groupValues[1].toDoubleOrNull() ?: return null
+    val unit = match.groupValues.getOrNull(2)?.trim().orEmpty().ifBlank { null }
+    return ParsedMeasurementText(value, unit)
 }
 
 @Composable
@@ -729,10 +1454,13 @@ private fun SectionHeading(title: String) {
 fun ToggleSection(
     labelText: String,
     visibleState: MutableState<Boolean>,
+    onToggle: ((Boolean) -> Unit)? = null,
+    collapsible: Boolean = true,
+    showArrow: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val arrowRotation by animateFloatAsState(
-        targetValue = if (visibleState.value) 180f else 0f,
+        targetValue = if (visibleState.value) -180f else 0f,
         animationSpec = tween(durationMillis = 180),
         label = "toggle_arrow_rotation"
     )
@@ -741,22 +1469,30 @@ fun ToggleSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable(
+                    enabled = collapsible,
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
-                ) { visibleState.value = !visibleState.value }
+                ) {
+                    if (collapsible) {
+                        visibleState.value = !visibleState.value
+                        onToggle?.invoke(visibleState.value)
+                    }
+                }
                 .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(labelText, style = MaterialTheme.typography.titleMedium)
-            Icon(
-                imageVector = Icons.Rounded.KeyboardArrowDown,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(28.dp)
-                    .graphicsLayer { rotationZ = arrowRotation },
-                tint = MaterialTheme.colorScheme.onSurface
-            )
+            if (showArrow) {
+                Icon(
+                    imageVector = Icons.Rounded.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
         AnimatedVisibility(
             visible = visibleState.value,

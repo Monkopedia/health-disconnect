@@ -1,7 +1,9 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.records.BloodGlucoseRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
@@ -14,10 +16,12 @@ import androidx.lifecycle.viewModelScope
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.DataView
+import com.monkopedia.healthdisconnect.model.MetricChartSettings
 import com.monkopedia.healthdisconnect.model.SmoothingMode
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.RecordSelection
+import com.monkopedia.healthdisconnect.model.YAxisMode
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.Instant
@@ -27,68 +31,176 @@ import kotlin.reflect.KClass
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class HealthDataModel(app: Application) : AndroidViewModel(app) {
+    private data class CachedRecordState(
+        val data: MutableStateFlow<List<Record>?> = MutableStateFlow(null),
+        var loading: Boolean = false,
+        var lastRefreshTick: Int = Int.MIN_VALUE
+    )
+
     companion object {
+        private const val EXTRACTION_LOG_TAG = "HealthDisconnectExtract"
         const val MAX_CHART_SERIES = 3
+        private const val MAX_CACHED_RECORDS_PER_TYPE = 20_000
+        private val sharedMetricsWithData = MutableStateFlow<List<KClass<out Record>>?>(null)
+        private val sharedRecordCache = mutableMapOf<String, CachedRecordState>()
+        private val metricsLock = Any()
+        private var metricsLoading = false
+        private var metricsLastRefreshTick = Int.MIN_VALUE
     }
 
     val healthConnectClient by lazy {
         HealthConnectClient.getOrCreate(context)
     }
-    val metricsWithData = MutableStateFlow<List<KClass<out Record>>?>(null)
+    val metricsWithData: MutableStateFlow<List<KClass<out Record>>?> = sharedMetricsWithData
 
     init {
-        viewModelScope.launch {
-            refreshMetricsWithData()
-        }
+        scheduleMetricsRefresh()
+    }
+
+    fun collectMetricsWithData(refreshTick: Int = 0): Flow<List<KClass<out Record>>> {
+        scheduleMetricsRefresh(refreshTick)
+        return metricsWithData.filterNotNull()
     }
 
     suspend fun refreshMetricsWithData() {
-        val counts = coroutineScope {
-            PermissionsViewModel.CLASSES.map {
-                async {
-                    val records = healthConnectClient.readRecords(
-                        ReadRecordsRequest(
-                            it,
-                            TimeRangeFilter.before(Instant.now()),
-                            pageSize = 1
-                        )
-                    ).records
-                    it to records.isNotEmpty()
-                }
-            }.awaitAll()
+        val values = loadMetricsWithData()
+        synchronized(metricsLock) {
+            metricsWithData.value = values
+            metricsLastRefreshTick = maxOf(metricsLastRefreshTick, 0)
+            metricsLoading = false
         }
-        metricsWithData.value = counts.filter { it.second }.map { it.first }
     }
 
-    fun collectData(view: DataView, refreshTick: Int = 0): Flow<List<Record>> = flow {
-        @Suppress("UNUSED_VARIABLE")
-        val ignoredRefreshTick = refreshTick
+    private fun scheduleMetricsRefresh(refreshTick: Int = 0) {
+        val shouldRefresh = synchronized(metricsLock) {
+            val needsRefresh = metricsWithData.value == null || refreshTick > metricsLastRefreshTick
+            if (metricsLoading || !needsRefresh) {
+                false
+            } else {
+                metricsLoading = true
+                true
+            }
+        }
+        if (!shouldRefresh) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val values = loadMetricsWithData()
+            synchronized(metricsLock) {
+                metricsWithData.value = values
+                metricsLastRefreshTick = maxOf(metricsLastRefreshTick, refreshTick)
+                metricsLoading = false
+            }
+        }
+    }
+
+    private suspend fun loadMetricsWithData(): List<KClass<out Record>> {
+        val counts = withContext(Dispatchers.IO) {
+            coroutineScope {
+                PermissionsViewModel.CLASSES.map {
+                    async {
+                        val records = healthConnectClient.readRecords(
+                            ReadRecordsRequest(
+                                it,
+                                TimeRangeFilter.before(Instant.now()),
+                                pageSize = 1
+                            )
+                        ).records
+                        it to records.isNotEmpty()
+                    }
+                }.awaitAll()
+            }
+        }
+        return counts.filter { it.second }.map { it.first }
+    }
+
+    fun collectData(view: DataView, refreshTick: Int = 0): Flow<List<Record>> {
+        val key = cacheKey(view)
+        val cached = synchronized(sharedRecordCache) {
+            sharedRecordCache.getOrPut(key) { CachedRecordState() }
+        }
+        scheduleCacheLoad(view, cached, refreshTick)
+        return cached.data.filterNotNull()
+    }
+
+    private fun scheduleCacheLoad(view: DataView, cache: CachedRecordState, refreshTick: Int) {
+        val shouldRefresh = synchronized(sharedRecordCache) {
+            val needsRefresh = cache.data.value == null || refreshTick > cache.lastRefreshTick
+            if (cache.loading || !needsRefresh) {
+                false
+            } else {
+                cache.loading = true
+                true
+            }
+        }
+        if (!shouldRefresh) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val records = loadRecordsForView(view)
+            synchronized(sharedRecordCache) {
+                cache.data.value = records
+                cache.lastRefreshTick = maxOf(cache.lastRefreshTick, refreshTick)
+                cache.loading = false
+            }
+        }
+    }
+
+    private suspend fun loadRecordsForView(view: DataView): List<Record> {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
         val selections: List<KClass<out Record>> = view.records.mapNotNull { sel: RecordSelection ->
             typeMap[sel.fqn]
         }
         val now = Instant.now()
+        val windowStarts = view.records.map { selection ->
+            val settings = selection.metricSettings ?: metricDefaultsFromView(view)
+            windowStart(settings.timeWindow)
+        }
+        val earliestWindowStart = if (windowStarts.any { it == null }) {
+            null
+        } else {
+            windowStarts.filterNotNull().minOrNull()
+        }
+        val queryStart = earliestWindowStart ?: Instant.EPOCH
         val all = mutableListOf<Record>()
         for (cls in selections) {
             try {
-                all.addAll(readAllRecords(cls, now))
+                all.addAll(
+                    readRecordsInRange(
+                        cls = cls,
+                        start = queryStart,
+                        end = now,
+                        maxRecords = MAX_CACHED_RECORDS_PER_TYPE
+                    )
+                )
             } catch (_: Throwable) {
                 // Ignore errors per type to keep UI responsive
             }
         }
-        emit(all)
+        return all.sortedByDescending { recordTimestamp(it) ?: Instant.EPOCH }
     }
 
-    private suspend fun readAllRecords(
+    private fun cacheKey(view: DataView): String {
+        val recordsKey = view.records.map { it.fqn }.sorted().joinToString("|")
+        val windowsKey = view.records
+            .sortedBy { it.fqn }
+            .joinToString("|") {
+                val settings = it.metricSettings ?: metricDefaultsFromView(view)
+                "${it.fqn}:${settings.timeWindow}"
+            }
+        return "$recordsKey|windows=$windowsKey"
+    }
+
+    private suspend fun readRecordsInRange(
         cls: KClass<out Record>,
-        now: Instant,
+        start: Instant,
+        end: Instant,
+        maxRecords: Int,
         pageSize: Int = 500
     ): List<Record> {
         val all = mutableListOf<Record>()
@@ -97,13 +209,16 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
             val response = healthConnectClient.readRecords(
                 ReadRecordsRequest(
                     recordType = cls,
-                    timeRangeFilter = TimeRangeFilter.between(Instant.EPOCH, now),
+                    timeRangeFilter = TimeRangeFilter.between(start, end),
                     pageSize = pageSize,
                     pageToken = pageToken
                 )
             )
             @Suppress("UNCHECKED_CAST")
             all.addAll(response.records as List<Record>)
+            if (all.size >= maxRecords) {
+                return all.take(maxRecords)
+            }
             pageToken = response.pageToken
         } while (pageToken != null)
         return all
@@ -114,7 +229,9 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
     data class MetricSeries(
         val label: String,
         val unit: String?,
-        val points: List<MetricPoint>
+        val points: List<MetricPoint>,
+        val peakValueInWindow: Double = points.maxOfOrNull { it.value } ?: 0.0,
+        val yAxisMode: YAxisMode = YAxisMode.AUTO
     )
 
     fun aggregateMetricSeriesList(view: DataView, records: List<Record>): List<MetricSeries> {
@@ -134,31 +251,38 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
 
         return selectedByType
             .mapNotNull { (cls, label) ->
+            val selection = view.records.firstOrNull { it.fqn == cls.qualifiedName } ?: return@mapNotNull null
+            val metricSettings = selection.metricSettings ?: metricDefaultsFromView(view)
             val measurements = records
                 .asSequence()
                 .filter { cls.isInstance(it) }
-                .mapNotNull { extractMeasurement(it, settings.unitPreference) }
-                .filter { measurement -> windowStart == null || !measurement.timestamp.isBefore(windowStart) }
+                .mapNotNull { extractMeasurement(it, metricSettings.unitPreference) }
+                .filter { measurement ->
+                    val metricWindowStart = windowStart(metricSettings.timeWindow)
+                    metricWindowStart == null || !measurement.timestamp.isBefore(metricWindowStart)
+                }
                 .toList()
             if (measurements.isEmpty()) return@mapNotNull null
 
             val grouped = measurements.groupBy {
-                toBucketDate(it.timestamp.atZone(zoneId).toLocalDate(), settings.bucketSize)
+                toBucketDate(it.timestamp.atZone(zoneId).toLocalDate(), metricSettings.bucketSize)
             }
             val aggregated = grouped
                 .toSortedMap()
                 .map { (date, values) ->
-                    val value = aggregateValues(values.map { it.value }, settings.aggregation)
+                    val value = aggregateValues(values.map { it.value }, metricSettings.aggregation)
                     MetricPoint(date = date, value = value)
                 }
-            val points = when (settings.smoothing) {
+            val points = when (metricSettings.smoothing) {
                 SmoothingMode.OFF -> aggregated
                 SmoothingMode.MOVING_AVERAGE_3 -> smooth3(aggregated)
             }
             MetricSeries(
                 label = label,
                 unit = measurements.firstNotNullOfOrNull { it.unitLabel },
-                points = points
+                points = points,
+                peakValueInWindow = measurements.maxOf { it.value },
+                yAxisMode = metricSettings.yAxisMode
             )
         }.take(MAX_CHART_SERIES)
     }
@@ -170,60 +294,166 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
     private data class MetricMeasurement(
         val timestamp: Instant,
         val value: Double,
-        val unitLabel: String?
+        val unitLabel: String?,
+        val sourceField: String?
     )
 
     private data class CandidateMeasurement(
         val value: Double,
         val unitLabel: String?,
-        val score: Int
+        val score: Int,
+        val sourceField: String
     )
+
+    private data class ParsedMeasurement(
+        val value: Double,
+        val unitLabel: String?
+    )
+
+    private data class ReflectiveTypePreference(
+        val preferredFields: List<String>,
+        val fallbackToDurationMinutes: Boolean = false
+    )
+
+    private val reflectiveTypePreferencesByFqn = mapOf(
+        "androidx.health.connect.client.records.ActiveCaloriesBurnedRecord" to ReflectiveTypePreference(listOf("Energy", "Calories")),
+        "androidx.health.connect.client.records.BasalBodyTemperatureRecord" to ReflectiveTypePreference(listOf("Temperature")),
+        "androidx.health.connect.client.records.BasalMetabolicRateRecord" to ReflectiveTypePreference(listOf("BasalMetabolicRate", "Power")),
+        "androidx.health.connect.client.records.BloodGlucoseRecord" to ReflectiveTypePreference(listOf("Level", "Glucose")),
+        "androidx.health.connect.client.records.BloodPressureRecord" to ReflectiveTypePreference(listOf("Systolic", "Diastolic", "Pressure")),
+        "androidx.health.connect.client.records.BodyFatRecord" to ReflectiveTypePreference(listOf("Percentage", "Percent")),
+        "androidx.health.connect.client.records.BodyTemperatureRecord" to ReflectiveTypePreference(listOf("Temperature")),
+        "androidx.health.connect.client.records.BodyWaterMassRecord" to ReflectiveTypePreference(listOf("Mass", "Weight")),
+        "androidx.health.connect.client.records.BoneMassRecord" to ReflectiveTypePreference(listOf("Mass", "Weight")),
+        "androidx.health.connect.client.records.CervicalMucusRecord" to ReflectiveTypePreference(listOf("Appearance", "Sensation", "Type")),
+        "androidx.health.connect.client.records.CyclingPedalingCadenceRecord" to ReflectiveTypePreference(listOf("RevolutionsPerMinute", "Cadence", "Rate", "Rpm", "Samples")),
+        "androidx.health.connect.client.records.DistanceRecord" to ReflectiveTypePreference(listOf("Distance")),
+        "androidx.health.connect.client.records.ElevationGainedRecord" to ReflectiveTypePreference(listOf("Elevation", "Height", "Gain")),
+        "androidx.health.connect.client.records.ExerciseSessionRecord" to ReflectiveTypePreference(listOf("Duration", "ActiveTime"), fallbackToDurationMinutes = true),
+        "androidx.health.connect.client.records.FloorsClimbedRecord" to ReflectiveTypePreference(listOf("Floors", "Count")),
+        "androidx.health.connect.client.records.HeartRateRecord" to ReflectiveTypePreference(listOf("BeatsPerMinute", "Bpm", "Rate", "Samples")),
+        "androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord" to ReflectiveTypePreference(listOf("Rmssd", "Millis", "Variability")),
+        "androidx.health.connect.client.records.HeightRecord" to ReflectiveTypePreference(listOf("Height")),
+        "androidx.health.connect.client.records.HydrationRecord" to ReflectiveTypePreference(listOf("Volume", "Hydration")),
+        "androidx.health.connect.client.records.IntermenstrualBleedingRecord" to ReflectiveTypePreference(listOf("Type", "Flow", "Amount")),
+        "androidx.health.connect.client.records.LeanBodyMassRecord" to ReflectiveTypePreference(listOf("Mass", "Weight")),
+        "androidx.health.connect.client.records.MenstruationFlowRecord" to ReflectiveTypePreference(listOf("Flow", "Type", "Severity")),
+        "androidx.health.connect.client.records.MenstruationPeriodRecord" to ReflectiveTypePreference(listOf("Duration", "Length"), fallbackToDurationMinutes = true),
+        "androidx.health.connect.client.records.NutritionRecord" to ReflectiveTypePreference(listOf("Energy", "Calories", "Protein", "Carbohydrate", "Fat", "Sugar")),
+        "androidx.health.connect.client.records.OvulationTestRecord" to ReflectiveTypePreference(listOf("Result", "Type")),
+        "androidx.health.connect.client.records.OxygenSaturationRecord" to ReflectiveTypePreference(listOf("Percentage", "Saturation", "Percent")),
+        "androidx.health.connect.client.records.PowerRecord" to ReflectiveTypePreference(listOf("Power", "Watts", "Samples")),
+        "androidx.health.connect.client.records.RespiratoryRateRecord" to ReflectiveTypePreference(listOf("Rate", "Respiratory", "Breaths")),
+        "androidx.health.connect.client.records.RestingHeartRateRecord" to ReflectiveTypePreference(listOf("BeatsPerMinute", "Bpm", "Rate")),
+        "androidx.health.connect.client.records.SexualActivityRecord" to ReflectiveTypePreference(listOf("ProtectionUsed", "Type", "Result")),
+        "androidx.health.connect.client.records.SleepSessionRecord" to ReflectiveTypePreference(listOf("Duration", "Sleep"), fallbackToDurationMinutes = true),
+        "androidx.health.connect.client.records.SpeedRecord" to ReflectiveTypePreference(listOf("Speed", "MetersPerSecond", "Samples")),
+        "androidx.health.connect.client.records.StepsCadenceRecord" to ReflectiveTypePreference(listOf("Rate", "Cadence", "StepsPerMinute", "Samples")),
+        "androidx.health.connect.client.records.StepsRecord" to ReflectiveTypePreference(listOf("Count", "Steps")),
+        "androidx.health.connect.client.records.TotalCaloriesBurnedRecord" to ReflectiveTypePreference(listOf("Energy", "Calories")),
+        "androidx.health.connect.client.records.Vo2MaxRecord" to ReflectiveTypePreference(listOf("Vo2", "MillilitersPerMinuteKilogram", "MlPerMinPerKg")),
+        "androidx.health.connect.client.records.WeightRecord" to ReflectiveTypePreference(listOf("Weight", "Mass")),
+        "androidx.health.connect.client.records.WheelchairPushesRecord" to ReflectiveTypePreference(listOf("Count", "Pushes"))
+    )
+
+    private fun <T : Record, U> mappingLookup(
+        fieldName: String,
+        recordClass: KClass<T>,
+        valueField: (T) -> U,
+        imperialValue: (U) -> Double,
+        imperialUnit: String,
+        metricValue: (U) -> Double,
+        metricUnit: String,
+        autoPreference: UnitPreference = UnitPreference.METRIC
+    ): Pair<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement> {
+        val extractor: (Record, UnitPreference, Instant) -> MetricMeasurement = { record, preference, timestamp ->
+            val typedRecord = record as T
+            val value = valueField(typedRecord)
+            val useImperial = when (preference) {
+                UnitPreference.IMPERIAL -> true
+                UnitPreference.METRIC -> false
+                UnitPreference.AUTO -> autoPreference == UnitPreference.IMPERIAL
+            }
+            MetricMeasurement(
+                timestamp = timestamp,
+                value = if (useImperial) imperialValue(value) else metricValue(value),
+                unitLabel = if (useImperial) imperialUnit else metricUnit,
+                sourceField = fieldName
+            )
+        }
+        return recordClass to extractor
+    }
+
+    private fun <T : Record> scalarMappingLookup(
+        fieldName: String,
+        recordClass: KClass<T>,
+        valueField: (T) -> Double,
+        unitLabel: String? = null
+    ): Pair<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement> {
+        val extractor: (Record, UnitPreference, Instant) -> MetricMeasurement = { record, _, timestamp ->
+            MetricMeasurement(
+                timestamp = timestamp,
+                value = valueField(record as T),
+                unitLabel = unitLabel,
+                sourceField = fieldName
+            )
+        }
+        return recordClass to extractor
+    }
+
+    private val staticExtractors: Map<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement> =
+        mapOf(
+            mappingLookup(
+                fieldName = "Weight",
+                recordClass = WeightRecord::class,
+                valueField = WeightRecord::weight,
+                imperialValue = { it.inPounds },
+                imperialUnit = "pounds",
+                metricValue = { it.inKilograms },
+                metricUnit = "kilograms"
+            ),
+            mappingLookup(
+                fieldName = "Distance",
+                recordClass = DistanceRecord::class,
+                valueField = DistanceRecord::distance,
+                imperialValue = { it.inMiles },
+                imperialUnit = "miles",
+                metricValue = { it.inKilometers },
+                metricUnit = "kilometers"
+            ),
+            mappingLookup(
+                fieldName = "Level",
+                recordClass = BloodGlucoseRecord::class,
+                valueField = BloodGlucoseRecord::level,
+                imperialValue = { it.inMilligramsPerDeciliter },
+                imperialUnit = "mg/dL",
+                metricValue = { it.inMillimolesPerLiter },
+                metricUnit = "mmol/L"
+            ),
+            mappingLookup(
+                fieldName = "Energy",
+                recordClass = TotalCaloriesBurnedRecord::class,
+                valueField = TotalCaloriesBurnedRecord::energy,
+                imperialValue = { it.inKilocalories },
+                imperialUnit = "kilocalories",
+                metricValue = { it.inKilojoules },
+                metricUnit = "kilojoules",
+                autoPreference = UnitPreference.IMPERIAL
+            ),
+            scalarMappingLookup(
+                fieldName = "Count",
+                recordClass = StepsRecord::class,
+                valueField = { it.count.toDouble() },
+                unitLabel = "count"
+            )
+        )
 
     private fun extractMeasurement(record: Record, unitPreference: UnitPreference): MetricMeasurement? {
         val timestamp = recordTimestamp(record) ?: return null
-
-        // Prefer strongly-typed extraction for common metrics so values like weight are always graphable.
-        when (record) {
-            is WeightRecord -> {
-                val value = when (unitPreference) {
-                    UnitPreference.IMPERIAL -> record.weight.inPounds
-                    else -> record.weight.inKilograms
-                }
-                val unit = if (unitPreference == UnitPreference.IMPERIAL) "pounds" else "kilograms"
-                return MetricMeasurement(
-                    timestamp = timestamp,
-                    value = value,
-                    unitLabel = unit
-                )
-            }
-            is DistanceRecord -> {
-                val inKilometers = when (unitPreference) {
-                    UnitPreference.IMPERIAL -> record.distance.inMiles
-                    else -> record.distance.inKilometers
-                }
-                val unit = if (unitPreference == UnitPreference.IMPERIAL) "miles" else "kilometers"
-                return MetricMeasurement(timestamp = timestamp, value = inKilometers, unitLabel = unit)
-            }
-            is StepsRecord -> {
-                return MetricMeasurement(
-                    timestamp = timestamp,
-                    value = record.count.toDouble(),
-                    unitLabel = "count"
-                )
-            }
-            is TotalCaloriesBurnedRecord -> {
-                val value = when (unitPreference) {
-                    UnitPreference.METRIC -> record.energy.inKilojoules
-                    else -> record.energy.inKilocalories
-                }
-                val unit = if (unitPreference == UnitPreference.METRIC) "kilojoules" else "kilocalories"
-                return MetricMeasurement(
-                    timestamp = timestamp,
-                    value = value,
-                    unitLabel = unit
-                )
-            }
+        staticExtractors[record::class]?.let { extractor ->
+            return extractor(record, unitPreference, timestamp)
         }
+        val typePreference = reflectiveTypePreferencesByFqn[record::class.qualifiedName]
 
         val methods = record.javaClass.methods
             .filter { it.parameterCount == 0 && it.name.startsWith("get") }
@@ -233,33 +463,102 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
         methods.forEach { method ->
             val raw = runCatching { method.invoke(record) }.getOrNull() ?: return@forEach
             val methodName = method.name.removePrefix("get")
+            var addedUnitCandidate = false
 
             (raw as? Number)?.toDouble()?.let { value ->
                 candidates += CandidateMeasurement(
                     value = value,
                     unitLabel = null,
-                    score = fieldScore(methodName)
+                    score = fieldScore(methodName) + preferredFieldScore(methodName, typePreference),
+                    sourceField = methodName
                 )
             }
             val unitGetters = raw.javaClass.methods.filter { candidate ->
                 candidate.parameterCount == 0 &&
-                    candidate.name.startsWith("getIn") &&
-                    Number::class.java.isAssignableFrom(candidate.returnType)
+                    (candidate.name.startsWith("getIn") || candidate.name.startsWith("in")) &&
+                    isNumericType(candidate.returnType)
             }
             unitGetters.forEach { unitGetter ->
-                val unitRaw = unitGetter.name.removePrefix("getIn")
+                val unitRaw = unitGetter.name
+                    .removePrefix("getIn")
+                    .removePrefix("in")
                 val value = runCatching { (unitGetter.invoke(raw) as? Number)?.toDouble() }.getOrNull()
                     ?: return@forEach
                 candidates += CandidateMeasurement(
                     value = value,
                     unitLabel = normalizeUnitLabel(unitRaw),
-                    score = unitScore(unitRaw, unitPreference) + fieldScore(methodName)
+                    score = unitScore(unitRaw, unitPreference, value) + fieldScore(methodName) + preferredFieldScore(methodName, typePreference),
+                    sourceField = methodName
                 )
+                addedUnitCandidate = true
+            }
+            if (raw is Collection<*> && raw.isNotEmpty()) {
+                val samples = raw.filterNotNull().take(50)
+                if (samples.isNotEmpty()) {
+                    val sampleMethods = samples.first().javaClass.methods.filter { sampleMethod ->
+                        sampleMethod.parameterCount == 0 &&
+                            sampleMethod.name.startsWith("get") &&
+                            isNumericType(sampleMethod.returnType)
+                    }
+                    sampleMethods.forEach { sampleMethod ->
+                        val sampleName = sampleMethod.name.removePrefix("get")
+                        val values = samples.mapNotNull { sample ->
+                            runCatching { (sampleMethod.invoke(sample) as? Number)?.toDouble() }.getOrNull()
+                        }
+                        if (values.isNotEmpty()) {
+                            val mean = values.average()
+                            candidates += CandidateMeasurement(
+                                value = mean,
+                                unitLabel = null,
+                                score = fieldScore(methodName) + fieldScore(sampleName) +
+                                    preferredFieldScore(methodName, typePreference) + preferredFieldScore(sampleName, typePreference),
+                                sourceField = "$methodName.$sampleName"
+                            )
+                        }
+                    }
+                }
+            }
+            if (!addedUnitCandidate) {
+                parseMeasurementFromString(raw.toString())?.let { parsed ->
+                    candidates += CandidateMeasurement(
+                        value = parsed.value,
+                        unitLabel = parsed.unitLabel,
+                        score = unitScore(parsed.unitLabel ?: "", unitPreference, parsed.value) +
+                            fieldScore(methodName) + preferredFieldScore(methodName, typePreference) + 3,
+                        sourceField = methodName
+                    )
+                }
             }
         }
 
-        val best = candidates.maxByOrNull { it.score } ?: return null
-        return MetricMeasurement(timestamp = timestamp, value = best.value, unitLabel = best.unitLabel)
+        val prioritized = candidates
+            .let { list ->
+                // Prefer values with explicit units when available.
+                val withUnits = list.filter { !it.unitLabel.isNullOrBlank() }
+                if (withUnits.isNotEmpty()) withUnits else list
+            }
+        val best = prioritized.maxByOrNull { it.score }
+        if (best == null && typePreference?.fallbackToDurationMinutes == true) {
+            val start = runCatching { record.javaClass.getMethod("getStartTime").invoke(record) as? Instant }.getOrNull()
+            val end = runCatching { record.javaClass.getMethod("getEndTime").invoke(record) as? Instant }.getOrNull()
+            if (start != null && end != null && !end.isBefore(start)) {
+                val minutes = ChronoUnit.SECONDS.between(start, end).toDouble() / 60.0
+                return MetricMeasurement(
+                    timestamp = timestamp,
+                    value = minutes,
+                    unitLabel = "minutes",
+                    sourceField = "Duration"
+                )
+            }
+        }
+        if (best == null) return null
+        logMeasurementChoice(record, unitPreference, best)
+        return MetricMeasurement(
+            timestamp = timestamp,
+            value = best.value,
+            unitLabel = best.unitLabel,
+            sourceField = best.sourceField
+        )
     }
 
     private fun windowStart(timeWindow: TimeWindow): Instant? {
@@ -271,6 +570,17 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
             TimeWindow.YEAR_1 -> now.minus(365, ChronoUnit.DAYS)
             TimeWindow.ALL -> null
         }
+    }
+
+    private fun metricDefaultsFromView(view: DataView): MetricChartSettings {
+        return MetricChartSettings(
+            aggregation = view.chartSettings.aggregation,
+            timeWindow = view.chartSettings.timeWindow,
+            bucketSize = view.chartSettings.bucketSize,
+            yAxisMode = view.chartSettings.yAxisMode,
+            smoothing = view.chartSettings.smoothing,
+            unitPreference = view.chartSettings.unitPreference
+        )
     }
 
     private fun toBucketDate(date: LocalDate, bucketSize: BucketSize): LocalDate {
@@ -301,26 +611,50 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun unitScore(rawUnit: String, unitPreference: UnitPreference): Int {
+    private fun unitScore(rawUnit: String, unitPreference: UnitPreference, value: Double): Int {
         val unit = rawUnit.lowercase()
         val imperial = listOf(
             "mile", "foot", "feet", "inch", "yard",
-            "pound", "ounce", "fahrenheit", "fluidounce", "gallon", "cup", "calorie"
+            "pound", "ounce", "fahrenheit", "fluidounce", "gallon", "cup", "calorie",
+            "deciliter"
         )
         val metric = listOf(
             "meter", "metre", "kilometer", "centimeter", "millimeter",
-            "gram", "kilogram", "celsius", "joule", "liter", "litre", "milliliter"
+            "gram", "kilogram", "celsius", "joule", "liter", "litre", "milliliter",
+            "mole", "millimole"
         )
         val base = when {
             imperial.any(unit::contains) -> 2
             metric.any(unit::contains) -> 2
             else -> 1
         }
-        return when (unitPreference) {
-            UnitPreference.AUTO -> base
-            UnitPreference.METRIC -> if (metric.any(unit::contains)) 10 else base
-            UnitPreference.IMPERIAL -> if (imperial.any(unit::contains)) 10 else base
+        val preferenceBoost = when (unitPreference) {
+            UnitPreference.AUTO -> 0
+            UnitPreference.METRIC -> if (metric.any(unit::contains)) 8 else 0
+            UnitPreference.IMPERIAL -> if (imperial.any(unit::contains)) 8 else 0
         }
+        val concentrationBoost = when {
+            unit.contains("millimolesperliter") -> when (unitPreference) {
+                UnitPreference.IMPERIAL -> 2
+                else -> 8
+            }
+            unit.contains("milligramsperdeciliter") -> when (unitPreference) {
+                UnitPreference.METRIC -> 2
+                else -> 8
+            }
+            // Prefer human-scaled subunits when both base and milli forms exist.
+            unit.contains("molesperliter") -> -8
+            unit.contains("gramsperliter") -> -3
+            else -> 0
+        }
+        val magnitudePenalty = when {
+            value == 0.0 -> 0
+            kotlin.math.abs(value) < 0.01 -> -8
+            kotlin.math.abs(value) < 0.1 -> -4
+            kotlin.math.abs(value) > 1_000_000 -> -4
+            else -> 0
+        }
+        return base + preferenceBoost + concentrationBoost + magnitudePenalty
     }
 
     private fun fieldScore(rawField: String): Int {
@@ -328,18 +662,62 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
         val highSignal = listOf(
             "value", "count", "energy", "distance", "mass",
             "temperature", "rate", "speed", "power", "vo2",
-            "systolic", "diastolic", "glucose", "saturation", "cadence"
+            "systolic", "diastolic", "glucose", "saturation", "cadence", "level"
+        )
+        val lowSignal = listOf(
+            "meal", "relation", "source", "specimen", "type", "status"
         )
         return when {
             highSignal.any(field::contains) -> 4
+            lowSignal.any(field::contains) -> -8
             field in setOf("time", "starttime", "endtime", "metadata") -> -10
             else -> 0
         }
     }
 
+    private fun preferredFieldScore(
+        rawField: String,
+        preference: ReflectiveTypePreference?
+    ): Int {
+        if (preference == null) return 0
+        val field = rawField.lowercase()
+        return if (preference.preferredFields.any { token -> field.contains(token.lowercase()) }) 18 else 0
+    }
+
     private fun normalizeUnitLabel(rawUnit: String): String {
         val spaced = rawUnit.replace(Regex("([a-z])([A-Z])"), "$1 $2")
         return spaced.lowercase()
+    }
+
+    private fun parseMeasurementFromString(text: String): ParsedMeasurement? {
+        // Handles unit wrappers rendered like "72.3 kg" or "5.9 mmol/L".
+        val match = Regex("""^\s*([-+]?\d+(?:\.\d+)?)\s*([^\d].+)?\s*$""").find(text) ?: return null
+        val value = match.groupValues[1].toDoubleOrNull() ?: return null
+        val unit = match.groupValues.getOrNull(2)?.trim().orEmpty().ifBlank { null }
+        return ParsedMeasurement(value = value, unitLabel = unit)
+    }
+
+    private fun isNumericType(type: Class<*>): Boolean {
+        return Number::class.java.isAssignableFrom(type) ||
+            type == java.lang.Double.TYPE ||
+            type == java.lang.Float.TYPE ||
+            type == java.lang.Integer.TYPE ||
+            type == java.lang.Long.TYPE ||
+            type == java.lang.Short.TYPE ||
+            type == java.lang.Byte.TYPE
+    }
+
+    private fun logMeasurementChoice(
+        record: Record,
+        unitPreference: UnitPreference,
+        best: CandidateMeasurement
+    ) {
+        val cls = record::class.qualifiedName ?: record::class.simpleName ?: "Record"
+        if (!cls.contains("bloodglucose", ignoreCase = true)) return
+        Log.d(
+            EXTRACTION_LOG_TAG,
+            "record=$cls field=${best.sourceField} unit=${best.unitLabel ?: "none"} value=${best.value} pref=$unitPreference score=${best.score}"
+        )
     }
 
     private fun recordTimestamp(record: Record): Instant? {

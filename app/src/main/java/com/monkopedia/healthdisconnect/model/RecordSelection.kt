@@ -5,6 +5,12 @@ import kotlin.reflect.KClass
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class RecordSelection(val fqn: String) {
-    constructor(fqn: KClass<out Record>) : this(fqn.qualifiedName ?: error("Class missing fqn"))
+data class RecordSelection(
+    val fqn: String,
+    val metricSettings: MetricChartSettings? = null
+) {
+    constructor(fqn: KClass<out Record>) : this(
+        fqn.qualifiedName ?: error("Class missing fqn"),
+        MetricChartSettings()
+    )
 }

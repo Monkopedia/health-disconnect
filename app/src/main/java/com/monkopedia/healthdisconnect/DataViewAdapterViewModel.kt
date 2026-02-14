@@ -135,6 +135,17 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
         )
     }
 
+    suspend fun renameView(id: Int, name: String) {
+        if (name.isBlank()) return
+        infoDao.updateName(id, name.trim())
+    }
+
+    suspend fun deleteView(id: Int) {
+        viewDao.deleteById(id)
+        infoDao.deleteById(id)
+        flows.value = flows.value - id
+    }
+
     private fun createDataView(id: Int): Flow<DataView> =
         viewDao.dataView(id).map { entity ->
             val records = Json.decodeFromString(

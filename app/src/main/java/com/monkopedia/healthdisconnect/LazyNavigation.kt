@@ -15,12 +15,24 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
+import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+private object Routes {
+    const val Views = "views"
+    const val Settings = "settings"
+    const val EntriesPattern = "entries/{viewId}"
+    fun entries(viewId: Int) = "entries/$viewId"
+}
+
 @Composable
 fun LazyNavigation(viewModel: LazyNavigationModel = viewModel()) {
-    val showingSettings by viewModel.isShowingSettings.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isShowingIntro by viewModel.isShowingIntro.collectAsStateWithLifecycle()
     if (isLoading) {
@@ -30,12 +42,27 @@ fun LazyNavigation(viewModel: LazyNavigationModel = viewModel()) {
             viewModel.dismissIntro()
         }
     } else {
+        val navController = rememberNavController()
         PermissionsRoot {
-            if (showingSettings) {
-                SettingsScreen()
-            } else {
-                DataViewAdapter {
-                    viewModel.setShowingSettings(true)
+            NavHost(navController = navController, startDestination = Routes.Views) {
+                composable(Routes.Views) {
+                    DataViewAdapter(
+                        showSettings = { navController.navigate(Routes.Settings) },
+                        onOpenEntries = { viewId -> navController.navigate(Routes.entries(viewId)) }
+                    )
+                }
+                composable(Routes.Settings) {
+                    SettingsScreen()
+                }
+                composable(
+                    route = Routes.EntriesPattern,
+                    arguments = listOf(navArgument("viewId") { type = NavType.IntType })
+                ) { backStackEntry ->
+                    val viewId = backStackEntry.arguments?.getInt("viewId") ?: return@composable
+                    EntriesRouteScreen(
+                        viewId = viewId,
+                        onBack = { navController.popBackStack() }
+                    )
                 }
             }
         }
@@ -45,7 +72,6 @@ fun LazyNavigation(viewModel: LazyNavigationModel = viewModel()) {
 class LazyNavigationModel(app: Application, private val savedStateHandle: SavedStateHandle) :
     AndroidViewModel(app) {
     private val dataStore by lazy { context.navigationDataStore }
-    val isShowingSettings = savedStateHandle.getStateFlow("is_showing_settings", false)
     val isLoading = savedStateHandle.getStateFlow("is_loading", true)
     val isShowingIntro = savedStateHandle.getStateFlow("is_showing_intro", false)
 
@@ -54,10 +80,6 @@ class LazyNavigationModel(app: Application, private val savedStateHandle: SavedS
             savedStateHandle["is_showing_intro"] = dataStore.data.first()[hasDismissedIntro] != true
             savedStateHandle["is_loading"] = false
         }
-    }
-
-    fun setShowingSettings(showing: Boolean) {
-        savedStateHandle["is_showing_settings"] = showing
     }
 
     fun dismissIntro() {
