@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -32,6 +33,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -498,6 +501,11 @@ private fun LazyListScope.entriesSection(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
             )
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary
+            )
         }
         if (data != null && data.size > MAX_VISIBLE_ENTRIES) {
             Text(
@@ -572,6 +580,9 @@ private fun EntriesScreen(
     onEntrySelected: (Record) -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
+    val copiedMessage = stringResource(R.string.data_view_entry_copied)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -606,6 +617,9 @@ private fun EntriesScreen(
                         .fillMaxWidth()
                         .clickable {
                             clipboardManager.setText(AnnotatedString(recordDetailsText(record)))
+                            scope.launch {
+                                snackbarHostState.showSnackbar(message = copiedMessage)
+                            }
                             onEntrySelected(record)
                         }
                         .padding(vertical = 6.dp)
@@ -639,6 +653,7 @@ private fun EntriesScreen(
                 HorizontalDivider()
             }
         }
+        SnackbarHost(hostState = snackbarHostState)
     }
 }
 

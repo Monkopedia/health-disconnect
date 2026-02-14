@@ -26,6 +26,7 @@
     <string name="data_view_view_entries">View entries</string>
     <string name="data_view_back">Back</string>
     <string name="data_view_entries_for">Entries - %1$s</string>
+    <string name="data_view_entry_copied">Entry details copied</string>
     <string name="data_view_configuration">View Configuration</string>
     <string name="data_view_open_entries_default">Open entries by default</string>
     <string name="data_view_graph_display_header">Graph Display</string>
