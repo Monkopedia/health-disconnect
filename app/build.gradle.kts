@@ -204,3 +204,9 @@ tasks.register("allTests") {
 tasks.matching { it.name == "testReleaseUnitTest" }.configureEach {
     (this as? Test)?.exclude("**/DataViewHeaderInteractionTest.class")
 }
+
+kapt {
+    arguments {
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+}
