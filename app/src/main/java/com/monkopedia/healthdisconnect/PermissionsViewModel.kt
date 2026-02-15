@@ -62,7 +62,10 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 
-class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
+class PermissionsViewModel(
+    context: Application,
+    val healthConnectClient: HealthConnectClient
+) : AndroidViewModel(context) {
 
     private val providerPackageName = "com.google.android.apps.healthdata"
     val availabilityStatus: Int
@@ -84,9 +87,6 @@ class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
         )
     }
 
-    val healthConnectClient by lazy {
-        HealthConnectClient.getOrCreate(context)
-    }
     private var ignoredPermissions = MutableStateFlow(false)
     private var checkTrigger = MutableSharedFlow<Unit>()
     val grantedPermissions: Flow<Set<String>>

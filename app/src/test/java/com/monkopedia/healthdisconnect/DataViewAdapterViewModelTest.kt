@@ -213,6 +213,11 @@ class DataViewAdapterViewModelTest {
     }
 
     private fun dataViewAdapterViewModel(): DataViewAdapterViewModel {
-        return DataViewAdapterViewModel(app, SavedStateHandle())
+        return DataViewAdapterViewModel(
+            app = app,
+            savedStateHandle = SavedStateHandle(),
+            dataViewDao = viewDao,
+            dataViewInfoDao = infoDao
+        )
     }
 }

@@ -43,7 +43,10 @@ class PermissionsViewModelTest {
         every { HealthConnectClient.Companion.getOrCreate(any()) } returns client
         coEvery { permissionController.getGrantedPermissions() } returns emptySet()
 
-        val permissionsViewModel = PermissionsViewModel(app)
+        val permissionsViewModel = PermissionsViewModel(
+            context = app,
+            healthConnectClient = client
+        )
         assertEquals(true, permissionsViewModel.needsPermissions.first())
 
         permissionsViewModel.ignorePermissions()
@@ -71,7 +74,10 @@ class PermissionsViewModelTest {
             }
         }
 
-        val permissionsViewModel = PermissionsViewModel(app)
+        val permissionsViewModel = PermissionsViewModel(
+            context = app,
+            healthConnectClient = client
+        )
         val emissions = mutableListOf<Set<String>>()
         val collector = async {
             permissionsViewModel.grantedPermissions.take(2).collect {

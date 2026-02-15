@@ -13,6 +13,8 @@ import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataViewInfo
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
+import com.monkopedia.healthdisconnect.room.DataViewDao
+import com.monkopedia.healthdisconnect.room.DataViewInfoDao
 import kotlin.reflect.KClass
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,19 +28,18 @@ import kotlinx.serialization.json.Json
 import com.monkopedia.healthdisconnect.room.DataViewEntity
 import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
 
-class DataViewAdapterViewModel(app: Application, private val savedStateHandle: SavedStateHandle) :
-    AndroidViewModel(app) {
+class DataViewAdapterViewModel(
+    app: Application,
+    private val savedStateHandle: SavedStateHandle,
+    private val dataViewDao: DataViewDao,
+    private val dataViewInfoDao: DataViewInfoDao
+) : AndroidViewModel(app) {
 
     private val context = getApplication<Application>()
     private val json = Json
 
-    // Room database
-    private val db by lazy { com.monkopedia.healthdisconnect.room.AppDatabase.getInstance(context) }
-    private val infoDao by lazy { db.dataViewInfoDao() }
-    private val viewDao by lazy { db.dataViewDao() }
-
     // Expose DataViewInfoList as Flow to match existing consumers
-    val dataViews: Flow<DataViewInfoList?> = infoDao.allOrdered().map { list ->
+    val dataViews: Flow<DataViewInfoList?> = dataViewInfoDao.allOrdered().map { list ->
         val map = list.associate { it.id to com.monkopedia.healthdisconnect.model.DataViewInfo(it.id, it.name) }
         val ordering = list.map { it.id }
         DataViewInfoList(map, ordering)
@@ -56,14 +57,14 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
         // One-time migration from DataStore to Room if DB is empty
         viewModelScope.launch {
             try {
-                val hasData = (infoDao.count() > 0) || (infoDao.viewCount() > 0)
+                val hasData = (dataViewInfoDao.count() > 0) || (dataViewInfoDao.viewCount() > 0)
                 if (!hasData) {
                     val dsInfo = context.dataViewInfoDataStore.data.first()
                     val dsViews = context.dataViewDataStore.data.first()
                     dsInfo.ordering.forEachIndexed { index, id ->
                         val info = dsInfo.dataViews[id]
                         if (info != null) {
-                            infoDao.insert(
+                            dataViewInfoDao.insert(
                                 com.monkopedia.healthdisconnect.room.DataViewInfoEntity(
                                     id = info.id,
                                     name = info.name,
@@ -76,7 +77,7 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
                             val recJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), view.records)
                             val settingsJson =
                                 Json.encodeToString(ChartSettings.serializer(), view.chartSettings)
-                            viewDao.insert(
+                            dataViewDao.insert(
                                 com.monkopedia.healthdisconnect.room.DataViewEntity(
                                     id = view.id,
                                     type = view.type.name,
@@ -94,12 +95,13 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
     }
 
     suspend fun createView(cls: KClass<out Record>) {
-        val nextOrder = (infoDao.maxOrdering() ?: 0) + 1
+        val maxOrdering = dataViewInfoDao.maxOrdering() ?: 0
+        val nextOrder = maxOrdering + 1
         val newId = nextOrder
         val name = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: "Record"
         val recordsJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(com.monkopedia.healthdisconnect.model.RecordSelection(cls)))
         val settingsJson = Json.encodeToString(ChartSettings.serializer(), ChartSettings())
-        viewDao.insert(
+        dataViewDao.insert(
             DataViewEntity(
                 id = newId,
                 type = com.monkopedia.healthdisconnect.model.ViewType.CHART.name,
@@ -107,7 +109,7 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
                 settingsJson = settingsJson
             )
         )
-        infoDao.insert(DataViewInfoEntity(newId, name, nextOrder))
+        dataViewInfoDao.insert(DataViewInfoEntity(newId, name, nextOrder))
     }
 
     fun dataView(id: Int): Flow<DataView> = flows.updateAndGet {
@@ -122,7 +124,7 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
             view.records
         )
         val settingsJson = Json.encodeToString(ChartSettings.serializer(), view.chartSettings)
-        viewDao.insert(
+        dataViewDao.insert(
             DataViewEntity(
                 id = view.id,
                 type = view.type.name,
@@ -134,17 +136,17 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
 
     suspend fun renameView(id: Int, name: String) {
         if (name.isBlank()) return
-        infoDao.updateName(id, name.trim())
+        dataViewInfoDao.updateName(id, name.trim())
     }
 
     suspend fun deleteView(id: Int) {
-        viewDao.deleteById(id)
-        infoDao.deleteById(id)
+        dataViewDao.deleteById(id)
+        dataViewInfoDao.deleteById(id)
         flows.value = flows.value - id
     }
 
     private fun createDataView(id: Int): Flow<DataView> =
-        viewDao.dataView(id).map { entity ->
+        dataViewDao.dataView(id).map { entity ->
             val records = Json.decodeFromString(
                 kotlinx.serialization.builtins.ListSerializer(
                     com.monkopedia.healthdisconnect.model.RecordSelection.serializer()
