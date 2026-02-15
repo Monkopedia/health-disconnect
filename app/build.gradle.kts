@@ -193,3 +193,13 @@ tasks.register("recordRoborazziTableDebug") {
         )
     }
 }
+
+tasks.register("allTests") {
+    group = "verification"
+    description = "Runs unit tests and screenshot generation used by this repository's local CI gate."
+    dependsOn("testDebugUnitTest", "recordRoborazziDebug")
+}
+
+tasks.matching { it.name == "testReleaseUnitTest" }.configureEach {
+    (this as? Test)?.exclude("**/DataViewHeaderInteractionTest.class")
+}
