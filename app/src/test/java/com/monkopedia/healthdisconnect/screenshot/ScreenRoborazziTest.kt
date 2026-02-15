@@ -266,6 +266,25 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun dataViewAdapterHeaderPagerOffset65ThreePagesScreen() {
+        val viewModel = mockDataViewAdapterWithViews(
+            infos = listOf(
+                DataViewInfo(id = 1, name = "Steps"),
+                DataViewInfo(id = 2, name = "Weight"),
+                DataViewInfo(id = 3, name = "Sleep")
+            )
+        )
+        captureScreen("data_view_adapter_header_offset_65_three_pages") {
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                showSettings = {},
+                initialPage = 1,
+                initialPageOffsetFraction = -0.35f
+            )
+        }
+    }
+
+    @Test
     fun dataViewAdapterHeaderPagerLongTitles() {
         val viewModel = mockDataViewAdapterWithViews(
             infos = listOf(
