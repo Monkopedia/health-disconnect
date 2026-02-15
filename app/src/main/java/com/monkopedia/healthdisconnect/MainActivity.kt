@@ -13,10 +13,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
+import com.monkopedia.healthdisconnect.ui.theme.resolveDarkTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,11 +27,7 @@ class MainActivity : ComponentActivity() {
             val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle(
                 initialValue = AppThemeMode.SYSTEM
             )
-            val darkTheme = when (themeMode) {
-                AppThemeMode.SYSTEM -> isSystemInDarkTheme()
-                AppThemeMode.DARK -> true
-                AppThemeMode.LIGHT -> false
-            }
+            val darkTheme = resolveDarkTheme(themeMode)
             HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {

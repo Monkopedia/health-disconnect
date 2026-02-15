@@ -13,10 +13,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
+import com.monkopedia.healthdisconnect.ui.theme.resolveDarkTheme
 
 public class PermissionsRationaleActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,11 +27,7 @@ public class PermissionsRationaleActivity : ComponentActivity() {
             val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle(
                 initialValue = AppThemeMode.SYSTEM
             )
-            val darkTheme = when (themeMode) {
-                AppThemeMode.SYSTEM -> isSystemInDarkTheme()
-                AppThemeMode.DARK -> true
-                AppThemeMode.LIGHT -> false
-            }
+            val darkTheme = resolveDarkTheme(themeMode)
             HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
                 PermissionsRationaleScreen()
             }

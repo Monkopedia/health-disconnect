@@ -9,6 +9,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import com.monkopedia.healthdisconnect.AppThemeMode
 
 private val DarkColorScheme = darkColorScheme(
     primary = Orange,
@@ -54,4 +55,13 @@ fun HealthDisconnectTheme(
         typography = Typography,
         content = content
     )
+}
+
+@Composable
+fun resolveDarkTheme(themeMode: AppThemeMode): Boolean {
+    return when (themeMode) {
+        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+        AppThemeMode.DARK -> true
+        AppThemeMode.LIGHT -> false
+    }
 }
