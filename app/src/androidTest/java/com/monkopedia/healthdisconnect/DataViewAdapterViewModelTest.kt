@@ -7,6 +7,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.room.AppDatabase
+import com.monkopedia.healthdisconnect.room.DataViewEntity
+import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
+import androidx.health.connect.client.records.WeightRecord
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
@@ -96,6 +99,36 @@ class DataViewAdapterViewModelTest {
         }
         assertEquals(0, dbInfoRows.size)
         assertEquals(0, dbViewRows)
+    }
+
+    @Test
+    fun invalidSettingsJsonFallsBackToDefaults() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        resetPersistence(app)
+
+        val db = AppDatabase.getInstance(app)
+        db.dataViewInfoDao().insert(
+            DataViewInfoEntity(
+                id = 1,
+                name = "Bad Settings View",
+                ordering = 1
+            )
+        )
+        db.dataViewDao().insert(
+            DataViewEntity(
+                id = 1,
+                type = com.monkopedia.healthdisconnect.model.ViewType.CHART.name,
+                recordsJson = "[{\"fqn\":\"${WeightRecord::class.qualifiedName}\"}]",
+                settingsJson = "{not-a-valid-json}"
+            )
+        )
+
+        val viewModel = DataViewAdapterViewModel(app, SavedStateHandle())
+        val loaded = withTimeout(2000) {
+            viewModel.dataView(1).first { it.chartSettings == ChartSettings() }
+        }
+
+        assertEquals(ChartSettings(), loaded.chartSettings)
     }
 
     private fun resetPersistence(app: Application) = runBlocking {
