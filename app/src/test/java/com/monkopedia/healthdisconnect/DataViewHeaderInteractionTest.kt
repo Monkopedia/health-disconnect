@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -90,5 +91,36 @@ class DataViewHeaderInteractionTest {
             composeRule.onNodeWithTag("header_title_$index", useUnmergedTree = true).performSemanticsAction(SemanticsActions.OnClick)
             composeRule.runOnIdle { assertEquals(index, clicked[index]) }
         }
+    }
+
+    @Test
+    fun longHeaderTitlesRemainNonOverlapping() {
+        composeRule.setContent {
+            HealthDisconnectTheme(dynamicColor = false) {
+                Surface {
+                    DataViewHeaderStrip(
+                        titles = listOf(
+                            "Very Long Daily Steps Activity Title",
+                            "Very Long Weight Tracking View Title",
+                            "Very Long Distance Summary Header"
+                        ),
+                        currentPage = 1,
+                        currentPageOffsetFraction = 0f,
+                        onPageClick = { },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                    )
+                }
+            }
+        }
+
+        val bounds = (0..2).map { index ->
+            composeRule.onNodeWithTag("header_title_$index", useUnmergedTree = true)
+                .fetchSemanticsNode().boundsInRoot
+        }
+
+        assertTrue(bounds[0].right <= bounds[1].left + 1f)
+        assertTrue(bounds[1].right <= bounds[2].left + 1f)
     }
 }
