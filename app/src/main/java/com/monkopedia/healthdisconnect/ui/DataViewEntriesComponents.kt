@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,6 +39,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.records.Record
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
@@ -168,15 +170,21 @@ private fun EntriesScreen(
         ) {
             TextButton(
                 onClick = onBack,
-                modifier = Modifier.testTag("entries_back_button")
+                modifier = Modifier
+                    .testTag("entries_back_button")
+                    .weight(0.22f, fill = false)
             ) {
                 Text(stringResource(R.string.data_view_back))
             }
             Text(
                 text = stringResource(R.string.data_view_entries_for, infoName),
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                softWrap = false,
+                textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.titleMedium
             )
-            Spacer(Modifier.width(48.dp))
+            Spacer(Modifier.width(48.dp).weight(0.22f, fill = false))
         }
         Spacer(Modifier.height(8.dp))
         if (data == null) {
@@ -203,7 +211,7 @@ private fun EntriesScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
                         Text(
                             text = record::class.simpleName ?: record::class.qualifiedName ?: "Record",
                             style = MaterialTheme.typography.bodyLarge
@@ -222,7 +230,12 @@ private fun EntriesScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.End,
-                            modifier = Modifier.padding(start = 8.dp)
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .widthIn(max = 220.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
                         )
                     }
                 }
