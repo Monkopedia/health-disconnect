@@ -266,6 +266,24 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun dataViewAdapterHeaderPagerLongTitles() {
+        val viewModel = mockDataViewAdapterWithViews(
+            infos = listOf(
+                DataViewInfo(id = 1, name = "Very Long Steps Activity Overview"),
+                DataViewInfo(id = 2, name = "Weekly Distance Tracking"),
+                DataViewInfo(id = 3, name = "Sleep and Recovery Insights")
+            )
+        )
+        captureScreen("data_view_adapter_header_long_titles") {
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                showSettings = {},
+                initialPage = 1
+            )
+        }
+    }
+
+    @Test
     fun lazyNavigationLoadingScreen() {
         val viewModel = mockLazyNavigationModel(
             isLoading = true,
