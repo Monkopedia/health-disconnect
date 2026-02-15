@@ -337,9 +337,14 @@ fun DataViewView(
                     }
                 }
 
-                entriesSection(recordCount = recordCount, onOpenEntries = { onOpenEntriesRequested(view!!.id) })
+                entriesSection(
+                    scope = this,
+                    recordCount = recordCount,
+                    onOpenEntries = { onOpenEntriesRequested(view!!.id) }
+                )
 
                 viewConfigurationSection(
+                    scope = this,
                     healthDataModel = healthDataModel,
                     isEditing = isEditing,
                     chartSettings = chartSettings,
