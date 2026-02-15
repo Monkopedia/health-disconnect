@@ -14,16 +14,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import com.monkopedia.healthdisconnect.ui.theme.resolveDarkTheme
+import org.koin.androidx.compose.koinViewModel
 
 public class PermissionsRationaleActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val appThemeViewModel: AppThemeViewModel = viewModel()
+            val appThemeViewModel: AppThemeViewModel = koinViewModel()
             val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle(
                 initialValue = AppThemeMode.SYSTEM
             )

@@ -24,17 +24,17 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.ui.theme.LightGreen
 import com.monkopedia.healthdisconnect.ui.theme.DarkOrange
 import com.monkopedia.healthdisconnect.ui.theme.Typography
+import org.koin.androidx.compose.koinViewModel
 
 private const val PERMISSIONS_TAG = "HealthDisconnectPermissions"
 
 @Composable
 fun PermissionsRoot(
-    permissionsViewModel: PermissionsViewModel = viewModel(),
+    permissionsViewModel: PermissionsViewModel = koinViewModel(),
     permittedContent: @Composable () -> Unit
 ) {
     val availabilityStatus = permissionsViewModel.availabilityStatus

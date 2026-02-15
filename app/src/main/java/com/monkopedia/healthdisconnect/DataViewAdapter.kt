@@ -45,11 +45,11 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.ui.CreateViewView
 import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
+import org.koin.androidx.compose.koinViewModel
 import kotlinx.coroutines.Job
 import kotlin.math.abs
 import kotlin.math.pow
@@ -59,8 +59,9 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DataViewAdapter(
-    viewModel: DataViewAdapterViewModel = viewModel(),
-    healthDataModel: HealthDataModel = viewModel(),
+    viewModel: DataViewAdapterViewModel = koinViewModel(),
+    healthDataModel: HealthDataModel = koinViewModel(),
+    permissionsViewModel: PermissionsViewModel = koinViewModel(),
     initialPage: Int = 0,
     initialPageOffsetFraction: Float = 0f,
     showSettings: () -> Unit,
@@ -124,6 +125,7 @@ fun DataViewAdapter(
                     DataViewView(
                         viewModel = viewModel,
                         healthDataModel = healthDataModel,
+                        permissionsViewModel = permissionsViewModel,
                         page = page,
                         showHeader = false,
                         onOpenEntriesRequested = onOpenEntries

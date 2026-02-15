@@ -14,16 +14,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import com.monkopedia.healthdisconnect.ui.theme.resolveDarkTheme
+import org.koin.androidx.compose.koinViewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            val appThemeViewModel: AppThemeViewModel = viewModel()
+            val appThemeViewModel: AppThemeViewModel = koinViewModel()
             val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle(
                 initialValue = AppThemeMode.SYSTEM
             )

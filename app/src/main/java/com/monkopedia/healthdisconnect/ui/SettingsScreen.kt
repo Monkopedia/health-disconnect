@@ -41,12 +41,12 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.AppThemeMode
 import com.monkopedia.healthdisconnect.AppThemeViewModel
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
+import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -65,8 +65,8 @@ private data class MetricDebugRange(
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit = {},
-    permissionsViewModel: PermissionsViewModel = viewModel(),
-    appThemeViewModel: AppThemeViewModel = viewModel(),
+    permissionsViewModel: PermissionsViewModel = koinViewModel(),
+    appThemeViewModel: AppThemeViewModel = koinViewModel(),
     initialDebugExpanded: Boolean = false,
     initialThemeDropdownExpanded: Boolean = false,
     previewDebugRows: List<String>? = null

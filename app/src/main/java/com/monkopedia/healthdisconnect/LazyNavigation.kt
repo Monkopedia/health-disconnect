@@ -11,11 +11,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
 import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
+import org.koin.androidx.compose.koinViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -32,7 +32,7 @@ private object Routes {
 }
 
 @Composable
-fun LazyNavigation(viewModel: LazyNavigationModel = viewModel()) {
+fun LazyNavigation(viewModel: LazyNavigationModel = koinViewModel()) {
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isShowingIntro by viewModel.isShowingIntro.collectAsStateWithLifecycle()
     if (isLoading) {

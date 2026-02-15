@@ -78,11 +78,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.records.Record
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import org.koin.androidx.compose.koinViewModel
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
@@ -117,8 +117,8 @@ internal const val ENTRY_DETAILS_LOG_TAG = "HealthDisconnectEntry"
 fun DataViewView(
     viewModel: DataViewAdapterViewModel,
     page: Int,
-    healthDataModel: HealthDataModel = viewModel(),
-    permissionsViewModel: PermissionsViewModel = viewModel(),
+    healthDataModel: HealthDataModel = koinViewModel(),
+    permissionsViewModel: PermissionsViewModel = koinViewModel(),
     headerPageOffset: Float = 0f,
     showHeader: Boolean = true,
     onOpenEntriesRequested: (Int) -> Unit = {}

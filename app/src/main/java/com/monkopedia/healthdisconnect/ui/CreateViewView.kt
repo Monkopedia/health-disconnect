@@ -26,18 +26,18 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import org.koin.androidx.compose.koinViewModel
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 @Composable
 fun CreateViewView(
-    viewModel: DataViewAdapterViewModel = viewModel(),
-    healthDataModel: HealthDataModel = viewModel(),
+    viewModel: DataViewAdapterViewModel = koinViewModel(),
+    healthDataModel: HealthDataModel = koinViewModel(),
     headerPageOffset: Float = 0f,
     showHeader: Boolean = true
 ) {

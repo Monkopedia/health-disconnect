@@ -81,11 +81,11 @@ import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import org.koin.androidx.compose.koinViewModel
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
@@ -157,8 +157,8 @@ fun LazyListScope.entriesSection(
 fun EntriesRouteScreen(
     viewId: Int,
     onBack: () -> Unit,
-    viewModel: DataViewAdapterViewModel = viewModel(),
-    healthDataModel: HealthDataModel = viewModel(),
+    viewModel: DataViewAdapterViewModel = koinViewModel(),
+    healthDataModel: HealthDataModel = koinViewModel(),
     initialSelectedEntry: Record? = null
 ) {
     val info by viewModel.dataViews.map { it?.dataViews?.get(viewId) }.collectAsState(initial = null)

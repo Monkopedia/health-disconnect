@@ -6,9 +6,13 @@ import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Mass
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.HealthConnectClient
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
+import com.monkopedia.healthdisconnect.AppThemeMode
+import com.monkopedia.healthdisconnect.AppThemeViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.LazyNavigation
 import com.monkopedia.healthdisconnect.LazyNavigationModel
@@ -109,7 +113,10 @@ abstract class BaseScreenRoborazziTest {
     @Test
     fun settingsScreen() {
         captureScreen("settings") {
-            SettingsScreen()
+            SettingsScreen(
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
+                appThemeViewModel = mockAppThemeViewModelForScreens()
+            )
         }
     }
 
@@ -117,6 +124,8 @@ abstract class BaseScreenRoborazziTest {
     fun settingsThemeDropdownExpandedScreen() {
         captureScreen("settings_theme_dropdown_expanded") {
             SettingsScreen(
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
+                appThemeViewModel = mockAppThemeViewModelForScreens(),
                 initialThemeDropdownExpanded = true
             )
         }
@@ -126,6 +135,8 @@ abstract class BaseScreenRoborazziTest {
     fun settingsScreenAdvancedExpanded() {
         captureScreen("settings_advanced") {
             SettingsScreen(
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
+                appThemeViewModel = mockAppThemeViewModelForScreens(),
                 initialDebugExpanded = true,
                 previewDebugRows = listOf(
                     "Weight: perm=yes, oldest=2023-01-05 10:00, newest=2026-02-14 09:30",
@@ -141,7 +152,12 @@ abstract class BaseScreenRoborazziTest {
         val viewModel = mockk<DataViewAdapterViewModel>()
         every { viewModel.dataViews } returns MutableStateFlow(null)
         captureScreen("data_view_adapter_loading") {
-            com.monkopedia.healthdisconnect.DataViewAdapter(viewModel = viewModel, showSettings = {})
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
+                showSettings = {}
+            )
         }
     }
 
@@ -151,7 +167,12 @@ abstract class BaseScreenRoborazziTest {
         every { viewModel.dataViews } returns 
             MutableStateFlow(DataViewInfoList(dataViews = emptyMap(), ordering = emptyList()))
         captureScreen("data_view_adapter_create") {
-            com.monkopedia.healthdisconnect.DataViewAdapter(viewModel = viewModel, showSettings = {})
+            com.monkopedia.healthdisconnect.DataViewAdapter(
+                viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
+                showSettings = {}
+            )
         }
     }
 
@@ -170,6 +191,8 @@ abstract class BaseScreenRoborazziTest {
         captureScreen("data_view_adapter_create_trailing") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
                 showSettings = {},
                 initialPage = 1
             )
@@ -187,6 +210,8 @@ abstract class BaseScreenRoborazziTest {
         captureScreen("data_view_adapter_header_first") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
                 showSettings = {},
                 initialPage = 0
             )
@@ -204,6 +229,8 @@ abstract class BaseScreenRoborazziTest {
         captureScreen("data_view_adapter_header_second") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
                 showSettings = {},
                 initialPage = 1
             )
@@ -221,6 +248,8 @@ abstract class BaseScreenRoborazziTest {
         captureScreen("data_view_adapter_header_create") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
                 showSettings = {},
                 initialPage = 2
             )
@@ -238,6 +267,8 @@ abstract class BaseScreenRoborazziTest {
         captureScreen("data_view_adapter_header_offset_45") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
                 showSettings = {},
                 initialPage = 0,
                 initialPageOffsetFraction = 0.45f
@@ -256,6 +287,8 @@ abstract class BaseScreenRoborazziTest {
         captureScreen("data_view_adapter_header_offset_65") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
                 showSettings = {},
                 initialPage = 1,
                 // Equivalent to being ~65% transitioned away from previous page.
@@ -276,6 +309,8 @@ abstract class BaseScreenRoborazziTest {
         captureScreen("data_view_adapter_header_offset_65_three_pages") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
                 showSettings = {},
                 initialPage = 1,
                 initialPageOffsetFraction = -0.35f
@@ -295,6 +330,8 @@ abstract class BaseScreenRoborazziTest {
         captureScreen("data_view_adapter_header_long_titles") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
+                healthDataModel = mockHealthDataModel(),
+                permissionsViewModel = mockPermissionsViewModelForScreens(),
                 showSettings = {},
                 initialPage = 1
             )
@@ -437,7 +474,12 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_collapsed") {
-            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
         }
     }
 
@@ -456,7 +498,12 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_editing") {
-            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
         }
     }
 
@@ -503,7 +550,12 @@ abstract class BaseScreenRoborazziTest {
             )
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph") {
-            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
         }
     }
 
@@ -558,7 +610,12 @@ abstract class BaseScreenRoborazziTest {
             )
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_bars_grid") {
-            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
         }
     }
 
@@ -596,7 +653,12 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(records.size)
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_with_entries") {
-            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
         }
     }
 
@@ -647,7 +709,12 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(8)
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_multi_series") {
-            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
         }
     }
 
@@ -703,7 +770,12 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(8)
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_bars_multi_series") {
-            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
         }
     }
 
@@ -768,6 +840,22 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
         every { healthDataModel.aggregateMetricSeries(any(), any()) } returns null
         return healthDataModel
+    }
+
+    private fun mockPermissionsViewModelForScreens(): PermissionsViewModel {
+        val permissionsViewModel = mockk<PermissionsViewModel>(relaxed = true)
+        every { permissionsViewModel.availabilityStatus } returns HealthConnectClient.SDK_AVAILABLE
+        every { permissionsViewModel.grantedPermissions } returns MutableStateFlow(emptySet())
+        every { permissionsViewModel.requestPermissionActivityContract } returns
+            PermissionController.createRequestPermissionResultContract()
+        every { permissionsViewModel.onResult(any()) } returns Unit
+        return permissionsViewModel
+    }
+
+    private fun mockAppThemeViewModelForScreens(): AppThemeViewModel {
+        val appThemeViewModel = mockk<AppThemeViewModel>(relaxed = true)
+        every { appThemeViewModel.themeMode } returns MutableStateFlow(AppThemeMode.SYSTEM)
+        return appThemeViewModel
     }
 
     private fun fakeWeightRecord(kilograms: Double, isoInstant: String): WeightRecord {

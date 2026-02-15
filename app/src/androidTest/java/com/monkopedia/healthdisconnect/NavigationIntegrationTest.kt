@@ -33,8 +33,15 @@ import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
 import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.HealthConnectClient
 import com.monkopedia.healthdisconnect.R
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
+import io.mockk.every
+import io.mockk.mockk
+import com.monkopedia.healthdisconnect.AppThemeViewModel
+import com.monkopedia.healthdisconnect.PermissionsViewModel
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -129,7 +136,11 @@ class NavigationIntegrationTest {
                         )
                     }
                     composable("settings") {
-                        SettingsScreen(onBack = { navController.popBackStack() })
+                        SettingsScreen(
+                            onBack = { navController.popBackStack() },
+                            permissionsViewModel = mockPermissionsViewModelForScreen(),
+                            appThemeViewModel = AppThemeViewModel(app)
+                        )
                     }
                     composable(
                         route = "entries/{viewId}",
@@ -176,5 +187,15 @@ class NavigationIntegrationTest {
                 )
             )
         }
+    }
+
+    private fun mockPermissionsViewModelForScreen(): PermissionsViewModel {
+        val permissionsViewModel = mockk<PermissionsViewModel>(relaxed = true)
+        every { permissionsViewModel.availabilityStatus } returns HealthConnectClient.SDK_AVAILABLE
+        every { permissionsViewModel.grantedPermissions } returns flowOf(emptySet())
+        every { permissionsViewModel.requestPermissionActivityContract } returns
+            PermissionController.createRequestPermissionResultContract()
+        every { permissionsViewModel.onResult(any()) } returns Unit
+        return permissionsViewModel
     }
 }
