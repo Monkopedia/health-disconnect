@@ -3,6 +3,9 @@ package com.monkopedia.healthdisconnect.screenshot
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.units.Mass
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
@@ -10,6 +13,7 @@ import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.LazyNavigation
 import com.monkopedia.healthdisconnect.LazyNavigationModel
 import com.monkopedia.healthdisconnect.NoSdkAvailable
+import com.monkopedia.healthdisconnect.PermissionsRationaleScreen
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.RequestPermissions
 import com.monkopedia.healthdisconnect.UpdateRequired
@@ -38,8 +42,8 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.`when`
-import org.mockito.Mockito.mock
+import io.mockk.every
+import io.mockk.mockk
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
@@ -82,6 +86,13 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun permissionsRationaleActivityScreen() {
+        captureScreen("permissions_rationale_activity") {
+            PermissionsRationaleScreen()
+        }
+    }
+
+    @Test
     fun settingsScreen() {
         captureScreen("settings") {
             SettingsScreen()
@@ -89,9 +100,23 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun settingsScreenAdvancedExpanded() {
+        captureScreen("settings_advanced") {
+            SettingsScreen(
+                initialDebugExpanded = true,
+                previewDebugRows = listOf(
+                    "Weight: perm=yes, oldest=2023-01-05 10:00, newest=2026-02-14 09:30",
+                    "Blood glucose: perm=yes, oldest=2024-03-01 08:10, newest=2026-02-14 09:35",
+                    "Body fat: perm=no, oldest=n/a, newest=n/a"
+                )
+            )
+        }
+    }
+
+    @Test
     fun dataViewAdapterLoadingScreen() {
-        val viewModel = mock(DataViewAdapterViewModel::class.java)
-        `when`(viewModel.dataViews).thenReturn(MutableStateFlow(null))
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        every { viewModel.dataViews } returns MutableStateFlow(null)
         captureScreen("data_view_adapter_loading") {
             com.monkopedia.healthdisconnect.DataViewAdapter(viewModel = viewModel, showSettings = {})
         }
@@ -99,10 +124,9 @@ abstract class BaseScreenRoborazziTest {
 
     @Test
     fun dataViewAdapterCreateScreen() {
-        val viewModel = mock(DataViewAdapterViewModel::class.java)
-        `when`(viewModel.dataViews).thenReturn(
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        every { viewModel.dataViews } returns 
             MutableStateFlow(DataViewInfoList(dataViews = emptyMap(), ordering = emptyList()))
-        )
         captureScreen("data_view_adapter_create") {
             com.monkopedia.healthdisconnect.DataViewAdapter(viewModel = viewModel, showSettings = {})
         }
@@ -117,11 +141,10 @@ abstract class BaseScreenRoborazziTest {
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
             alwaysShowEntries = false
         )
-        val viewModel = mock(DataViewAdapterViewModel::class.java)
-        `when`(viewModel.dataViews).thenReturn(
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        every { viewModel.dataViews } returns 
             MutableStateFlow(DataViewInfoList(dataViews = mapOf(1 to info), ordering = listOf(1)))
-        )
-        `when`(viewModel.dataView(1)).thenReturn(MutableStateFlow(view))
+        every { viewModel.dataView(1) } returns MutableStateFlow(view)
         captureScreen("data_view_adapter_create_trailing") {
             com.monkopedia.healthdisconnect.DataViewAdapter(
                 viewModel = viewModel,
@@ -243,9 +266,9 @@ abstract class BaseScreenRoborazziTest {
 
     @Test
     fun createViewLoadingScreen() {
-        val viewModel = mock(DataViewAdapterViewModel::class.java)
-        val healthDataModel = mock(HealthDataModel::class.java)
-        `when`(healthDataModel.metricsWithData).thenReturn(MutableStateFlow(null))
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        val healthDataModel = mockHealthDataModel()
+        every { healthDataModel.collectMetricsWithData(any()) } returns emptyFlow()
         captureScreen("create_view_loading") {
             CreateViewView(viewModel = viewModel, healthDataModel = healthDataModel)
         }
@@ -253,10 +276,9 @@ abstract class BaseScreenRoborazziTest {
 
     @Test
     fun createViewOptionsScreen() {
-        val viewModel = mock(DataViewAdapterViewModel::class.java)
-        val healthDataModel = mock(HealthDataModel::class.java)
-        `when`(healthDataModel.metricsWithData)
-            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(6)))
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        val healthDataModel = mockHealthDataModel()
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(6))
         captureScreen("create_view_options") {
             CreateViewView(viewModel = viewModel, healthDataModel = healthDataModel)
         }
@@ -274,8 +296,8 @@ abstract class BaseScreenRoborazziTest {
             info = DataViewInfo(id = 1, name = "Weight"),
             view = dataView
         )
-        val healthDataModel = mock(HealthDataModel::class.java)
-        `when`(healthDataModel.collectData(dataView)).thenReturn(emptyFlow())
+        val healthDataModel = mockHealthDataModel()
+        every { healthDataModel.collectData(any(), any()) } returns emptyFlow()
         captureScreen("entries_route_loading") {
             EntriesRouteScreen(
                 viewId = 1,
@@ -298,18 +320,44 @@ abstract class BaseScreenRoborazziTest {
             info = DataViewInfo(id = 1, name = "Weight"),
             view = dataView
         )
-        val healthDataModel = mock(HealthDataModel::class.java)
+        val healthDataModel = mockHealthDataModel()
         val records = listOf(
-            mock(Record::class.java),
-            mock(Record::class.java)
+            fakeWeightRecord(72.4, "2026-02-05T08:30:00Z"),
+            fakeWeightRecord(71.8, "2026-02-04T08:30:00Z")
         )
-        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
         captureScreen("entries_route_populated") {
             EntriesRouteScreen(
                 viewId = 1,
                 onBack = {},
                 viewModel = viewModel,
                 healthDataModel = healthDataModel
+            )
+        }
+    }
+
+    @Test
+    fun entriesRouteDetailsDialogScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            alwaysShowEntries = false
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Weight"),
+            view = dataView
+        )
+        val healthDataModel = mockHealthDataModel()
+        val selectedRecord = fakeWeightRecord(72.4, "2026-02-05T08:30:00Z")
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(listOf(selectedRecord))
+        captureScreen("entries_route_details_dialog") {
+            EntriesRouteScreen(
+                viewId = 1,
+                onBack = {},
+                viewModel = viewModel,
+                healthDataModel = healthDataModel,
+                initialSelectedEntry = selectedRecord
             )
         }
     }
@@ -331,10 +379,9 @@ abstract class BaseScreenRoborazziTest {
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
             alwaysShowEntries = false
         )
-        val healthDataModel = mock(HealthDataModel::class.java)
-        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(emptyList<Record>()))
-        `when`(healthDataModel.metricsWithData)
-            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        val healthDataModel = mockHealthDataModel()
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_collapsed") {
             DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
         }
@@ -352,10 +399,9 @@ abstract class BaseScreenRoborazziTest {
             info = DataViewInfo(id = 1, name = "Edit Me"),
             view = dataView
         )
-        val healthDataModel = mock(HealthDataModel::class.java)
-        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(emptyList<Record>()))
-        `when`(healthDataModel.metricsWithData)
-            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        val healthDataModel = mockHealthDataModel()
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_editing") {
             DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
         }
@@ -374,10 +420,10 @@ abstract class BaseScreenRoborazziTest {
             info = DataViewInfo(id = 1, name = "Steps"),
             view = dataView
         )
-        val healthDataModel = mock(HealthDataModel::class.java)
+        val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
-        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
-        `when`(healthDataModel.aggregateMetricSeriesList(dataView, records)).thenReturn(
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
+        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Steps",
@@ -391,7 +437,8 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        `when`(healthDataModel.aggregateMetricSeries(dataView, records)).thenReturn(
+        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(4)
+        every { healthDataModel.aggregateMetricSeries(dataView, records) } returns
             HealthDataModel.MetricSeries(
                 label = "Steps",
                 unit = "count",
@@ -402,9 +449,7 @@ abstract class BaseScreenRoborazziTest {
                     HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 4), 4800.0)
                 )
             )
-        )
-        `when`(healthDataModel.metricsWithData)
-            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph") {
             DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
         }
@@ -431,10 +476,10 @@ abstract class BaseScreenRoborazziTest {
             info = DataViewInfo(id = 1, name = "Distance"),
             view = dataView
         )
-        val healthDataModel = mock(HealthDataModel::class.java)
+        val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
-        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
-        `when`(healthDataModel.aggregateMetricSeriesList(dataView, records)).thenReturn(
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
+        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Distance",
@@ -448,7 +493,8 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        `when`(healthDataModel.aggregateMetricSeries(dataView, records)).thenReturn(
+        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(4)
+        every { healthDataModel.aggregateMetricSeries(dataView, records) } returns
             HealthDataModel.MetricSeries(
                 label = "Distance",
                 unit = "kilometers",
@@ -459,9 +505,7 @@ abstract class BaseScreenRoborazziTest {
                     HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 25), 3.1)
                 )
             )
-        )
-        `when`(healthDataModel.metricsWithData)
-            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_bars_grid") {
             DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
         }
@@ -485,10 +529,10 @@ abstract class BaseScreenRoborazziTest {
             info = DataViewInfo(id = 1, name = "Activity"),
             view = dataView
         )
-        val healthDataModel = mock(HealthDataModel::class.java)
+        val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
-        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
-        `when`(healthDataModel.aggregateMetricSeriesList(dataView, records)).thenReturn(
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
+        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Steps",
@@ -512,8 +556,8 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        `when`(healthDataModel.metricsWithData)
-            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(8)
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_multi_series") {
             DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
         }
@@ -542,10 +586,10 @@ abstract class BaseScreenRoborazziTest {
             info = DataViewInfo(id = 1, name = "Activity Bars"),
             view = dataView
         )
-        val healthDataModel = mock(HealthDataModel::class.java)
+        val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
-        `when`(healthDataModel.collectData(dataView)).thenReturn(flowOf(records))
-        `when`(healthDataModel.aggregateMetricSeriesList(dataView, records)).thenReturn(
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
+        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Steps",
@@ -569,8 +613,8 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        `when`(healthDataModel.metricsWithData)
-            .thenReturn(MutableStateFlow(PermissionsViewModel.CLASSES.take(4)))
+        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(8)
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_bars_multi_series") {
             DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
         }
@@ -594,9 +638,9 @@ abstract class BaseScreenRoborazziTest {
             dataViews = mapOf(info.id to info),
             ordering = listOf(info.id)
         )
-        val viewModel = mock(DataViewAdapterViewModel::class.java)
-        `when`(viewModel.dataViews).thenReturn(MutableStateFlow(dataViews))
-        `when`(viewModel.dataView(info.id)).thenReturn(MutableStateFlow(view))
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        every { viewModel.dataViews } returns MutableStateFlow(dataViews)
+        every { viewModel.dataView(info.id) } returns MutableStateFlow(view)
         return viewModel
     }
 
@@ -605,8 +649,8 @@ abstract class BaseScreenRoborazziTest {
             dataViews = infos.associateBy { it.id },
             ordering = infos.map { it.id }
         )
-        val viewModel = mock(DataViewAdapterViewModel::class.java)
-        `when`(viewModel.dataViews).thenReturn(MutableStateFlow(dataViews))
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        every { viewModel.dataViews } returns MutableStateFlow(dataViews)
         infos.forEach { info ->
             val view = DataView(
                 id = info.id,
@@ -614,7 +658,7 @@ abstract class BaseScreenRoborazziTest {
                 records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
                 alwaysShowEntries = false
             )
-            `when`(viewModel.dataView(info.id)).thenReturn(MutableStateFlow(view))
+            every { viewModel.dataView(info.id) } returns MutableStateFlow(view)
         }
         return viewModel
     }
@@ -623,10 +667,29 @@ abstract class BaseScreenRoborazziTest {
         isLoading: Boolean,
         isShowingIntro: Boolean
     ): LazyNavigationModel {
-        val viewModel = mock(LazyNavigationModel::class.java)
-        `when`(viewModel.isLoading).thenReturn(MutableStateFlow(isLoading))
-        `when`(viewModel.isShowingIntro).thenReturn(MutableStateFlow(isShowingIntro))
+        val viewModel = mockk<LazyNavigationModel>()
+        every { viewModel.isLoading } returns MutableStateFlow(isLoading)
+        every { viewModel.isShowingIntro } returns MutableStateFlow(isShowingIntro)
         return viewModel
+    }
+
+    private fun mockHealthDataModel(): HealthDataModel {
+        val healthDataModel = mockk<HealthDataModel>()
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
+        every { healthDataModel.collectRecordCount(any(), any()) } returns flowOf(0)
+        every { healthDataModel.collectAggregatedSeries(any(), any()) } returns flowOf(emptyList())
+        every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
+        every { healthDataModel.aggregateMetricSeries(any(), any()) } returns null
+        return healthDataModel
+    }
+
+    private fun fakeWeightRecord(kilograms: Double, isoInstant: String): WeightRecord {
+        val record = mockk<WeightRecord>()
+        every { record.weight } returns Mass.kilograms(kilograms)
+        every { record.time } returns java.time.Instant.parse(isoInstant)
+        every { record.metadata } returns Metadata.manualEntry()
+        return record
     }
 }
 

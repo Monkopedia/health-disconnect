@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 
@@ -88,19 +89,23 @@ class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
     }
     private var ignoredPermissions = MutableStateFlow(false)
     private var checkTrigger = MutableSharedFlow<Unit>()
+    val grantedPermissions: Flow<Set<String>>
+        get() = if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE) {
+            checkTrigger.onStart { emit(Unit) }.flatMapLatest {
+                flow {
+                    while (true) {
+                        emit(healthConnectClient.permissionController.getGrantedPermissions())
+                        delay(CHECK_RATE)
+                    }
+                }
+            }
+        } else {
+            flowOf(emptySet())
+        }
     val needsPermissions: Flow<Boolean>
         get() = if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE) {
             combine(
-                checkTrigger.onStart { emit(Unit) }.flatMapLatest {
-                    flow {
-                        while (true) {
-                            val grantedPermissions =
-                                healthConnectClient.permissionController.getGrantedPermissions()
-                            emit(grantedPermissions.containsAll(PERMISSIONS))
-                            delay(CHECK_RATE)
-                        }
-                    }
-                },
+                grantedPermissions.map { granted -> granted.containsAll(PERMISSIONS) },
                 ignoredPermissions
             ) { grantedPermissions, ignoredPermissions ->
                 !grantedPermissions && !ignoredPermissions
@@ -121,6 +126,7 @@ class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
 
     companion object {
         private val CHECK_RATE = 30.seconds
+        const val HISTORY_PERMISSION = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
         val CLASSES = setOf(
             ActiveCaloriesBurnedRecord::class,
             BasalBodyTemperatureRecord::class,
@@ -155,12 +161,14 @@ class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
             SleepSessionRecord::class,
             SpeedRecord::class,
             StepsCadenceRecord::class,
+            StepsRecord::class,
             TotalCaloriesBurnedRecord::class,
             Vo2MaxRecord::class,
             WeightRecord::class,
             WheelchairPushesRecord::class
         )
-        val PERMISSIONS = CLASSES.map { HealthPermission.getReadPermission(it) }.toSet()
+        val READ_PERMISSIONS_BY_CLASS = CLASSES.associateWith { HealthPermission.getReadPermission(it) }
+        val PERMISSIONS = READ_PERMISSIONS_BY_CLASS.values.toSet()
         val RECORD_NAMES = mapOf(
             ActiveCaloriesBurnedRecord::class to "Active calories burned",
             BasalBodyTemperatureRecord::class to "Basal body temperature",
@@ -195,6 +203,7 @@ class PermissionsViewModel(context: Application) : AndroidViewModel(context) {
             SleepSessionRecord::class to "Sleep session",
             SpeedRecord::class to "Speed",
             StepsCadenceRecord::class to "Steps cadence",
+            StepsRecord::class to "Steps",
             TotalCaloriesBurnedRecord::class to "Total calories burned",
             Vo2MaxRecord::class to "VO2 max",
             WeightRecord::class to "Weight",

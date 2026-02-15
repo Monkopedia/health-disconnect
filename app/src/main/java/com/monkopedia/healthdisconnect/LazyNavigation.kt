@@ -52,7 +52,7 @@ fun LazyNavigation(viewModel: LazyNavigationModel = viewModel()) {
                     )
                 }
                 composable(Routes.Settings) {
-                    SettingsScreen()
+                    SettingsScreen(onBack = { navController.popBackStack() })
                 }
                 composable(
                     route = Routes.EntriesPattern,

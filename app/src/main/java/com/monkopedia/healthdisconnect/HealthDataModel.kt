@@ -34,11 +34,17 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class HealthDataModel(app: Application) : AndroidViewModel(app) {
+class HealthDataModel @JvmOverloads constructor(
+    app: Application,
+    private val autoRefreshMetrics: Boolean = true
+) : AndroidViewModel(app) {
     private data class CachedRecordState(
         val data: MutableStateFlow<List<Record>?> = MutableStateFlow(null),
         var loading: Boolean = false,
@@ -48,7 +54,7 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
     companion object {
         private const val EXTRACTION_LOG_TAG = "HealthDisconnectExtract"
         const val MAX_CHART_SERIES = 3
-        private const val MAX_CACHED_RECORDS_PER_TYPE = 20_000
+        private const val RECORD_CACHE_SCHEMA_VERSION = 4
         private val sharedMetricsWithData = MutableStateFlow<List<KClass<out Record>>?>(null)
         private val sharedRecordCache = mutableMapOf<String, CachedRecordState>()
         private val metricsLock = Any()
@@ -62,7 +68,9 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
     val metricsWithData: MutableStateFlow<List<KClass<out Record>>?> = sharedMetricsWithData
 
     init {
-        scheduleMetricsRefresh()
+        if (autoRefreshMetrics) {
+            scheduleMetricsRefresh()
+        }
     }
 
     fun collectMetricsWithData(refreshTick: Int = 0): Flow<List<KClass<out Record>>> {
@@ -141,7 +149,11 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
         }
         if (!shouldRefresh) return
         viewModelScope.launch(Dispatchers.IO) {
-            val records = loadRecordsForView(view)
+            val records = loadRecordsForView(view) { partial ->
+                synchronized(sharedRecordCache) {
+                    cache.data.value = partial
+                }
+            }
             synchronized(sharedRecordCache) {
                 cache.data.value = records
                 cache.lastRefreshTick = maxOf(cache.lastRefreshTick, refreshTick)
@@ -150,34 +162,30 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun loadRecordsForView(view: DataView): List<Record> {
+    private suspend fun loadRecordsForView(
+        view: DataView,
+        onPartialUpdate: ((List<Record>) -> Unit)? = null
+    ): List<Record> {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
         val selections: List<KClass<out Record>> = view.records.mapNotNull { sel: RecordSelection ->
             typeMap[sel.fqn]
         }
         val now = Instant.now()
-        val windowStarts = view.records.map { selection ->
-            val settings = selection.metricSettings ?: metricDefaultsFromView(view)
-            windowStart(settings.timeWindow)
-        }
-        val earliestWindowStart = if (windowStarts.any { it == null }) {
-            null
-        } else {
-            windowStarts.filterNotNull().minOrNull()
-        }
-        val queryStart = earliestWindowStart ?: Instant.EPOCH
+        val queryStart = windowStart(view.chartSettings.timeWindow) ?: Instant.EPOCH
         val all = mutableListOf<Record>()
         for (cls in selections) {
             try {
-                all.addAll(
-                    readRecordsInRange(
-                        cls = cls,
-                        start = queryStart,
-                        end = now,
-                        maxRecords = MAX_CACHED_RECORDS_PER_TYPE
+                readRecordsInRange(
+                    cls = cls,
+                    start = queryStart,
+                    end = now,
+                    onPage = { pageRecords ->
+                    all.addAll(pageRecords)
+                    onPartialUpdate?.invoke(
+                        all.sortedByDescending { recordTimestamp(it) ?: Instant.EPOCH }
                     )
-                )
+                })
             } catch (_: Throwable) {
                 // Ignore errors per type to keep UI responsive
             }
@@ -187,23 +195,17 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
 
     private fun cacheKey(view: DataView): String {
         val recordsKey = view.records.map { it.fqn }.sorted().joinToString("|")
-        val windowsKey = view.records
-            .sortedBy { it.fqn }
-            .joinToString("|") {
-                val settings = it.metricSettings ?: metricDefaultsFromView(view)
-                "${it.fqn}:${settings.timeWindow}"
-            }
-        return "$recordsKey|windows=$windowsKey"
+        val windowsKey = view.chartSettings.timeWindow.name
+        return "v$RECORD_CACHE_SCHEMA_VERSION|$recordsKey|windows=$windowsKey"
     }
 
     private suspend fun readRecordsInRange(
         cls: KClass<out Record>,
         start: Instant,
         end: Instant,
-        maxRecords: Int,
+        onPage: (List<Record>) -> Unit,
         pageSize: Int = 500
-    ): List<Record> {
-        val all = mutableListOf<Record>()
+    ) {
         var pageToken: String? = null
         do {
             val response = healthConnectClient.readRecords(
@@ -215,14 +217,117 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
                 )
             )
             @Suppress("UNCHECKED_CAST")
-            all.addAll(response.records as List<Record>)
-            if (all.size >= maxRecords) {
-                return all.take(maxRecords)
-            }
+            onPage(response.records as List<Record>)
             pageToken = response.pageToken
         } while (pageToken != null)
-        return all
     }
+
+    fun collectRecordCount(view: DataView, refreshTick: Int = 0): Flow<Int> = channelFlow {
+        val typeMap: Map<String, KClass<out Record>> =
+            PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
+        val selections: List<KClass<out Record>> = view.records.mapNotNull { sel ->
+            typeMap[sel.fqn]
+        }
+        if (selections.isEmpty()) {
+            trySend(0)
+            return@channelFlow
+        }
+        val now = Instant.now()
+        val queryStart = windowStart(view.chartSettings.timeWindow) ?: Instant.EPOCH
+        var count = 0
+        selections.forEach { cls ->
+            runCatching {
+                readRecordsInRange(
+                    cls = cls,
+                    start = queryStart,
+                    end = now,
+                    onPage = { pageRecords ->
+                        count += pageRecords.size
+                        trySend(count)
+                    }
+                )
+            }
+        }
+        if (count == 0) trySend(0)
+    }.flowOn(Dispatchers.IO)
+
+    fun collectAggregatedSeries(view: DataView, refreshTick: Int = 0): Flow<List<MetricSeries>> =
+        collectAggregatedSeries(view, refreshTick) { cls, start, end, onPage ->
+            readRecordsInRange(
+                cls = cls,
+                start = start,
+                end = end,
+                onPage = { page -> onPage(page) }
+            )
+        }
+
+    internal fun collectAggregatedSeries(
+        view: DataView,
+        refreshTick: Int = 0,
+        pageReader: suspend (
+            cls: KClass<out Record>,
+            start: Instant,
+            end: Instant,
+            onPage: (List<Record>) -> Unit
+        ) -> Unit
+    ): Flow<List<MetricSeries>> = channelFlow {
+        @Suppress("UNUSED_VARIABLE")
+        val ignoredRefreshTick = refreshTick
+        val zoneId = ZoneId.systemDefault()
+        val viewWindowStart = windowStart(view.chartSettings.timeWindow)
+        val selectedByType = view.records.mapNotNull { selection ->
+            val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
+                ?: return@mapNotNull null
+            val label = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: selection.fqn
+            val metricSettings = selection.metricSettings ?: metricDefaultsFromView(view)
+            StreamingMetricState(
+                recordClass = cls,
+                label = label,
+                metricSettings = metricSettings
+            )
+        }.take(MAX_CHART_SERIES)
+
+        if (selectedByType.isEmpty()) {
+            trySend(emptyList())
+            return@channelFlow
+        }
+
+        val now = Instant.now()
+        val queryStart = viewWindowStart ?: Instant.EPOCH
+        selectedByType.forEach { metricState ->
+            runCatching {
+                pageReader(
+                    metricState.recordClass,
+                    queryStart,
+                    now
+                ) { pageRecords ->
+                        // Process records page-by-page and discard page data immediately.
+                        pageRecords.forEach { record ->
+                            val measurement = extractMeasurement(record, metricState.metricSettings.unitPreference)
+                                ?: return@forEach
+                            if (viewWindowStart != null && measurement.timestamp.isBefore(viewWindowStart)) {
+                                return@forEach
+                            }
+                            if (metricState.unit == null && !measurement.unitLabel.isNullOrBlank()) {
+                                metricState.unit = measurement.unitLabel
+                            }
+                            metricState.peakValue = when (val current = metricState.peakValue) {
+                                null -> measurement.value
+                                else -> maxOf(current, measurement.value)
+                            }
+                            val bucketDate = toBucketDate(
+                                measurement.timestamp.atZone(zoneId).toLocalDate(),
+                                metricState.metricSettings.bucketSize
+                            )
+                            val bucket = metricState.buckets.getOrPut(bucketDate) { BucketAccumulator() }
+                            bucket.add(measurement.value)
+                        }
+                        trySend(buildStreamingSeries(selectedByType))
+                    }
+            }
+        }
+        trySend(buildStreamingSeries(selectedByType))
+    }.flowOn(Dispatchers.IO)
 
     data class MetricPoint(val date: LocalDate, val value: Double)
 
@@ -238,7 +343,7 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
         if (records.isEmpty()) return emptyList()
         val settings = view.chartSettings
         val zoneId = ZoneId.systemDefault()
-        val windowStart = windowStart(settings.timeWindow)
+        val viewWindowStart = windowStart(settings.timeWindow)
 
         val selectedByType = view.records.mapNotNull { selection ->
             val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
@@ -258,14 +363,13 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
                 .filter { cls.isInstance(it) }
                 .mapNotNull { extractMeasurement(it, metricSettings.unitPreference) }
                 .filter { measurement ->
-                    val metricWindowStart = windowStart(metricSettings.timeWindow)
-                    metricWindowStart == null || !measurement.timestamp.isBefore(metricWindowStart)
+                    viewWindowStart == null || !measurement.timestamp.isBefore(viewWindowStart)
                 }
                 .toList()
             if (measurements.isEmpty()) return@mapNotNull null
 
             val grouped = measurements.groupBy {
-                toBucketDate(it.timestamp.atZone(zoneId).toLocalDate(), metricSettings.bucketSize)
+                toBucketDate(it.timestamp.atZone(zoneId).toLocalDate(), settings.bucketSize)
             }
             val aggregated = grouped
                 .toSortedMap()
@@ -297,6 +401,61 @@ class HealthDataModel(app: Application) : AndroidViewModel(app) {
         val unitLabel: String?,
         val sourceField: String?
     )
+
+    private data class BucketAccumulator(
+        var sum: Double = 0.0,
+        var count: Int = 0,
+        var min: Double = Double.POSITIVE_INFINITY,
+        var max: Double = Double.NEGATIVE_INFINITY
+    ) {
+        fun add(value: Double) {
+            sum += value
+            count += 1
+            min = kotlin.math.min(min, value)
+            max = kotlin.math.max(max, value)
+        }
+
+        fun aggregated(mode: AggregationMode): Double {
+            if (count == 0) return 0.0
+            return when (mode) {
+                AggregationMode.AVERAGE -> sum / count
+                AggregationMode.SUM -> sum
+                AggregationMode.MIN -> min
+                AggregationMode.MAX -> max
+            }
+        }
+    }
+
+    private data class StreamingMetricState(
+        val recordClass: KClass<out Record>,
+        val label: String,
+        val metricSettings: MetricChartSettings,
+        var unit: String? = null,
+        var peakValue: Double? = null,
+        val buckets: MutableMap<LocalDate, BucketAccumulator> = mutableMapOf()
+    )
+
+    private fun buildStreamingSeries(states: List<StreamingMetricState>): List<MetricSeries> {
+        return states.mapNotNull { state ->
+            if (state.buckets.isEmpty()) return@mapNotNull null
+            val aggregated = state.buckets
+                .toSortedMap()
+                .map { (date, bucket) ->
+                    MetricPoint(date = date, value = bucket.aggregated(state.metricSettings.aggregation))
+                }
+            val points = when (state.metricSettings.smoothing) {
+                SmoothingMode.OFF -> aggregated
+                SmoothingMode.MOVING_AVERAGE_3 -> smooth3(aggregated)
+            }
+            MetricSeries(
+                label = state.label,
+                unit = state.unit,
+                points = points,
+                peakValueInWindow = state.peakValue ?: 0.0,
+                yAxisMode = state.metricSettings.yAxisMode
+            )
+        }
+    }
 
     private data class CandidateMeasurement(
         val value: Double,

@@ -3,6 +3,23 @@
     <string name="loading_message">Loading…</string>
     <string name="settings_title">Settings</string>
     <string name="settings_placeholder">This is where the settings will go.</string>
+    <string name="settings_hc_available">Health Connect is available on this device.</string>
+    <string name="settings_hc_unavailable">Health Connect is not available on this device.</string>
+    <string name="settings_permissions_granted">Base read permissions: granted.</string>
+    <string name="settings_permissions_not_granted">Base read permissions: not granted.</string>
+    <string name="settings_history_granted">History permission: granted.</string>
+    <string name="settings_history_not_granted">History permission: not granted.</string>
+    <string name="settings_theme_label">Theme</string>
+    <string name="settings_theme_system">System</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_request_base_permissions">Request base permissions</string>
+    <string name="settings_request_history_permission">Request history permission</string>
+    <string name="settings_permissions_hint">Granting history permission allows longer time windows such as 90 days, 1 year, and all-time.</string>
+    <string name="settings_advanced_debug">Advanced / Debug</string>
+    <string name="settings_refresh_debug_ranges">Refresh debug ranges</string>
+    <string name="settings_history_true">History granted: true</string>
+    <string name="settings_history_false">History granted: false</string>
     <string name="create_view_title">Create View</string>
     <string name="create_view_select_base_metric">Select a base metric:</string>
     <string name="rename_view_title">Rename View</string>
@@ -13,9 +30,8 @@
     <string name="permissions_launch_update">Launch Update</string>
     <string name="permissions_grant">Grant Permissions</string>
     <string name="permissions_ignore">Ignore</string>
-    <string name="permissions_rationale_prefix">Health Disconnect needs access to your </string>
     <string name="permissions_rationale_emphasis">Health data</string>
-    <string name="permissions_rationale_suffix"> in order to display your </string>
+    <string name="permissions_rationale_body">Health Disconnect needs access to your %1$s in order to display your %2$s.</string>
 
     <string name="data_view_graph_days">Graph (%1$d days)</string>
     <string name="data_view_no_graphable">No graphable metric values available yet.</string>
@@ -50,6 +66,7 @@
     <string name="data_view_label_units">Units</string>
     <string name="data_view_label_background">Background</string>
     <string name="data_view_save">Save</string>
+    <string name="data_view_discard">Discard</string>
     <string name="data_view_cancel">Cancel</string>
     <string name="data_view_normalized">Normalized</string>
     <string name="data_view_peak_format">%1$s peak: %2$s%3$s</string>

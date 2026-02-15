@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,7 +26,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
@@ -73,7 +74,7 @@ fun CreateViewView(
                 Text(
                     stringResource(R.string.create_view_select_base_metric),
                     style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(bottom = 11.dp)
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
             if (itemsWithData == null) {
@@ -81,19 +82,29 @@ fun CreateViewView(
                     LoadingScreen()
                 }
             } else {
-                items(itemsWithData.size) { index ->
-                    TextButton({
+                items(itemsWithData) { metricClass ->
+                    TextButton(
+                        onClick = {
                         scope.launch {
                             // TODO: Dialog or loading state
-                            viewModel.createView(itemsWithData[index])
+                            viewModel.createView(metricClass)
                         }
-                    }, modifier = Modifier.fillMaxWidth()) {
+                    },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                    ) {
                         Text(
-                            PermissionsViewModel.RECORD_NAMES[itemsWithData[index]]
+                            PermissionsViewModel.RECORD_NAMES[metricClass]
                                 ?: error("Missing name mapping"),
-                            fontSize = 16.sp
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Start
                         )
                     }
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                    )
                 }
             }
         }

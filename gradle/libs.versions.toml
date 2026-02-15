@@ -20,9 +20,7 @@ room = "2.7.2"
 ksp = "2.2.0-1.0.29"
 robolectric = "4.16"
 roborazzi = "1.56.0"
-mockito = "5.12.0"
-mockitoKotlin = "5.4.0"
-mockitoInline = "5.2.0"
+mockk = "1.13.12"
 
 [libraries]
 vico-compose = { group = "com.patrykandpatrick.vico", name = "compose", version.ref = "vico" }
@@ -56,9 +54,7 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
 roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
-mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
-mockito-inline = { group = "org.mockito", name = "mockito-inline", version.ref = "mockitoInline" }
-mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version.ref = "mockitoKotlin" }
+mockk = { group = "io.mockk", name = "mockk", version.ref = "mockk" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

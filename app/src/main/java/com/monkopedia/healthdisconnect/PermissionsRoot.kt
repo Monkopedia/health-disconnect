@@ -125,21 +125,30 @@ fun RequestPermissions(onIgnore: () -> Unit = {}, onClick: () -> Unit = {}) {
 
 @Composable
 fun PermissionRationale() {
+    val emphasis = stringResource(R.string.permissions_rationale_emphasis)
+    val body = stringResource(R.string.permissions_rationale_body, emphasis, emphasis)
     Text(
         text = buildAnnotatedString {
-            append(stringResource(R.string.permissions_rationale_prefix))
-            withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, color = DarkOrange)) {
-                append(stringResource(R.string.permissions_rationale_emphasis))
-            }
-            append(stringResource(R.string.permissions_rationale_suffix))
-            withStyle(
-                style = SpanStyle(
-                    fontStyle = FontStyle.Italic,
-                    fontWeight = FontWeight.Bold,
-                    color = LightGreen
+            append(body)
+            val firstIndex = body.indexOf(emphasis)
+            if (firstIndex >= 0) {
+                addStyle(
+                    style = SpanStyle(fontWeight = FontWeight.Bold, color = DarkOrange),
+                    start = firstIndex,
+                    end = firstIndex + emphasis.length
                 )
-            ) {
-                append(stringResource(R.string.permissions_rationale_emphasis))
+            }
+            val secondIndex = body.indexOf(emphasis, startIndex = (firstIndex + emphasis.length).coerceAtLeast(0))
+            if (secondIndex >= 0) {
+                addStyle(
+                    style = SpanStyle(
+                        fontStyle = FontStyle.Italic,
+                        fontWeight = FontWeight.Bold,
+                        color = LightGreen
+                    ),
+                    start = secondIndex,
+                    end = secondIndex + emphasis.length
+                )
             }
         },
         style = Typography.headlineMedium,
