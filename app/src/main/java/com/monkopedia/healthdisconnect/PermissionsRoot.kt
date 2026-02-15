@@ -1,6 +1,7 @@
 package com.monkopedia.healthdisconnect
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +30,8 @@ import com.monkopedia.healthdisconnect.ui.theme.LightGreen
 import com.monkopedia.healthdisconnect.ui.theme.DarkOrange
 import com.monkopedia.healthdisconnect.ui.theme.Typography
 
+private const val PERMISSIONS_TAG = "HealthDisconnectPermissions"
+
 @Composable
 fun PermissionsRoot(
     permissionsViewModel: PermissionsViewModel = viewModel(),
@@ -39,7 +42,7 @@ fun PermissionsRoot(
     val permissionsRequest = rememberLauncherForActivityResult(
         contract = permissionsViewModel.requestPermissionActivityContract
     ) {
-        println("Result: $it")
+        Log.d(PERMISSIONS_TAG, "permission_request_result=$it")
         permissionsViewModel.onResult(it)
     }
 
@@ -51,7 +54,7 @@ fun PermissionsRoot(
         }
     } else if (needsPermissions) {
         RequestPermissions(onIgnore = { permissionsViewModel.ignorePermissions() }) {
-            println("Requesting ${PermissionsViewModel.PERMISSIONS}")
+            Log.d(PERMISSIONS_TAG, "request_permissions_start")
             permissionsRequest.launch(PermissionsViewModel.PERMISSIONS)
         }
     } else {

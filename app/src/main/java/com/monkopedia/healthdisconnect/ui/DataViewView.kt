@@ -517,7 +517,9 @@ fun DataViewView(
     selectedEntryForDetails?.let { record ->
         val details = recordDetailsText(record)
         LaunchedEffect(record) {
-            Log.d(ENTRY_DETAILS_LOG_TAG, details)
+            if (Log.isLoggable(ENTRY_DETAILS_LOG_TAG, Log.DEBUG)) {
+                Log.d(ENTRY_DETAILS_LOG_TAG, details)
+            }
         }
         AlertDialog(
             onDismissRequest = { selectedEntryForDetails = null },
@@ -610,7 +612,9 @@ fun EntriesRouteScreen(
     selectedEntryForDetails?.let { record ->
         val details = recordDetailsText(record)
         LaunchedEffect(record) {
-            Log.d(ENTRY_DETAILS_LOG_TAG, details)
+            if (Log.isLoggable(ENTRY_DETAILS_LOG_TAG, Log.DEBUG)) {
+                Log.d(ENTRY_DETAILS_LOG_TAG, details)
+            }
         }
         AlertDialog(
             onDismissRequest = { selectedEntryForDetails = null },
