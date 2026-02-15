@@ -112,7 +112,11 @@ tasks.register("recordRoborazziTableDebug") {
     group = "verification"
     description =
         "Records Roborazzi screenshots and rewrites the dashboard as a side-by-side table by screen name."
-    dependsOn("recordRoborazziDebug")
+    dependsOn(
+        "recordRoborazziPhoneDebug",
+        "recordRoborazziTabletDebug",
+        "recordRoborazziDashboardIntegrityDebug"
+    )
 
     doLast {
         val screensDir = layout.buildDirectory.dir("outputs/roborazzi/screens").get().asFile
@@ -195,10 +199,80 @@ tasks.register("recordRoborazziTableDebug") {
     }
 }
 
+fun configureRoborazziForkingDefaults(task: Test) {
+    // Keep screenshot suite deterministic in constrained CI/local environments.
+    // Separate test runs by JVM keeps file handles and Robolectric state from compounding.
+    task.forkEvery = 1
+    task.maxHeapSize = "2g"
+    task.maxParallelForks = 1
+    task.outputs.upToDateWhen { false }
+}
+
+fun registerRoborazziSubsetTask(name: String, filter: String) {
+    tasks.register<Test>(name) {
+        group = "verification"
+        description = "Records Roborazzi screenshots for $filter only."
+
+        val baseTask = tasks.named<Test>("testDebugUnitTest").get()
+        testClassesDirs = baseTask.testClassesDirs
+        classpath = baseTask.classpath
+        dependsOn("unitTestGate")
+
+        configureRoborazziForkingDefaults(this)
+
+        // Use explicit filtering for each invocation so a single problematic set cannot block the whole suite.
+        filter {
+            includeTestsMatching(filter)
+        }
+
+        systemProperties["roborazzi.record"] = "true"
+        systemProperties["roborazzi.verify"] = "false"
+    }
+}
+
+tasks.register("unitTestGate") {
+    group = "verification"
+    description = "Runs unit tests in a stable single-process configuration."
+    dependsOn("testDebugUnitTest")
+}
+
+registerRoborazziSubsetTask("recordRoborazziPhoneDebug", "com.monkopedia.healthdisconnect.screenshot.PhoneScreenRoborazziTest")
+registerRoborazziSubsetTask("recordRoborazziTabletDebug", "com.monkopedia.healthdisconnect.screenshot.TabletScreenRoborazziTest")
+registerRoborazziSubsetTask(
+    "recordRoborazziDashboardIntegrityDebug",
+    "com.monkopedia.healthdisconnect.screenshot.ScreenRoborazziDashboardIntegrityTest"
+)
+
+tasks.register("roborazziGate") {
+    group = "verification"
+    description = "Runs screenshot verification separately from unit tests."
+    dependsOn(
+        "recordRoborazziPhoneDebug",
+        "recordRoborazziTabletDebug",
+        "recordRoborazziDashboardIntegrityDebug",
+        "recordRoborazziTableDebug"
+    )
+}
+
 tasks.register("allTests") {
     group = "verification"
     description = "Runs unit tests and screenshot generation used by this repository's local CI gate."
-    dependsOn("testDebugUnitTest", "recordRoborazziDebug")
+    // Keep this local gate focused on debug build smoke + screenshots to avoid unrelated release test drift.
+    setDependsOn(listOf("unitTestGate", "roborazziGate"))
+}
+
+tasks.matching { it.name == "testDebugUnitTest" }.configureEach {
+    if (this is Test) {
+        // Keep unit tests deterministic and reduce intermittent OOM behavior on CI/dev machines.
+        maxHeapSize = "2g"
+        maxParallelForks = 1
+        forkEvery = 1
+    }
+}
+
+tasks.matching { it.name == "recordRoborazziDebug" }.configureEach {
+    // Prevent running screenshot tests concurrently with unit tests and keep memory usage stable.
+    mustRunAfter("unitTestGate")
 }
 
 tasks.matching { it.name == "testReleaseUnitTest" }.configureEach {
