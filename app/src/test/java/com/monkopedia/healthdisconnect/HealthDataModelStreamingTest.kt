@@ -1,6 +1,7 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.test.core.app.ApplicationProvider
 import com.monkopedia.healthdisconnect.model.AggregationMode
@@ -17,8 +18,10 @@ import com.monkopedia.healthdisconnect.model.YAxisMode
 import io.mockk.every
 import io.mockk.mockk
 import java.time.Instant
+import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -163,6 +166,43 @@ class HealthDataModelStreamingTest {
         assertTrue(finalPoint.value > 0.0)
         assertTrue(finalPoint.value < 50_000.0)
         assertTrue(finalPoint.value.isFinite())
+    }
+
+    @Test
+    fun `collectRecordCount emits incremental totals`() = runBlocking {
+        var pageNumber = 0
+        val model = HealthDataModel(
+            app = ApplicationProvider.getApplicationContext<Application>(),
+            autoRefreshMetrics = false,
+            pageReaderOverride = { _, _, _, onPage ->
+                when (pageNumber++) {
+                    0 -> {
+                        onPage(listOf(stepsRecord(1, Instant.parse("2026-02-13T10:00:00Z"))))
+                    }
+                    1 -> {
+                        onPage(listOf(
+                            stepsRecord(2, Instant.parse("2026-02-14T10:00:00Z")),
+                            stepsRecord(3, Instant.parse("2026-02-15T10:00:00Z"))
+                        ))
+                    }
+                }
+            }
+        )
+        val view = DataView(
+            id = 4,
+            type = ViewType.CHART,
+            records = listOf(
+                RecordSelection(StepsRecord::class.qualifiedName!!),
+                RecordSelection(DistanceRecord::class.qualifiedName!!)
+            ),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.ALL, bucketSize = BucketSize.DAY)
+        )
+
+        val counts = withTimeout(5_000) {
+            model.collectRecordCount(view).take(2).toList()
+        }
+
+        assertEquals(listOf(1, 3), counts)
     }
 
     private fun stepsRecord(count: Long, time: Instant): StepsRecord {

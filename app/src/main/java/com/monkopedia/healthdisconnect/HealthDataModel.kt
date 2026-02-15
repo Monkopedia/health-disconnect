@@ -43,7 +43,14 @@ import kotlinx.coroutines.withContext
 
 class HealthDataModel @JvmOverloads constructor(
     app: Application,
-    private val autoRefreshMetrics: Boolean = true
+    private val autoRefreshMetrics: Boolean = true,
+    private val recordLoaderOverride: (suspend (DataView, ((List<Record>) -> Unit)?) -> List<Record>)? = null,
+    private val pageReaderOverride: (suspend (
+        cls: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+        onPage: (List<Record>) -> Unit
+    ) -> Unit)? = null
 ) : AndroidViewModel(app) {
     private data class CachedRecordState(
         val data: MutableStateFlow<List<Record>?> = MutableStateFlow(null),
@@ -71,6 +78,22 @@ class HealthDataModel @JvmOverloads constructor(
         if (autoRefreshMetrics) {
             scheduleMetricsRefresh()
         }
+    }
+
+    private val recordLoader: suspend (DataView, ((List<Record>) -> Unit)?) -> List<Record> = { view, onPartial ->
+        recordLoaderOverride?.invoke(view, onPartial)
+            ?: loadRecordsForView(view, onPartial)
+    }
+    private val pageReader: suspend (
+        cls: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+        onPage: (List<Record>) -> Unit
+    ) -> Unit = { cls, start, end, onPage ->
+        pageReaderOverride?.invoke(cls, start, end, onPage)
+            ?: run {
+                readRecordsInRange(cls, start, end, onPage)
+            }
     }
 
     fun collectMetricsWithData(refreshTick: Int = 0): Flow<List<KClass<out Record>>> {
@@ -149,7 +172,7 @@ class HealthDataModel @JvmOverloads constructor(
         }
         if (!shouldRefresh) return
         viewModelScope.launch(Dispatchers.IO) {
-            val records = loadRecordsForView(view) { partial ->
+            val records = recordLoader(view) { partial ->
                 synchronized(sharedRecordCache) {
                     cache.data.value = partial
                 }
@@ -237,15 +260,10 @@ class HealthDataModel @JvmOverloads constructor(
         var count = 0
         selections.forEach { cls ->
             runCatching {
-                readRecordsInRange(
-                    cls = cls,
-                    start = queryStart,
-                    end = now,
-                    onPage = { pageRecords ->
-                        count += pageRecords.size
-                        trySend(count)
-                    }
-                )
+                pageReader(cls, queryStart, now) { pageRecords ->
+                    count += pageRecords.size
+                    trySend(count)
+                }
             }
         }
         if (count == 0) trySend(0)
@@ -616,7 +634,17 @@ class HealthDataModel @JvmOverloads constructor(
 
         val methods = record.javaClass.methods
             .filter { it.parameterCount == 0 && it.name.startsWith("get") }
-            .filterNot { it.name in setOf("getMetadata", "getZoneOffset", "getStartZoneOffset", "getEndZoneOffset") }
+            .filterNot {
+                it.name in setOf(
+                    "getMetadata",
+                    "getZoneOffset",
+                    "getStartZoneOffset",
+                    "getEndZoneOffset",
+                    "getTime",
+                    "getStartTime",
+                    "getEndTime"
+                )
+            }
 
         val candidates = mutableListOf<CandidateMeasurement>()
         methods.forEach { method ->
