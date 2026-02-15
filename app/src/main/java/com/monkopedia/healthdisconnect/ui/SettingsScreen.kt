@@ -139,18 +139,21 @@ fun SettingsScreen(
         ) {
             Text(
                 text = stringResource(R.string.settings_theme_label),
+                modifier = Modifier.testTag("settings_theme_label"),
                 style = MaterialTheme.typography.bodyMedium
             )
             Box {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = selectedThemeLabel,
+                        modifier = Modifier.testTag("settings_theme_value"),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(Modifier.width(6.dp))
                     Icon(
                         imageVector = Icons.Rounded.KeyboardArrowDown,
+                        modifier = Modifier.testTag("settings_theme_icon"),
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
