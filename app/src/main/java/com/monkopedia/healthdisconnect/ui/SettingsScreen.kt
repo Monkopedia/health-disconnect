@@ -68,6 +68,7 @@ fun SettingsScreen(
     permissionsViewModel: PermissionsViewModel = viewModel(),
     appThemeViewModel: AppThemeViewModel = viewModel(),
     initialDebugExpanded: Boolean = false,
+    initialThemeDropdownExpanded: Boolean = false,
     previewDebugRows: List<String>? = null
 ) {
     val availabilityStatus = permissionsViewModel.availabilityStatus
@@ -77,7 +78,7 @@ fun SettingsScreen(
     val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle(
         initialValue = AppThemeMode.SYSTEM
     )
-    var themeDropdownExpanded by remember { mutableStateOf(false) }
+    var themeDropdownExpanded by remember { mutableStateOf(initialThemeDropdownExpanded) }
     var debugExpanded by remember { mutableStateOf(initialDebugExpanded) }
     var debugLoading by remember { mutableStateOf(false) }
     var debugRows by remember { mutableStateOf(emptyList<MetricDebugRange>()) }

@@ -100,6 +100,15 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun settingsThemeDropdownExpandedScreen() {
+        captureScreen("settings_theme_dropdown_expanded") {
+            SettingsScreen(
+                initialThemeDropdownExpanded = true
+            )
+        }
+    }
+
+    @Test
     fun settingsScreenAdvancedExpanded() {
         captureScreen("settings_advanced") {
             SettingsScreen(

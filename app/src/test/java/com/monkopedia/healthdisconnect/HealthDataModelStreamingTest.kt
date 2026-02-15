@@ -20,6 +20,7 @@ import java.time.Instant
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -110,6 +111,58 @@ class HealthDataModelStreamingTest {
         assertEquals(2, finalPoints.size)
         assertTrue(finalPoints.values.contains(500.0))
         assertTrue(finalPoints.values.contains(900.0))
+    }
+
+    @Test
+    fun `stream handles large dataset with many pages`() = runBlocking {
+        val model = HealthDataModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            autoRefreshMetrics = false
+        )
+        val selection = RecordSelection(
+            fqn = StepsRecord::class.qualifiedName!!,
+            metricSettings = MetricChartSettings(
+                aggregation = AggregationMode.AVERAGE,
+                timeWindow = TimeWindow.ALL,
+                bucketSize = BucketSize.DAY,
+                yAxisMode = YAxisMode.AUTO,
+                smoothing = SmoothingMode.OFF,
+                unitPreference = UnitPreference.AUTO
+            )
+        )
+        val view = DataView(
+            id = 3,
+            type = ViewType.CHART,
+            records = listOf(selection),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.ALL, bucketSize = BucketSize.DAY)
+        )
+
+        val now = Instant.parse("2026-02-16T00:00:00Z")
+        val startNanos = System.nanoTime()
+        val emissions = model.collectAggregatedSeries(view) { _, _, _, onPage ->
+            var index = 0
+            val pageSize = 1_000
+            val totalRecords = 50_000
+            while (index < totalRecords) {
+                val end = (index + pageSize).coerceAtMost(totalRecords)
+                val page = (index until end).map { stepsRecord(it.toLong(), now) }
+                onPage(page)
+                index = end
+            }
+        }.toList()
+        val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
+
+        assertTrue(emissions.isNotEmpty())
+        assertTrue(emissions.size > 1)
+        assertTrue("aggregation should stay responsive at scale", elapsedMs < 60_000)
+
+        val final = emissions.last().singleOrNull()
+        assertNotNull(final)
+        assertEquals(1, final!!.points.size)
+        val finalPoint = final.points.single()
+        assertTrue(finalPoint.value > 0.0)
+        assertTrue(finalPoint.value < 50_000.0)
+        assertTrue(finalPoint.value.isFinite())
     }
 
     private fun stepsRecord(count: Long, time: Instant): StepsRecord {
