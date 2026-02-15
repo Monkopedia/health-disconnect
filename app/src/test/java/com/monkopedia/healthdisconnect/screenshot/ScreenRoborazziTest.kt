@@ -93,6 +93,20 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun permissionsRationaleActivityScreenDarkTheme() {
+        captureScreen("permissions_rationale_activity_dark", darkTheme = true) {
+            PermissionsRationaleScreen()
+        }
+    }
+
+    @Test
+    fun permissionsRationaleActivityScreenLightTheme() {
+        captureScreen("permissions_rationale_activity_light", darkTheme = false) {
+            PermissionsRationaleScreen()
+        }
+    }
+
+    @Test
     fun settingsScreen() {
         captureScreen("settings") {
             SettingsScreen()
@@ -629,9 +643,9 @@ abstract class BaseScreenRoborazziTest {
         }
     }
 
-    private fun captureScreen(name: String, content: @Composable () -> Unit) {
+    private fun captureScreen(name: String, darkTheme: Boolean = false, content: @Composable () -> Unit) {
         captureRoboImage("build/outputs/roborazzi/screens/${name}_$sizeBucket.png") {
-            HealthDisconnectTheme(dynamicColor = false) {
+            HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
                 Surface {
                     content()
                 }
