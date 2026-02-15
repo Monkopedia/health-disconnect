@@ -82,8 +82,6 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.lifecycle.runtime.compose.android)
-    implementation(libs.vico.compose)
-    implementation(libs.vico.compose.m3)
 
     // Room
     implementation(libs.androidx.room.runtime)
