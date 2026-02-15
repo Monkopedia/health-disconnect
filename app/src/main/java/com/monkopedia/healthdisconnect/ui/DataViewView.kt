@@ -623,7 +623,10 @@ fun EntriesRouteScreen(
             title = { Text(stringResource(R.string.data_view_entry_details_title)) },
             text = { Text(details, style = MaterialTheme.typography.bodySmall) },
             confirmButton = {
-                TextButton(onClick = { selectedEntryForDetails = null }) {
+                TextButton(
+                    onClick = { selectedEntryForDetails = null },
+                    modifier = Modifier.testTag("entries_details_close")
+                ) {
                     Text(stringResource(R.string.data_view_close))
                 }
             }
@@ -677,6 +680,7 @@ private fun EntriesScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag("entries_item_row_$index")
                         .clickable {
                             clipboardManager.setText(AnnotatedString(recordDetailsText(record)))
                             scope.launch {
