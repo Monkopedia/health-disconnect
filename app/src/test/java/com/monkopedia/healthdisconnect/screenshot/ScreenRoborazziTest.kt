@@ -535,6 +535,45 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun dataViewMetricGraphWithEntriesScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            alwaysShowEntries = false
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Steps"),
+            view = dataView
+        )
+        val healthDataModel = mockHealthDataModel()
+        val records = listOf(
+            fakeWeightRecord(72.4, "2026-02-05T08:30:00Z"),
+            fakeWeightRecord(71.8, "2026-02-04T08:30:00Z")
+        )
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
+        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
+            listOf(
+                HealthDataModel.MetricSeries(
+                    label = "Steps",
+                    unit = "count",
+                    points = listOf(
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 3400.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 2), 5600.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 3), 2200.0),
+                        HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 4), 4800.0)
+                    )
+                )
+            )
+        )
+        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(records.size)
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
+        captureScreen("data_view_metric_graph_with_entries") {
+            DataViewView(viewModel = viewModel, page = 0, healthDataModel = healthDataModel)
+        }
+    }
+
+    @Test
     fun dataViewMetricGraphMultiSeriesScreen() {
         val firstMetric = PermissionsViewModel.CLASSES.first()
         val secondMetric = PermissionsViewModel.CLASSES.drop(1).firstOrNull() ?: firstMetric
