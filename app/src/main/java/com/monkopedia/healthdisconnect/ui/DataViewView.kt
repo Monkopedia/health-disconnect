@@ -368,7 +368,9 @@ fun DataViewView(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilledTonalButton(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("data_view_discard_button"),
                     onClick = {
                         resetEditStateToSaved()
                         isEditing.value = false
@@ -377,7 +379,9 @@ fun DataViewView(
                     Text(stringResource(R.string.data_view_discard))
                 }
                 Button(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("data_view_save_button"),
                     onClick = { saveChanges() }
                 ) {
                     Text(stringResource(R.string.data_view_save))
@@ -752,6 +756,7 @@ private fun LazyListScope.viewConfigurationSection(
             onToggle = { expanded ->
                 if (!expanded) onResetEditStateToSaved()
             },
+            headerTestTag = "data_view_configuration_header",
             content = {}
         )
     }
@@ -779,6 +784,7 @@ private fun LazyListScope.viewConfigurationSection(
             Text(stringResource(R.string.data_view_label_show_data_points))
             Checkbox(
                 checked = chartSettings.showDataPoints,
+                modifier = Modifier.testTag("data_view_show_data_points_checkbox"),
                 onCheckedChange = {
                     onChartSettingsChanged(chartSettings.copy(showDataPoints = it))
                 }
@@ -1518,6 +1524,7 @@ fun ToggleSection(
     onToggle: ((Boolean) -> Unit)? = null,
     collapsible: Boolean = true,
     showArrow: Boolean = true,
+    headerTestTag: String? = null,
     content: @Composable () -> Unit
 ) {
     val arrowRotation = remember { Animatable(if (visibleState.value) 180f else 0f) }
@@ -1541,19 +1548,38 @@ fun ToggleSection(
     }
     Column(Modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(
-                    enabled = collapsible,
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    if (collapsible) {
-                        visibleState.value = !visibleState.value
-                        onToggle?.invoke(visibleState.value)
-                    }
+            modifier = (
+                if (headerTestTag != null) {
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            enabled = collapsible,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (collapsible) {
+                                visibleState.value = !visibleState.value
+                                onToggle?.invoke(visibleState.value)
+                            }
+                        }
+                        .padding(vertical = 4.dp)
+                        .testTag(headerTestTag)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            enabled = collapsible,
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {
+                            if (collapsible) {
+                                visibleState.value = !visibleState.value
+                                onToggle?.invoke(visibleState.value)
+                            }
+                        }
+                        .padding(vertical = 4.dp)
                 }
-                .padding(vertical = 4.dp),
+            ),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
