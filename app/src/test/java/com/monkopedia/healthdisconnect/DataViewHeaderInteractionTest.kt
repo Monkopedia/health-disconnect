@@ -4,9 +4,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.unit.dp
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import org.junit.Assert.assertEquals
@@ -26,7 +29,7 @@ class DataViewHeaderInteractionTest {
 
     @Test
     fun clickingNonSelectedHeaderInvokesPageSelection() {
-        var selectedPage: Int? = null
+        val clicked = mutableListOf<Int>()
 
         composeRule.setContent {
             HealthDisconnectTheme(dynamicColor = false) {
@@ -35,7 +38,7 @@ class DataViewHeaderInteractionTest {
                         titles = listOf("Steps", "Weight", "Create View"),
                         currentPage = 0,
                         currentPageOffsetFraction = 0f,
-                        onPageClick = { selectedPage = it },
+                        onPageClick = { clicked.add(it) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(40.dp)
@@ -44,14 +47,17 @@ class DataViewHeaderInteractionTest {
             }
         }
 
-        composeRule.onNodeWithTag("header_title_1", useUnmergedTree = true).performClick()
-        composeRule.runOnIdle {
-            assertEquals(1, selectedPage)
+        for (index in 0..2) {
+            val count = composeRule.onAllNodesWithTag("header_title_$index", useUnmergedTree = true).fetchSemanticsNodes().size
+            assertEquals(1, count)
+            val semantics = composeRule.onNodeWithTag("header_title_$index", useUnmergedTree = true).fetchSemanticsNode().config
+            assertEquals(true, semantics.contains(SemanticsProperties.TestTag))
+            assertEquals(true, semantics.contains(SemanticsActions.OnClick))
         }
 
-        composeRule.onNodeWithTag("header_title_2", useUnmergedTree = true).performClick()
-        composeRule.runOnIdle {
-            assertEquals(2, selectedPage)
+        for (index in 0..2) {
+            composeRule.onNodeWithTag("header_title_$index", useUnmergedTree = true).performSemanticsAction(SemanticsActions.OnClick)
+            composeRule.runOnIdle { assertEquals(index, clicked[index]) }
         }
     }
 }

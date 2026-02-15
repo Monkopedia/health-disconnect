@@ -15,6 +15,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -241,35 +243,66 @@ internal fun DataViewHeaderStrip(
     ) {
         val slotWidthPx = if (headerRowWidthPx > 0f) headerRowWidthPx / 3f else fallbackSlotWidthPx
         val headerSpacingFactor = 1.28f
-        titles.forEachIndexed { page, title ->
-            Text(
-                text = title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .widthIn(max = 170.dp)
-                    .padding(horizontal = 4.dp)
-                    .offset {
-                        val signedOffset = (currentPage - page) + currentPageOffsetFraction
-                        androidx.compose.ui.unit.IntOffset(
-                            (-signedOffset * slotWidthPx * headerSpacingFactor).roundToInt(),
-                            0
-                        )
-                    }
-                    .testTag("header_title_$page")
-                    .clickable { onPageClick(page) }
-                    .graphicsLayer {
-                        val signedOffset = (currentPage - page) + currentPageOffsetFraction
-                        val clampedOffset = abs(signedOffset).coerceIn(0f, 1f)
-                        alpha = (1f - (0.62f * clampedOffset)).coerceIn(0f, 1f)
-                        val scale = 1f - (0.22f * clampedOffset)
-                        scaleX = scale
-                        scaleY = scale
-                    }
-            )
+        for (page in titles.indices) {
+            val pageIndex = page
+            val title = titles[pageIndex]
+            key(page) {
+                DataViewHeaderItem(
+                    modifier = Modifier.align(Alignment.Center),
+                    title = title,
+                    page = pageIndex,
+                    currentPage = currentPage,
+                    currentPageOffsetFraction = currentPageOffsetFraction,
+                    slotWidthPx = slotWidthPx,
+                    headerSpacingFactor = headerSpacingFactor,
+                    onHeaderClick = { onPageClick(pageIndex) }
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun DataViewHeaderItem(
+    modifier: Modifier,
+    title: String,
+    page: Int,
+    currentPage: Int,
+    currentPageOffsetFraction: Float,
+    slotWidthPx: Float,
+    headerSpacingFactor: Float,
+    onHeaderClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .widthIn(max = 170.dp)
+            .padding(horizontal = 4.dp)
+            .offset {
+                IntOffset(
+                    x = (-(currentPage - page + currentPageOffsetFraction) * slotWidthPx * headerSpacingFactor).roundToInt(),
+                    y = 0
+                )
+            }
+            .graphicsLayer {
+                val signedOffset = (currentPage - page) + currentPageOffsetFraction
+                val clampedOffset = abs(signedOffset).coerceIn(0f, 1f)
+                alpha = (1f - (0.62f * clampedOffset)).coerceIn(0f, 1f)
+                val scale = 1f - (0.22f * clampedOffset)
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable { onHeaderClick() }
+            .testTag("header_title_$page")
+            .height(40.dp)
+    ) {
+        Text(
+            text = title,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier
+                .align(Alignment.Center)
+        )
     }
 }
