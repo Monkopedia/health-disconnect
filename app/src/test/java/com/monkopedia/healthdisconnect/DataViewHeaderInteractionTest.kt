@@ -60,4 +60,35 @@ class DataViewHeaderInteractionTest {
             composeRule.runOnIdle { assertEquals(index, clicked[index]) }
         }
     }
+
+    @Test
+    fun clickingHeadersWhileSwipingStillRoutesToRequestedPage() {
+        val clicked = mutableListOf<Int>()
+
+        composeRule.setContent {
+            HealthDisconnectTheme(dynamicColor = false) {
+                Surface {
+                    DataViewHeaderStrip(
+                        titles = listOf("Steps", "Weight", "Create View"),
+                        currentPage = 1,
+                        currentPageOffsetFraction = 0.38f,
+                        onPageClick = { clicked.add(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                    )
+                }
+            }
+        }
+
+        for (index in 0..2) {
+            val count = composeRule.onAllNodesWithTag("header_title_$index", useUnmergedTree = true).fetchSemanticsNodes().size
+            assertEquals(1, count)
+        }
+
+        for (index in 0..2) {
+            composeRule.onNodeWithTag("header_title_$index", useUnmergedTree = true).performSemanticsAction(SemanticsActions.OnClick)
+            composeRule.runOnIdle { assertEquals(index, clicked[index]) }
+        }
+    }
 }
