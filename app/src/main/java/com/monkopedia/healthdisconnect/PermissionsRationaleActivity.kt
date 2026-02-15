@@ -24,7 +24,9 @@ public class PermissionsRationaleActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val appThemeViewModel: AppThemeViewModel = viewModel()
-            val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle()
+            val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle(
+                initialValue = AppThemeMode.SYSTEM
+            )
             val darkTheme = when (themeMode) {
                 AppThemeMode.SYSTEM -> isSystemInDarkTheme()
                 AppThemeMode.DARK -> true

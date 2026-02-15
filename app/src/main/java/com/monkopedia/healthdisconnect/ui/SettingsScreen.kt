@@ -74,7 +74,9 @@ fun SettingsScreen(
     val grantedPermissions by permissionsViewModel.grantedPermissions.collectAsStateWithLifecycle(initialValue = emptySet())
     val baseGranted = grantedPermissions.containsAll(PermissionsViewModel.PERMISSIONS)
     val historyGranted = grantedPermissions.contains(PermissionsViewModel.HISTORY_PERMISSION)
-    val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle()
+    val themeMode by appThemeViewModel.themeMode.collectAsStateWithLifecycle(
+        initialValue = AppThemeMode.SYSTEM
+    )
     var themeDropdownExpanded by remember { mutableStateOf(false) }
     var debugExpanded by remember { mutableStateOf(initialDebugExpanded) }
     var debugLoading by remember { mutableStateOf(false) }
