@@ -11,6 +11,7 @@ import com.monkopedia.healthdisconnect.model.UnitPreference
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.reflect.KClass
+import kotlin.coroutines.cancellation.CancellationException
 
 data class MetricMeasurement(
     val timestamp: Instant,
@@ -125,8 +126,8 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
             }
         val best = prioritized.maxByOrNull { it.score }
         if (best == null && typePreference?.fallbackToDurationMinutes == true) {
-            val start = runCatching { record.javaClass.getMethod("getStartTime").invoke(record) as? Instant }.getOrNull()
-            val end = runCatching { record.javaClass.getMethod("getEndTime").invoke(record) as? Instant }.getOrNull()
+            val start = safeGetTime(record, "getStartTime")
+            val end = safeGetTime(record, "getEndTime")
             if (start != null && end != null && !end.isBefore(start)) {
                 val minutes = ChronoUnit.SECONDS.between(start, end).toDouble() / 60.0
                 return MetricMeasurement(
@@ -153,13 +154,31 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
             try {
                 val value = record.javaClass.getMethod(getterName).invoke(record)
                 if (value is Instant) return value
-            } catch (_: Throwable) {
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
                 // Some record types don't expose this getter. Fall back below.
             }
         }
         return try {
             record.metadata.lastModifiedTime
-        } catch (_: Throwable) {
+        } catch (exception: Exception) {
+            if (exception is CancellationException) {
+                throw exception
+            }
+            null
+        }
+    }
+
+    private fun safeGetTime(record: Record, method: String): Instant? {
+        return try {
+            record.javaClass.getMethod(method).invoke(record) as? Instant
+        } catch (exception: Exception) {
+            if (exception is CancellationException) {
+                throw exception
+            }
+            Log.v(EXTRACTION_LOG_TAG, "Unable to read $method", exception)
             null
         }
     }

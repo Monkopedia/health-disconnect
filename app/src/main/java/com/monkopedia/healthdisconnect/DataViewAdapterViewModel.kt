@@ -7,6 +7,7 @@ import androidx.health.connect.client.records.Record
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.monkopedia.healthdisconnect.datastore.DataViewListSerializer
 import com.monkopedia.healthdisconnect.datastore.DataViewSerializer
 import com.monkopedia.healthdisconnect.model.DataView
@@ -27,6 +28,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.monkopedia.healthdisconnect.room.DataViewEntity
 import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
+import kotlin.coroutines.cancellation.CancellationException
 
 class DataViewAdapterViewModel(
     app: Application,
@@ -88,8 +90,15 @@ class DataViewAdapterViewModel(
                         }
                     }
                 }
-            } catch (_: Throwable) {
-                // Ignore migration errors; start fresh
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                Log.w(
+                    TAG,
+                    "Migration from DataStore to Room failed; starting with fresh Room state",
+                    exception
+                )
             }
         }
     }
@@ -153,9 +162,19 @@ class DataViewAdapterViewModel(
                 ),
                 entity.recordsJson
             )
-            val settings = runCatching {
+            val settings = try {
                 Json.decodeFromString(ChartSettings.serializer(), entity.settingsJson)
-            }.getOrDefault(ChartSettings())
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                Log.w(
+                    TAG,
+                    "Failed to parse saved chart settings for data view ${entity.id}",
+                    exception
+                )
+                ChartSettings()
+            }
             DataView(
                 id = entity.id,
                 type = com.monkopedia.healthdisconnect.model.ViewType.valueOf(entity.type),
@@ -168,5 +187,6 @@ class DataViewAdapterViewModel(
     companion object {
         val Context.dataViewInfoDataStore by dataStore("dataInfoStore", DataViewListSerializer)
         val Context.dataViewDataStore by dataStore("dataStore", DataViewSerializer)
+        private const val TAG = "DataViewAdapterViewModel"
     }
 }

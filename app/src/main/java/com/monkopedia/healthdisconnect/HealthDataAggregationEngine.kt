@@ -16,9 +16,12 @@ import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.reflect.KClass
+import java.util.TreeMap
+import android.util.Log
 
 interface HealthDataAggregationEngine {
     fun windowStart(timeWindow: TimeWindow, now: Instant): Instant?
@@ -156,7 +159,7 @@ class DefaultHealthDataAggregationEngine(
 
         val queryStart = viewWindowStart ?: Instant.EPOCH
         selectedByType.forEach { metricState ->
-            runCatching {
+            try {
                 pageReader(metricState.recordClass, queryStart, now) { pageRecords ->
                     pageRecords.forEach { record ->
                         val measurement = extractMeasurement(
@@ -182,9 +185,22 @@ class DefaultHealthDataAggregationEngine(
                     }
                     trySend(buildStreamingSeries(selectedByType))
                 }
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                Log.w(
+                    LOG_TAG,
+                    "Failed to read aggregation data for ${metricState.recordClass.qualifiedName}",
+                    exception
+                )
             }
         }
         trySend(buildStreamingSeries(selectedByType))
+    }
+
+    companion object {
+        private const val LOG_TAG = "HealthDataAggregation"
     }
 
     override fun toBucketDate(date: LocalDate, bucketSize: BucketSize): LocalDate {
@@ -229,14 +245,13 @@ class DefaultHealthDataAggregationEngine(
     private fun buildStreamingSeries(states: List<StreamingMetricState>): List<HealthDataModel.MetricSeries> {
         return states.mapNotNull { state ->
             if (state.buckets.isEmpty()) return@mapNotNull null
-            val aggregated = state.buckets
-                .toSortedMap()
-                .map { (date, bucket) ->
-                    HealthDataModel.MetricPoint(
-                        date = date,
-                        value = bucket.aggregated(state.metricSettings.aggregation)
-                    )
-                }
+                val aggregated = state.buckets
+                    .map { (date, bucket) ->
+                        HealthDataModel.MetricPoint(
+                            date = date,
+                            value = bucket.aggregated(state.metricSettings.aggregation)
+                        )
+                    }
             val points = when (state.metricSettings.smoothing) {
                 com.monkopedia.healthdisconnect.model.SmoothingMode.OFF -> aggregated
                 com.monkopedia.healthdisconnect.model.SmoothingMode.MOVING_AVERAGE_3 -> smooth3(aggregated)
@@ -281,6 +296,6 @@ class DefaultHealthDataAggregationEngine(
         val metricSettings: MetricChartSettings,
         var unit: String? = null,
         var peakValue: Double? = null,
-        val buckets: MutableMap<LocalDate, BucketAccumulator> = mutableMapOf()
+        val buckets: TreeMap<LocalDate, BucketAccumulator> = TreeMap()
     )
 }

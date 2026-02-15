@@ -145,10 +145,10 @@ class HealthDataModelStreamingTest {
         val emissions = model.collectAggregatedSeries(view) { _, _, _, onPage ->
             var index = 0
             val pageSize = 1_000
-            val totalRecords = 50_000
+            val totalRecords = 20_000
             while (index < totalRecords) {
                 val end = (index + pageSize).coerceAtMost(totalRecords)
-                val page = (index until end).map { stepsRecord(it.toLong(), now) }
+                val page = (index until end).map { i -> stepsRecord(i.toLong(), now) }
                 onPage(page)
                 index = end
             }

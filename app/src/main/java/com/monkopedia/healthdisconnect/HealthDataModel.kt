@@ -1,6 +1,7 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.Record
 import androidx.lifecycle.AndroidViewModel
@@ -13,6 +14,7 @@ import com.monkopedia.healthdisconnect.model.YAxisMode
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.reflect.KClass
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -51,6 +53,7 @@ class HealthDataModel @JvmOverloads constructor(
 
     companion object {
         const val MAX_CHART_SERIES = 3
+        const val LOG_TAG = "HealthDataModel"
     }
 
     private val metricsLock = Any()
@@ -168,8 +171,15 @@ class HealthDataModel @JvmOverloads constructor(
                         )
                     }
                 )
-            } catch (_: Throwable) {
-                // Ignore per-type errors so partial dataset still flows to the UI.
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                Log.w(
+                    LOG_TAG,
+                    "Failed to load records for ${cls.qualifiedName}, continuing with partial dataset",
+                    exception
+                )
             }
         }
         return all.sortedByDescending { recordTimestamp(it) ?: Instant.EPOCH }
@@ -218,11 +228,20 @@ class HealthDataModel @JvmOverloads constructor(
         val queryStart = windowStart(view.chartSettings.timeWindow) ?: Instant.EPOCH
         var count = 0
         selections.forEach { cls ->
-            runCatching {
+            try {
                 pageReader(cls, queryStart, now) { pageRecords ->
                     count += pageRecords.size
                     trySend(count)
                 }
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                Log.w(
+                    LOG_TAG,
+                    "Failed to read record count for ${cls.qualifiedName}",
+                    exception
+                )
             }
         }
         if (count == 0) trySend(0)
@@ -299,4 +318,5 @@ class HealthDataModel @JvmOverloads constructor(
     private fun recordTimestamp(record: Record): Instant? {
         return measurementExtractor.recordTimestamp(record)
     }
+
 }
