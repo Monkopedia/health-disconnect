@@ -60,6 +60,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun DataViewAdapter(
     viewModel: DataViewAdapterViewModel = viewModel(),
+    healthDataModel: HealthDataModel = viewModel(),
     initialPage: Int = 0,
     initialPageOffsetFraction: Float = 0f,
     showSettings: () -> Unit,
@@ -122,12 +123,13 @@ fun DataViewAdapter(
                 if (page < viewCount) {
                     DataViewView(
                         viewModel = viewModel,
+                        healthDataModel = healthDataModel,
                         page = page,
                         showHeader = false,
                         onOpenEntriesRequested = onOpenEntries
                     )
                 } else {
-                    CreateViewView(viewModel, showHeader = false)
+                    CreateViewView(viewModel, healthDataModel, showHeader = false)
                 }
             }
         }
@@ -164,6 +166,7 @@ fun DataViewAdapter(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(start = 4.dp, top = 8.dp)
+                .testTag("data_view_settings_button")
         ) {
             Icon(
                 imageVector = Icons.Rounded.Settings,

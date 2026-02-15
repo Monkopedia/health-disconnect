@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
@@ -548,6 +549,7 @@ private fun LazyListScope.entriesSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { onOpenEntries() }
+                .testTag("entries_row")
                 .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -650,7 +652,10 @@ private fun EntriesScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onBack) {
+            TextButton(
+                onClick = onBack,
+                modifier = Modifier.testTag("entries_back_button")
+            ) {
                 Text(stringResource(R.string.data_view_back))
             }
             Text(
