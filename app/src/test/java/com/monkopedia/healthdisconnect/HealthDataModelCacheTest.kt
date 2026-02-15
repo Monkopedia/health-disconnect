@@ -12,27 +12,19 @@ import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.ViewType
 import io.mockk.every
 import io.mockk.mockk
-import java.lang.reflect.Field
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.reflect.KClass
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotEquals
-import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class HealthDataModelCacheTest {
-
-    @Before
-    fun setUp() {
-        clearSharedCaches()
-    }
 
     @Test
     fun `cache key changes with records and time window`() {
@@ -111,11 +103,41 @@ class HealthDataModelCacheTest {
         assertEquals(1, refreshedRecords.size)
     }
 
+    @Test
+    fun `record cache evicts bounded entries`() = runBlocking {
+        val model = HealthDataModel(
+            app = ApplicationProvider.getApplicationContext<Application>(),
+            autoRefreshMetrics = false,
+            recordLoaderOverride = { _, onPartialUpdate ->
+                onPartialUpdate?.invoke(emptyList())
+                emptyList()
+            }
+        )
+
+        PermissionsViewModel.CLASSES.take(12).forEachIndexed { index, recordType ->
+            val view = DataView(
+                id = index + 1,
+                type = ViewType.CHART,
+                records = listOf(RecordSelection(recordType)),
+                chartSettings = ChartSettings(timeWindow = TimeWindow.values()[index % TimeWindow.values().size])
+            )
+            collectRecords(model, view, 0)
+        }
+
+        assertTrue(cacheEntryCount(model) <= 8)
+    }
+
     private suspend fun loadRecords(model: HealthDataModel, view: DataView, refreshTick: Int): List<Record> =
         withTimeout(5_000) {
             model.collectData(view, refreshTick)
                 .first { it.isNotEmpty() }
         }
+
+    private suspend fun collectRecords(model: HealthDataModel, view: DataView, refreshTick: Int) {
+        withTimeout(5_000) {
+            model.collectData(view, refreshTick).first()
+        }
+    }
 
     private fun cacheKey(model: HealthDataModel, view: DataView): String {
         val method = HealthDataModel::class.java.getDeclaredMethod("cacheKey", DataView::class.java)
@@ -123,25 +145,12 @@ class HealthDataModelCacheTest {
         return method.invoke(model, view) as String
     }
 
-    private fun clearSharedCaches() {
-        clearMutableMapCache("sharedRecordCache")
-        clearStateFlowCache("sharedMetricsWithData")
-    }
-
-    private fun clearMutableMapCache(fieldName: String) {
-        val field: Field = HealthDataModel::class.java.getDeclaredField(fieldName)
+    private fun cacheEntryCount(model: HealthDataModel): Int {
+        val field = HealthDataModel::class.java.getDeclaredField("recordCache")
         field.isAccessible = true
         @Suppress("UNCHECKED_CAST")
-        val cache = field.get(null) as MutableMap<String, *>
-        cache.clear()
-    }
-
-    private fun clearStateFlowCache(fieldName: String) {
-        val field: Field = HealthDataModel::class.java.getDeclaredField(fieldName)
-        field.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val stateFlow = field.get(null) as MutableStateFlow<List<KClass<out Record>>?>
-        stateFlow.value = null
+        val cache = field.get(model) as MutableMap<*, *>
+        return cache.size
     }
 
     private fun stepsRecord(marker: Long): StepsRecord {

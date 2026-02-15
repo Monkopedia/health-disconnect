@@ -55,24 +55,28 @@ class HealthDataModel @JvmOverloads constructor(
     private data class CachedRecordState(
         val data: MutableStateFlow<List<Record>?> = MutableStateFlow(null),
         var loading: Boolean = false,
-        var lastRefreshTick: Int = Int.MIN_VALUE
+        var lastRefreshTick: Int = Int.MIN_VALUE,
+        var lastAccessTick: Long = 0L
     )
 
     companion object {
         private const val EXTRACTION_LOG_TAG = "HealthDisconnectExtract"
         const val MAX_CHART_SERIES = 3
         private const val RECORD_CACHE_SCHEMA_VERSION = 4
-        private val sharedMetricsWithData = MutableStateFlow<List<KClass<out Record>>?>(null)
-        private val sharedRecordCache = mutableMapOf<String, CachedRecordState>()
-        private val metricsLock = Any()
-        private var metricsLoading = false
-        private var metricsLastRefreshTick = Int.MIN_VALUE
+        private const val MAX_CACHED_VIEWS = 8
     }
+
+    private val recordCacheAccessCounter = java.util.concurrent.atomic.AtomicLong(0L)
+    private val metricsLock = Any()
+    private val recordCacheLock = Any()
+    private val metricsWithData: MutableStateFlow<List<KClass<out Record>>?> = MutableStateFlow(null)
+    private val recordCache = mutableMapOf<String, CachedRecordState>()
+    private var metricsLoading = false
+    private var metricsLastRefreshTick = Int.MIN_VALUE
 
     val healthConnectClient by lazy {
         HealthConnectClient.getOrCreate(context)
     }
-    val metricsWithData: MutableStateFlow<List<KClass<out Record>>?> = sharedMetricsWithData
 
     init {
         if (autoRefreshMetrics) {
@@ -153,15 +157,20 @@ class HealthDataModel @JvmOverloads constructor(
 
     fun collectData(view: DataView, refreshTick: Int = 0): Flow<List<Record>> {
         val key = cacheKey(view)
-        val cached = synchronized(sharedRecordCache) {
-            sharedRecordCache.getOrPut(key) { CachedRecordState() }
+        val cached = synchronized(recordCacheLock) {
+            recordCache.getOrPut(key) { CachedRecordState() }.also {
+                it.lastAccessTick = recordCacheAccessCounter.incrementAndGet()
+            }.also {
+                evictRecordCacheLocked()
+            }
         }
         scheduleCacheLoad(view, cached, refreshTick)
         return cached.data.filterNotNull()
     }
 
     private fun scheduleCacheLoad(view: DataView, cache: CachedRecordState, refreshTick: Int) {
-        val shouldRefresh = synchronized(sharedRecordCache) {
+        val shouldRefresh = synchronized(recordCacheLock) {
+            cache.lastAccessTick = recordCacheAccessCounter.incrementAndGet()
             val needsRefresh = cache.data.value == null || refreshTick > cache.lastRefreshTick
             if (cache.loading || !needsRefresh) {
                 false
@@ -173,16 +182,27 @@ class HealthDataModel @JvmOverloads constructor(
         if (!shouldRefresh) return
         viewModelScope.launch(Dispatchers.IO) {
             val records = recordLoader(view) { partial ->
-                synchronized(sharedRecordCache) {
+                synchronized(recordCacheLock) {
                     cache.data.value = partial
                 }
             }
-            synchronized(sharedRecordCache) {
+            synchronized(recordCacheLock) {
                 cache.data.value = records
                 cache.lastRefreshTick = maxOf(cache.lastRefreshTick, refreshTick)
                 cache.loading = false
+                cache.lastAccessTick = recordCacheAccessCounter.incrementAndGet()
+                evictRecordCacheLocked()
             }
         }
+    }
+
+    private fun evictRecordCacheLocked() {
+        if (recordCache.size <= MAX_CACHED_VIEWS) return
+        val removals = recordCache.entries
+            .filter { !it.value.loading }
+            .sortedBy { it.value.lastAccessTick }
+            .take(recordCache.size - MAX_CACHED_VIEWS)
+        removals.forEach { (key, _) -> recordCache.remove(key) }
     }
 
     private suspend fun loadRecordsForView(
@@ -214,6 +234,17 @@ class HealthDataModel @JvmOverloads constructor(
             }
         }
         return all.sortedByDescending { recordTimestamp(it) ?: Instant.EPOCH }
+    }
+
+    internal fun clearCachesForTest() {
+        synchronized(metricsLock) {
+            metricsLoading = false
+            metricsLastRefreshTick = Int.MIN_VALUE
+            metricsWithData.value = null
+        }
+        synchronized(recordCacheLock) {
+            recordCache.clear()
+        }
     }
 
     private fun cacheKey(view: DataView): String {
