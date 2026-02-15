@@ -128,6 +128,7 @@ fun SettingsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag("settings_theme_row")
                 .clickable { themeDropdownExpanded = true }
                 .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
