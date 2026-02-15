@@ -162,7 +162,6 @@ abstract class BaseScreenRoborazziTest {
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            alwaysShowEntries = false
         )
         val viewModel = mockk<DataViewAdapterViewModel>()
         every { viewModel.dataViews } returns 
@@ -350,7 +349,6 @@ abstract class BaseScreenRoborazziTest {
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            alwaysShowEntries = false
         )
         val viewModel = mockDataViewAdapterViewModel(
             info = DataViewInfo(id = 1, name = "Weight"),
@@ -374,7 +372,6 @@ abstract class BaseScreenRoborazziTest {
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            alwaysShowEntries = false
         )
         val viewModel = mockDataViewAdapterViewModel(
             info = DataViewInfo(id = 1, name = "Weight"),
@@ -402,7 +399,6 @@ abstract class BaseScreenRoborazziTest {
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            alwaysShowEntries = false
         )
         val viewModel = mockDataViewAdapterViewModel(
             info = DataViewInfo(id = 1, name = "Weight"),
@@ -430,14 +426,12 @@ abstract class BaseScreenRoborazziTest {
                 id = 1,
                 type = ViewType.CHART,
                 records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-                alwaysShowEntries = false
             )
         )
         val dataView = DataView(
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            alwaysShowEntries = false
         )
         val healthDataModel = mockHealthDataModel()
         every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
@@ -453,7 +447,6 @@ abstract class BaseScreenRoborazziTest {
             id = 1,
             type = ViewType.CHART,
             records = emptyList(),
-            alwaysShowEntries = true
         )
         val viewModel = mockDataViewAdapterViewModel(
             info = DataViewInfo(id = 1, name = "Edit Me"),
@@ -473,7 +466,6 @@ abstract class BaseScreenRoborazziTest {
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            alwaysShowEntries = false,
             chartSettings = ChartSettings(timeWindow = TimeWindow.DAYS_30)
         )
         val viewModel = mockDataViewAdapterViewModel(
@@ -521,7 +513,6 @@ abstract class BaseScreenRoborazziTest {
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            alwaysShowEntries = false,
             chartSettings = ChartSettings(
                 chartType = ChartType.BARS,
                 showDataPoints = true,
@@ -577,7 +568,6 @@ abstract class BaseScreenRoborazziTest {
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            alwaysShowEntries = false
         )
         val viewModel = mockDataViewAdapterViewModel(
             info = DataViewInfo(id = 1, name = "Steps"),
@@ -621,7 +611,6 @@ abstract class BaseScreenRoborazziTest {
                 RecordSelection(firstMetric),
                 RecordSelection(secondMetric)
             ),
-            alwaysShowEntries = false,
             chartSettings = ChartSettings(timeWindow = TimeWindow.DAYS_30)
         )
         val viewModel = mockDataViewAdapterViewModel(
@@ -673,7 +662,6 @@ abstract class BaseScreenRoborazziTest {
                 RecordSelection(firstMetric),
                 RecordSelection(secondMetric)
             ),
-            alwaysShowEntries = false,
             chartSettings = ChartSettings(
                 chartType = ChartType.BARS,
                 backgroundStyle = ChartBackgroundStyle.GRID,
@@ -755,7 +743,6 @@ abstract class BaseScreenRoborazziTest {
                 id = info.id,
                 type = ViewType.CHART,
                 records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-                alwaysShowEntries = false
             )
             every { viewModel.dataView(info.id) } returns MutableStateFlow(view)
         }

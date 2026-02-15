@@ -61,7 +61,6 @@ class DataViewRoomTransactionTest {
             id = 1,
             type = ViewType.CHART.name,
             recordsJson = "[]",
-            alwaysShowEntries = false,
             settingsJson = "{}"
         )
 
@@ -82,7 +81,6 @@ class DataViewRoomTransactionTest {
                             id = 2,
                             type = ViewType.CHART.name,
                             recordsJson = "[]",
-                            alwaysShowEntries = true,
                             settingsJson = "{}"
                         )
                     )
@@ -102,7 +100,6 @@ class DataViewRoomTransactionTest {
             id = 10,
             type = ViewType.CHART.name,
             recordsJson = "[]",
-            alwaysShowEntries = false,
             settingsJson = "{}"
         )
         appDb.withTransaction {
@@ -144,7 +141,6 @@ class DataViewRoomTransactionTest {
                     id = 20,
                     type = ViewType.CHART.name,
                     recordsJson = "[]",
-                    alwaysShowEntries = true
                 )
             )
         } finally {

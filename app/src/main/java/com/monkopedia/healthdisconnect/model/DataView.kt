@@ -9,7 +9,6 @@ data class DataView(
     val id: Int = 0,
     val type: ViewType,
     val records: List<RecordSelection> = emptyList(),
-    val alwaysShowEntries: Boolean = false,
     val chartSettings: ChartSettings = ChartSettings()
 ) {
 

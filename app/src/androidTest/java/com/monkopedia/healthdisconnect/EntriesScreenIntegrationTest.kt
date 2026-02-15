@@ -117,7 +117,6 @@ class EntriesScreenIntegrationTest {
                 id = 1,
                 type = ViewType.CHART,
                 records = listOf(RecordSelection(WeightRecord::class)),
-                alwaysShowEntries = false
             )
         )
 

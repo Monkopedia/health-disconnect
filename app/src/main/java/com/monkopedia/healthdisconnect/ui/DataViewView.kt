@@ -83,6 +83,7 @@ import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle

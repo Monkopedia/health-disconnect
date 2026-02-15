@@ -147,7 +147,6 @@ class DataViewAdapterViewModelTest {
                 id = id,
                 type = ViewType.CHART.name,
                 recordsJson = recordsJson,
-                alwaysShowEntries = false,
                 settingsJson = invalidSettings
             )
         )
@@ -169,7 +168,6 @@ class DataViewAdapterViewModelTest {
             id = id,
             type = ViewType.CHART,
             records = listOf(RecordSelection(WeightRecord::class)),
-            alwaysShowEntries = true,
             chartSettings = ChartSettings(timeWindow = TimeWindow.YEAR_1)
         )
 

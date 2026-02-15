@@ -81,7 +81,6 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
                                     id = view.id,
                                     type = view.type.name,
                                     recordsJson = recJson,
-                                    alwaysShowEntries = view.alwaysShowEntries,
                                     settingsJson = settingsJson
                                 )
                             )
@@ -105,7 +104,6 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
                 id = newId,
                 type = com.monkopedia.healthdisconnect.model.ViewType.CHART.name,
                 recordsJson = recordsJson,
-                alwaysShowEntries = false,
                 settingsJson = settingsJson
             )
         )
@@ -129,7 +127,6 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
                 id = view.id,
                 type = view.type.name,
                 recordsJson = recordsJson,
-                alwaysShowEntries = view.alwaysShowEntries,
                 settingsJson = settingsJson
             )
         )
@@ -161,7 +158,6 @@ class DataViewAdapterViewModel(app: Application, private val savedStateHandle: S
                 id = entity.id,
                 type = com.monkopedia.healthdisconnect.model.ViewType.valueOf(entity.type),
                 records = records,
-                alwaysShowEntries = entity.alwaysShowEntries,
                 chartSettings = settings
             )
         }

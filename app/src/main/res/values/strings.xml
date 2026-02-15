@@ -44,9 +44,6 @@
     <string name="data_view_entries_for">Entries - %1$s</string>
     <string name="data_view_entry_copied">Entry details copied</string>
     <string name="data_view_configuration">View Configuration</string>
-    <string name="data_view_open_entries_default">Open entries by default</string>
-    <string name="data_view_graph_display_header">Graph Display</string>
-    <string name="data_view_record_types_header">Record Types</string>
     <string name="data_view_no_selected_metrics">No metrics selected.</string>
     <string name="data_view_add_metric">Add metric</string>
     <string name="data_view_remove_metric">Remove metric</string>

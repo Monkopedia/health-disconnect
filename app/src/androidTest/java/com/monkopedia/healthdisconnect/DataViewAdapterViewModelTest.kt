@@ -59,17 +59,14 @@ class DataViewAdapterViewModelTest {
         }
 
         val nextSettings = updated.copy(
-            alwaysShowEntries = true,
             chartSettings = ChartSettings(timeWindow = TimeWindow.DAYS_30)
         )
         viewModel.updateView(nextSettings)
 
         val stored = withTimeout(2000) {
-            viewModel.dataView(1).filter { it.alwaysShowEntries }
-                .first { it.chartSettings.timeWindow == TimeWindow.DAYS_30 }
+            viewModel.dataView(1).first { it.chartSettings.timeWindow == TimeWindow.DAYS_30 }
         }
         assertEquals(ChartSettings(timeWindow = TimeWindow.DAYS_30), stored.chartSettings)
-        assertEquals(true, stored.alwaysShowEntries)
     }
 
     @Test
