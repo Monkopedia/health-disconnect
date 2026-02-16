@@ -220,6 +220,12 @@ fun SettingsScreen(
         ) {
             Text(stringResource(R.string.settings_request_history_permission))
         }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = stringResource(R.string.settings_permissions_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Spacer(Modifier.height(14.dp))
         HorizontalDivider()
         Row(
@@ -301,12 +307,6 @@ fun SettingsScreen(
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.settings_permissions_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
