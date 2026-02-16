@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataView
@@ -108,12 +109,38 @@ class DataViewViewEditFlowTest {
         coVerify(exactly = 0) { harness.viewModel.updateView(any()) }
     }
 
-    private fun setupHarness(): EditFlowHarness {
+    @Test
+    fun timeWindowRestoresAfterHistoryPermissionGranted() {
+        val harness = setupHarness(
+            initialTimeWindow = TimeWindow.YEAR_1,
+            initialPermissions = emptySet()
+        )
+        setViewContent(
+            permissionsViewModel = harness.permissionsViewModel,
+            healthDataModel = harness.healthDataModel,
+            viewModel = harness.viewModel
+        )
+
+        openViewConfiguration()
+        composeRule.onNodeWithText("Days 30").assertIsDisplayed()
+
+        composeRule.runOnIdle {
+            harness.grantedPermissions.value = setOf(PermissionsViewModel.HISTORY_PERMISSION)
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithText("Year 1").assertIsDisplayed()
+    }
+
+    private fun setupHarness(
+        initialTimeWindow: TimeWindow = TimeWindow.DAYS_30,
+        initialPermissions: Set<String> = setOf(PermissionsViewModel.HISTORY_PERMISSION)
+    ): EditFlowHarness {
         val dataView = DataView(
             id = 1,
             type = ViewType.CHART,
             records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
-            chartSettings = ChartSettings(timeWindow = TimeWindow.DAYS_30)
+            chartSettings = ChartSettings(timeWindow = initialTimeWindow)
         )
         val viewModel = mockk<DataViewAdapterViewModel>(relaxed = true)
         val info = DataViewInfo(id = 1, name = "Sample View")
@@ -132,14 +159,14 @@ class DataViewViewEditFlowTest {
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
 
         val permissionsViewModel = mockk<PermissionsViewModel>(relaxed = true)
-        every { permissionsViewModel.grantedPermissions } returns MutableStateFlow(
-            setOf(PermissionsViewModel.HISTORY_PERMISSION)
-        )
+        val grantedPermissions = MutableStateFlow(initialPermissions)
+        every { permissionsViewModel.grantedPermissions } returns grantedPermissions
 
         return EditFlowHarness(
             viewModel = viewModel,
             healthDataModel = healthDataModel,
-            permissionsViewModel = permissionsViewModel
+            permissionsViewModel = permissionsViewModel,
+            grantedPermissions = grantedPermissions
         )
     }
 
@@ -163,7 +190,8 @@ class DataViewViewEditFlowTest {
     private data class EditFlowHarness(
         val viewModel: DataViewAdapterViewModel,
         val healthDataModel: HealthDataModel,
-        val permissionsViewModel: PermissionsViewModel
+        val permissionsViewModel: PermissionsViewModel,
+        val grantedPermissions: MutableStateFlow<Set<String>>
     )
 
     private fun openViewConfiguration() {

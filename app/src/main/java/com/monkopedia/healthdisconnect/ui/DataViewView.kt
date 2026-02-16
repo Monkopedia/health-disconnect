@@ -141,6 +141,8 @@ fun DataViewView(
     var chartSettings by remember(view!!.id, view!!.chartSettings) {
         mutableStateOf(view!!.chartSettings)
     }
+    var pendingTimeWindowRestore by rememberSaveable(view!!.id) { mutableStateOf<TimeWindow?>(null) }
+    var autoClampedTimeWindow by rememberSaveable(view!!.id) { mutableStateOf<TimeWindow?>(null) }
     var selectedSelections by remember(view!!.id, view!!.records, view!!.chartSettings) {
         mutableStateOf(
             view!!.records.map { selection ->
@@ -220,10 +222,41 @@ fun DataViewView(
             lastRefreshedMillis = System.currentTimeMillis()
         }
     }
-    LaunchedEffect(hasHistoryPermission, view!!.id) {
-        if (!hasHistoryPermission && chartSettings.timeWindow !in timeWindowOptions) {
-            chartSettings = chartSettings.copy(timeWindow = TimeWindow.DAYS_30)
+    LaunchedEffect(
+        hasHistoryPermission,
+        chartSettings.timeWindow,
+        view!!.chartSettings.timeWindow,
+        view!!.id
+    ) {
+        if (!hasHistoryPermission) {
+            if (chartSettings.timeWindow !in timeWindowOptions) {
+                if (pendingTimeWindowRestore == null) {
+                    pendingTimeWindowRestore = chartSettings.timeWindow
+                }
+                autoClampedTimeWindow = TimeWindow.DAYS_30
+                chartSettings = chartSettings.copy(timeWindow = TimeWindow.DAYS_30)
+            } else if (
+                autoClampedTimeWindow != null &&
+                chartSettings.timeWindow != autoClampedTimeWindow
+            ) {
+                pendingTimeWindowRestore = null
+                autoClampedTimeWindow = null
+            }
+            return@LaunchedEffect
         }
+
+        val restoreWindow = pendingTimeWindowRestore
+        if (
+            restoreWindow != null &&
+            autoClampedTimeWindow != null &&
+            chartSettings.timeWindow == autoClampedTimeWindow &&
+            view!!.chartSettings.timeWindow == restoreWindow &&
+            restoreWindow in timeWindowOptions
+        ) {
+            chartSettings = chartSettings.copy(timeWindow = restoreWindow)
+        }
+        pendingTimeWindowRestore = null
+        autoClampedTimeWindow = null
     }
 
     val refreshScope = rememberCoroutineScope()
