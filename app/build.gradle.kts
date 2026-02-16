@@ -225,8 +225,9 @@ fun registerRoborazziSubsetTask(name: String, filter: String) {
             includeTestsMatching(filter)
         }
 
-        systemProperties["roborazzi.record"] = "true"
-        systemProperties["roborazzi.verify"] = "false"
+        systemProperties["roborazzi.test.record"] = "true"
+        systemProperties["roborazzi.test.verify"] = "false"
+        systemProperties["roborazzi.test.compare"] = "false"
     }
 }
 
