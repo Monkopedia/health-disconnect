@@ -43,11 +43,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.records.Record
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
+import com.monkopedia.healthdisconnect.DefaultHealthRecordMeasurementExtractor
 import com.monkopedia.healthdisconnect.HealthDataModel
+import com.monkopedia.healthdisconnect.HealthRecordMeasurementExtractor
+import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.formatAxisValue
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.recordPrimaryValueLabel
 import com.monkopedia.healthdisconnect.recordTimestampLabel
+import com.monkopedia.healthdisconnect.unitSuffix
+import com.monkopedia.healthdisconnect.model.DataView
+import com.monkopedia.healthdisconnect.model.UnitPreference
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
@@ -116,11 +123,19 @@ fun EntriesRouteScreen(
     var selectedEntryForDetails by remember(viewId, initialSelectedEntry) {
         mutableStateOf(initialSelectedEntry)
     }
+    val measurementExtractor = remember { DefaultHealthRecordMeasurementExtractor() }
 
     EntriesScreen(
         infoName = info?.name ?: "",
         data = data,
         onBack = onBack,
+        valuePreviewForRecord = { record ->
+            formatRecordValuePreview(
+                view = view!!,
+                record = record,
+                measurementExtractor = measurementExtractor
+            )
+        },
         onEntrySelected = { selectedEntryForDetails = it }
     )
 
@@ -152,6 +167,7 @@ private fun EntriesScreen(
     infoName: String,
     data: List<Record>?,
     onBack: () -> Unit,
+    valuePreviewForRecord: (Record) -> String?,
     onEntrySelected: (Record) -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
@@ -195,7 +211,7 @@ private fun EntriesScreen(
             items(data.size) { index ->
                 val record = data[index]
                 val timestamp = recordTimestampLabel(record)
-                val valuePreview = recordPrimaryValueLabel(record)
+                val valuePreview = valuePreviewForRecord(record)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -246,4 +262,28 @@ private fun EntriesScreen(
         }
         SnackbarHost(hostState = snackbarHostState)
     }
+}
+
+private fun formatRecordValuePreview(
+    view: DataView,
+    record: Record,
+    measurementExtractor: HealthRecordMeasurementExtractor
+): String? {
+    val unitPreference = unitPreferenceForRecord(view, record)
+    val measurement = measurementExtractor.extractMeasurement(record, unitPreference)
+    return if (measurement != null) {
+        "${formatAxisValue(measurement.value)}${unitSuffix(measurement.unitLabel)}"
+    } else {
+        recordPrimaryValueLabel(record)
+    }
+}
+
+private fun unitPreferenceForRecord(view: DataView, record: Record): UnitPreference {
+    val matchingSelection = view.records.firstOrNull { selection ->
+        val selectedClass = PermissionsViewModel.CLASSES.firstOrNull {
+            it.qualifiedName == selection.fqn
+        }
+        selectedClass?.java?.isAssignableFrom(record.javaClass) == true
+    }
+    return matchingSelection?.metricSettings?.unitPreference ?: view.chartSettings.unitPreference
 }
