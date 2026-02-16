@@ -63,7 +63,7 @@ fun entriesSection(
                 .fillMaxWidth()
                 .clickable { onOpenEntries() }
                 .testTag("entries_row")
-                .padding(vertical = 4.dp),
+                .padding(top = 4.dp, bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
