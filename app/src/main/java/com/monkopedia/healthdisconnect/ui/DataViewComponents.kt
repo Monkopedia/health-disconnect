@@ -411,6 +411,19 @@ fun ToggleSection(
     val arrowRotation = remember { Animatable(if (visibleState.value) 180f else 0f) }
     var targetRotation by remember { mutableFloatStateOf(if (visibleState.value) 180f else 0f) }
     var lastVisibleState by remember { mutableStateOf(visibleState.value) }
+    var isArrowAnimating by remember { mutableStateOf(false) }
+    var queuedToggleParity by remember { mutableStateOf(false) }
+
+    fun requestToggle() {
+        if (!collapsible) return
+        if (isArrowAnimating) {
+            queuedToggleParity = !queuedToggleParity
+            return
+        }
+        visibleState.value = !visibleState.value
+        onToggle?.invoke(visibleState.value)
+    }
+
     LaunchedEffect(visibleState.value) {
         if (visibleState.value != lastVisibleState) {
             targetRotation += 180f
@@ -422,10 +435,17 @@ fun ToggleSection(
         }
     }
     LaunchedEffect(targetRotation) {
+        isArrowAnimating = true
         arrowRotation.animateTo(
             targetValue = targetRotation,
             animationSpec = tween(durationMillis = 180)
         )
+        isArrowAnimating = false
+        if (queuedToggleParity) {
+            queuedToggleParity = false
+            visibleState.value = !visibleState.value
+            onToggle?.invoke(visibleState.value)
+        }
     }
     Column(Modifier.fillMaxWidth()) {
         Row(
@@ -438,10 +458,7 @@ fun ToggleSection(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
-                            if (collapsible) {
-                                visibleState.value = !visibleState.value
-                                onToggle?.invoke(visibleState.value)
-                            }
+                            requestToggle()
                         }
                         .padding(vertical = 4.dp)
                         .testTag(headerTestTag)
@@ -453,10 +470,7 @@ fun ToggleSection(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null
                         ) {
-                            if (collapsible) {
-                                visibleState.value = !visibleState.value
-                                onToggle?.invoke(visibleState.value)
-                            }
+                            requestToggle()
                         }
                         .padding(vertical = 4.dp)
                 }

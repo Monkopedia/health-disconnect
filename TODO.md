@@ -5,4 +5,4 @@
 - [x] Move the granting history explanation in Settings above the Advanced row.
 - [x] Redesign Settings header to use a Material-styled header bar with the title inside it and a back arrow icon (instead of back text).
 - [x] Make the entries list use the same units selected for the data view.
-- [ ] Fix rapid expand/collapse clicks causing animation/state desync (expanded indicator mismatches row state); centralize behavior in a reusable expand/collapse widget and prevent bad states via click gating or animation queueing.
+- [x] Fix rapid expand/collapse clicks causing animation/state desync (expanded indicator mismatches row state); centralize behavior in a reusable expand/collapse widget and prevent bad states via click gating or animation queueing.
