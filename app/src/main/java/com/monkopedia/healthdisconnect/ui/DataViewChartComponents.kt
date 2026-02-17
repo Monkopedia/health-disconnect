@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,9 +29,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.dp
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.R
@@ -135,7 +139,8 @@ internal fun GraphStatePlaceholder(
 @Composable
 internal fun MetricOverTimeChart(
     seriesList: List<HealthDataModel.MetricSeries>,
-    settings: ChartSettings
+    settings: ChartSettings,
+    onShareClick: (() -> Unit)? = null
 ) {
     if (seriesList.isEmpty()) return
     val allPoints = seriesList.flatMap { it.points }
@@ -344,7 +349,8 @@ internal fun MetricOverTimeChart(
     }
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
     ) {
         Text(allDates.first().format(labelFormatter), style = MaterialTheme.typography.labelSmall)
         Text(allDates.last().format(labelFormatter), style = MaterialTheme.typography.labelSmall)
@@ -353,21 +359,42 @@ internal fun MetricOverTimeChart(
         modifier = Modifier.padding(top = 6.dp),
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
     )
-    Column(modifier = Modifier.padding(top = 6.dp)) {
-        seriesList.forEachIndexed { index, series ->
-            Text(
-                stringResource(
-                    R.string.data_view_peak_format,
-                    "\u25A0 ${series.label}",
-                    formatAxisValue(series.peakValueInWindow),
-                    series.unit?.let { " $it" } ?: ""
-                ),
-                color = seriesColors[index % seriesColors.size].copy(alpha = 0.9f),
-                style = MaterialTheme.typography.bodySmall
-            )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            seriesList.forEachIndexed { index, series ->
+                Text(
+                    stringResource(
+                        R.string.data_view_peak_format,
+                        "\u25A0 ${series.label}",
+                        formatAxisValue(series.peakValueInWindow),
+                        series.unit?.let { " $it" } ?: ""
+                    ),
+                    color = seriesColors[index % seriesColors.size].copy(alpha = 0.9f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+        if (onShareClick != null) {
+            IconButton(
+                onClick = onShareClick,
+                modifier = Modifier
+                    .padding(start = 8.dp, top = 1.dp)
+                    .testTag("data_view_graph_share_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Share,
+                    contentDescription = stringResource(R.string.graph_share_button_content_description)
+                )
+            }
         }
     }
-    Spacer(Modifier.height(14.dp))
+    Spacer(Modifier.height(6.dp))
 }
 
 internal data class ValueRange(val min: Double, val max: Double)

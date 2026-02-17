@@ -146,6 +146,19 @@ class HealthDataModel @JvmOverloads constructor(
         )
     }
 
+    suspend fun loadRawDataForExport(view: DataView): List<Record> {
+        return withContext(ioDispatcher) {
+            recordLoader(view, null)
+        }
+    }
+
+    suspend fun loadAggregatedSeriesForExport(view: DataView): List<MetricSeries> {
+        return withContext(ioDispatcher) {
+            val records = recordLoader(view, null)
+            aggregationEngine.aggregateMetricSeriesList(view, records)
+        }
+    }
+
     private suspend fun loadRecordsForView(
         view: DataView,
         onPartialUpdate: ((List<Record>) -> Unit)? = null

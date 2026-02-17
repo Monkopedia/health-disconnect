@@ -1,8 +1,12 @@
 package com.monkopedia.healthdisconnect.ui
 
 import android.util.Log
+import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -38,6 +42,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,11 +71,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -80,8 +88,17 @@ import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.records.Record
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
+import com.monkopedia.healthdisconnect.GraphSharePreferences
+import com.monkopedia.healthdisconnect.GraphShareTheme
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.graphShareDataStore
+import com.monkopedia.healthdisconnect.incrementGraphShareDialogCount
+import com.monkopedia.healthdisconnect.renderGraphBitmap
+import com.monkopedia.healthdisconnect.shareGraphImage
+import com.monkopedia.healthdisconnect.toGraphSharePreferences
+import com.monkopedia.healthdisconnect.updateGraphSharePreferences
+import com.monkopedia.healthdisconnect.writeGraphSharePng
 import org.koin.androidx.compose.koinViewModel
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.model.AggregationMode
@@ -105,8 +122,10 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 
@@ -123,11 +142,15 @@ fun DataViewView(
     showHeader: Boolean = true,
     onOpenEntriesRequested: (Int) -> Unit = {}
 ) {
+    val context = LocalContext.current
     val info by viewModel.dataViews.map { it?.dataViews?.get(it.ordering[page]) }
         .collectAsState(initial = null)
     if (info == null) return
     val view by viewModel.dataView(info!!.id).collectAsState(initial = null)
     if (view == null) return
+    val graphSharePreferences by context.graphShareDataStore.data
+        .map { prefs -> prefs.toGraphSharePreferences() }
+        .collectAsState(initial = GraphSharePreferences())
     val grantedPermissions by permissionsViewModel.grantedPermissions.collectAsState(initial = emptySet())
     val hasHistoryPermission = grantedPermissions.contains(PermissionsViewModel.HISTORY_PERMISSION)
     val timeWindowOptions = if (hasHistoryPermission) {
@@ -171,6 +194,14 @@ fun DataViewView(
     var showAddMetricDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var showDeleteViewConfirmation by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var replaceMetricTargetFqn by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
+    var showGraphThemeDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var showGraphWarningDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var selectedGraphShareTheme by rememberSaveable(view!!.id) {
+        mutableStateOf(graphSharePreferences.selectedTheme)
+    }
+    var graphShareDoNotShowAgainChecked by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var isGraphShareInProgress by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var graphShareError by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
     val actionScope = rememberCoroutineScope()
     val refreshLabelFormatter = remember { DateTimeFormatter.ofPattern("h:mm:ss a") }
     var headerWidthPx by remember(view!!.id) { mutableStateOf(0f) }
@@ -215,6 +246,51 @@ fun DataViewView(
         )
         actionScope.launch { viewModel.updateView(newView) }
         isEditing.value = false
+    }
+    val hasGraphShareData = metricSeriesList?.any { it.points.isNotEmpty() } == true
+    val showGraphShareDoNotShowAgain = graphSharePreferences.dialogShownCount >= 2
+    val shouldSkipGraphShareWarning =
+        graphSharePreferences.hideDialog && graphSharePreferences.dialogShownCount >= 3
+    fun launchGraphShare(
+        selectedTheme: GraphShareTheme,
+        hideDialogAfterShare: Boolean
+    ) {
+        val currentSeries = metricSeriesList ?: return
+        if (currentSeries.isEmpty()) return
+        actionScope.launch {
+            isGraphShareInProgress = true
+            try {
+                context.updateGraphSharePreferences(
+                    selectedTheme = selectedTheme,
+                    hideDialog = hideDialogAfterShare
+                )
+                val imageFile = withContext(Dispatchers.IO) {
+                    writeGraphSharePng(
+                        context = context,
+                        title = info!!.name,
+                        seriesList = currentSeries,
+                        settings = view!!.chartSettings,
+                        theme = selectedTheme
+                    )
+                }
+                shareGraphImage(
+                    context = context,
+                    imageFile = imageFile,
+                    title = info!!.name
+                )
+            } catch (exception: Exception) {
+                Log.e(ENTRY_DETAILS_LOG_TAG, "Failed to share graph image", exception)
+                graphShareError = context.getString(R.string.graph_share_failed_message)
+            } finally {
+                isGraphShareInProgress = false
+            }
+        }
+    }
+
+    LaunchedEffect(graphSharePreferences.selectedTheme, showGraphThemeDialog, showGraphWarningDialog) {
+        if (!showGraphThemeDialog && !showGraphWarningDialog) {
+            selectedGraphShareTheme = graphSharePreferences.selectedTheme
+        }
     }
 
     LaunchedEffect(recordCount, metricSeriesList) {
@@ -363,10 +439,23 @@ fun DataViewView(
                                         style = MaterialTheme.typography.labelSmall
                                     )
                                 }
-                                MetricOverTimeChart(metricSeriesList!!, view!!.chartSettings)
+                                MetricOverTimeChart(
+                                    seriesList = metricSeriesList!!,
+                                    settings = view!!.chartSettings,
+                                    onShareClick = if (hasGraphShareData) {
+                                        {
+                                            if (isGraphShareInProgress) return@MetricOverTimeChart
+                                            selectedGraphShareTheme = graphSharePreferences.selectedTheme
+                                            graphShareDoNotShowAgainChecked = false
+                                            showGraphThemeDialog = true
+                                        }
+                                    } else {
+                                        null
+                                    }
+                                )
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(4.dp))
                     }
                 }
 
@@ -558,6 +647,69 @@ fun DataViewView(
         )
     }
 
+    if (showGraphThemeDialog) {
+        GraphShareThemeDialog(
+            title = info!!.name,
+            seriesList = metricSeriesList.orEmpty(),
+            settings = view!!.chartSettings,
+            selectedTheme = selectedGraphShareTheme,
+            onThemeSelected = { selectedGraphShareTheme = it },
+            onDismiss = { showGraphThemeDialog = false },
+            onContinue = {
+                showGraphThemeDialog = false
+                if (shouldSkipGraphShareWarning) {
+                    launchGraphShare(
+                        selectedTheme = selectedGraphShareTheme,
+                        hideDialogAfterShare = true
+                    )
+                } else {
+                    showGraphWarningDialog = true
+                    graphShareDoNotShowAgainChecked = false
+                    actionScope.launch {
+                        context.incrementGraphShareDialogCount()
+                    }
+                }
+            }
+        )
+    }
+
+    if (showGraphWarningDialog) {
+        DataLeavingAppWarningDialog(
+            title = stringResource(R.string.graph_share_warning_title),
+            message = stringResource(R.string.graph_share_warning_message),
+            confirmLabel = stringResource(R.string.graph_share_confirm),
+            dismissLabel = stringResource(R.string.graph_share_cancel),
+            showDoNotShowAgainOption = showGraphShareDoNotShowAgain,
+            doNotShowAgainLabel = stringResource(R.string.graph_share_do_not_show_again),
+            doNotShowAgainChecked = graphShareDoNotShowAgainChecked,
+            onDoNotShowAgainChanged = { checked ->
+                graphShareDoNotShowAgainChecked = checked
+            },
+            onDismiss = { showGraphWarningDialog = false },
+            onConfirm = {
+                showGraphWarningDialog = false
+                launchGraphShare(
+                    selectedTheme = selectedGraphShareTheme,
+                    hideDialogAfterShare = showGraphShareDoNotShowAgain &&
+                        graphShareDoNotShowAgainChecked
+                )
+            }
+        )
+    }
+
+    graphShareError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { graphShareError = null },
+            title = { Text(stringResource(R.string.graph_share_error_title)) },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { graphShareError = null }) {
+                    Text(stringResource(R.string.data_view_close))
+                }
+            }
+        )
+    }
+
     selectedEntryForDetails?.let { record ->
         val details = recordDetailsText(record)
         LaunchedEffect(record) {
@@ -581,4 +733,118 @@ fun DataViewView(
             }
         )
     }
+}
+
+@Composable
+private fun GraphShareThemeDialog(
+    title: String,
+    seriesList: List<HealthDataModel.MetricSeries>,
+    settings: ChartSettings,
+    selectedTheme: GraphShareTheme,
+    onThemeSelected: (GraphShareTheme) -> Unit,
+    onDismiss: () -> Unit,
+    onContinue: () -> Unit
+) {
+    var previewBitmap by remember(title, seriesList, settings, selectedTheme) {
+        mutableStateOf<Bitmap?>(null)
+    }
+    var previewLoading by remember(title, seriesList, settings, selectedTheme) {
+        mutableStateOf(true)
+    }
+    LaunchedEffect(title, seriesList, settings, selectedTheme) {
+        previewLoading = true
+        previewBitmap = withContext(Dispatchers.Default) {
+            runCatching {
+                renderGraphBitmap(
+                    title = title,
+                    seriesList = seriesList,
+                    settings = settings,
+                    theme = selectedTheme,
+                    width = 960,
+                    height = 620
+                )
+            }.getOrNull()
+        }
+        previewLoading = false
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.graph_share_theme_dialog_title)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.graph_share_theme_label),
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Spacer(Modifier.height(6.dp))
+                val tabThemes = listOf(GraphShareTheme.LIGHT, GraphShareTheme.DARK)
+                val selectedIndex = tabThemes.indexOf(selectedTheme).coerceAtLeast(0)
+                TabRow(selectedTabIndex = selectedIndex) {
+                    tabThemes.forEachIndexed { index, theme ->
+                        Tab(
+                            selected = selectedIndex == index,
+                            onClick = { onThemeSelected(theme) },
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (theme == GraphShareTheme.LIGHT) {
+                                            R.string.graph_share_theme_light
+                                        } else {
+                                            R.string.graph_share_theme_dark
+                                        }
+                                    )
+                                )
+                            }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(190.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+                ) {
+                    when {
+                        previewBitmap != null -> {
+                            Image(
+                                bitmap = previewBitmap!!.asImageBitmap(),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
+                        previewLoading -> {
+                            CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.Center),
+                                strokeWidth = 2.dp
+                            )
+                        }
+
+                        else -> {
+                            Text(
+                                text = stringResource(R.string.graph_share_preview_failed),
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .padding(12.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onContinue) {
+                Text(stringResource(R.string.graph_share_theme_continue))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.graph_share_cancel))
+            }
+        }
+    )
 }

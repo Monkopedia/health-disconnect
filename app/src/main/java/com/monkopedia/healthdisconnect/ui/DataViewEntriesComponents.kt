@@ -1,5 +1,7 @@
 package com.monkopedia.healthdisconnect.ui
 
+import android.content.Context
+import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -11,18 +13,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,23 +42,29 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.health.connect.client.records.Record
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.DefaultHealthRecordMeasurementExtractor
+import com.monkopedia.healthdisconnect.EntriesExportMode
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.HealthRecordMeasurementExtractor
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.buildAggregatedEntriesCsv
+import com.monkopedia.healthdisconnect.buildRawEntriesCsv
 import com.monkopedia.healthdisconnect.formatAxisValue
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.recordPrimaryValueLabel
@@ -55,8 +72,12 @@ import com.monkopedia.healthdisconnect.recordTimestampLabel
 import com.monkopedia.healthdisconnect.unitSuffix
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.UnitPreference
+import java.io.File
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.androidx.compose.koinViewModel
 
 fun entriesSection(
@@ -113,6 +134,8 @@ fun EntriesRouteScreen(
     healthDataModel: HealthDataModel = koinViewModel(),
     initialSelectedEntry: Record? = null
 ) {
+    val context = LocalContext.current
+    val actionScope = rememberCoroutineScope()
     val info by viewModel.dataViews.map { it?.dataViews?.get(viewId) }.collectAsState(initial = null)
     val view by viewModel.dataView(viewId).collectAsState(initial = null)
     if (view == null) {
@@ -123,12 +146,18 @@ fun EntriesRouteScreen(
     var selectedEntryForDetails by remember(viewId, initialSelectedEntry) {
         mutableStateOf(initialSelectedEntry)
     }
+    var showExportModeDialog by rememberSaveable(viewId) { mutableStateOf(false) }
+    var pendingWarningMode by rememberSaveable(viewId) { mutableStateOf<EntriesExportMode?>(null) }
+    var isExporting by rememberSaveable(viewId) { mutableStateOf(false) }
+    var exportErrorMessage by rememberSaveable(viewId) { mutableStateOf<String?>(null) }
     val measurementExtractor = remember { DefaultHealthRecordMeasurementExtractor() }
 
     EntriesScreen(
         infoName = info?.name ?: "",
         data = data,
         onBack = onBack,
+        onShareRequested = { showExportModeDialog = true },
+        isExporting = isExporting,
         valuePreviewForRecord = { record ->
             formatRecordValuePreview(
                 view = view!!,
@@ -160,13 +189,83 @@ fun EntriesRouteScreen(
             }
         )
     }
+
+    if (showExportModeDialog) {
+        ExportModeDialog(
+            onDismiss = { showExportModeDialog = false },
+            onExportModeSelected = { mode ->
+                showExportModeDialog = false
+                pendingWarningMode = mode
+            }
+        )
+    }
+
+    pendingWarningMode?.let { mode ->
+        DataLeavingAppWarningDialog(
+            title = stringResource(R.string.data_view_export_warning_title),
+            message = stringResource(R.string.data_view_export_warning_message),
+            confirmLabel = stringResource(R.string.data_view_export_continue),
+            dismissLabel = stringResource(R.string.data_view_cancel),
+            onDismiss = { pendingWarningMode = null },
+            onConfirm = {
+                pendingWarningMode = null
+                actionScope.launch {
+                    isExporting = true
+                    try {
+                        val currentView = view!!
+                        val csvText = when (mode) {
+                            EntriesExportMode.AGGREGATED -> {
+                                val series = healthDataModel.loadAggregatedSeriesForExport(currentView)
+                                buildAggregatedEntriesCsv(currentView, series)
+                            }
+
+                            EntriesExportMode.RAW -> {
+                                val records = healthDataModel.loadRawDataForExport(currentView)
+                                buildRawEntriesCsv(records)
+                            }
+                        }
+                        val file = withContext(Dispatchers.IO) {
+                            writeExportCsvToCache(
+                                context = context,
+                                viewName = info?.name ?: "entries",
+                                mode = mode,
+                                csvText = csvText
+                            )
+                        }
+                        shareCsv(context = context, viewName = info?.name ?: "entries", file = file)
+                    } catch (exception: Exception) {
+                        Log.e(ENTRY_DETAILS_LOG_TAG, "Failed to export entries CSV", exception)
+                        exportErrorMessage = context.getString(R.string.data_view_export_failed)
+                    } finally {
+                        isExporting = false
+                    }
+                }
+            }
+        )
+    }
+
+    exportErrorMessage?.let {
+        AlertDialog(
+            onDismissRequest = { exportErrorMessage = null },
+            title = { Text(stringResource(R.string.data_view_export_error_title)) },
+            text = { Text(it) },
+            confirmButton = {
+                TextButton(onClick = { exportErrorMessage = null }) {
+                    Text(stringResource(R.string.data_view_close))
+                }
+            }
+        )
+    }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EntriesScreen(
     infoName: String,
     data: List<Record>?,
     onBack: () -> Unit,
+    onShareRequested: () -> Unit,
+    isExporting: Boolean,
     valuePreviewForRecord: (Record) -> String?,
     onEntrySelected: (Record) -> Unit
 ) {
@@ -179,30 +278,51 @@ private fun EntriesScreen(
             .fillMaxSize()
             .padding(horizontal = 11.dp, vertical = 13.dp)
     ) {
-        Row(
+        CenterAlignedTopAppBar(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextButton(
-                onClick = onBack,
-                modifier = Modifier
-                    .testTag("entries_back_button")
-                    .weight(0.22f, fill = false)
-            ) {
-                Text(stringResource(R.string.data_view_back))
-            }
-            Text(
-                text = stringResource(R.string.data_view_entries_for, infoName),
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                softWrap = false,
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.titleMedium
+            title = {
+                Text(
+                    text = stringResource(R.string.data_view_entries_for, infoName),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            navigationIcon = {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.testTag("entries_back_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                        contentDescription = stringResource(R.string.data_view_back)
+                    )
+                }
+            },
+            actions = {
+                IconButton(
+                    onClick = onShareRequested,
+                    enabled = !isExporting,
+                    modifier = Modifier.testTag("entries_share_button")
+                ) {
+                    if (isExporting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Rounded.Share,
+                            contentDescription = stringResource(R.string.data_view_export_share)
+                        )
+                    }
+                }
+            },
+            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                containerColor = MaterialTheme.colorScheme.surface
             )
-            Spacer(Modifier.width(48.dp).weight(0.22f, fill = false))
-        }
-        Spacer(Modifier.height(8.dp))
+        )
+        Spacer(Modifier.height(6.dp))
         if (data == null) {
             LoadingScreen()
             return
@@ -264,6 +384,46 @@ private fun EntriesScreen(
     }
 }
 
+@Composable
+private fun ExportModeDialog(
+    onDismiss: () -> Unit,
+    onExportModeSelected: (EntriesExportMode) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.data_view_export_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.data_view_export_mode_message))
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = { onExportModeSelected(EntriesExportMode.AGGREGATED) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("entries_export_aggregated")
+                ) {
+                    Text(stringResource(R.string.data_view_export_aggregated))
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onExportModeSelected(EntriesExportMode.RAW) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("entries_export_raw")
+                ) {
+                    Text(stringResource(R.string.data_view_export_raw))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.data_view_cancel))
+            }
+        }
+    )
+}
+
 private fun formatRecordValuePreview(
     view: DataView,
     record: Record,
@@ -286,4 +446,40 @@ private fun unitPreferenceForRecord(view: DataView, record: Record): UnitPrefere
         selectedClass?.java?.isAssignableFrom(record.javaClass) == true
     }
     return matchingSelection?.metricSettings?.unitPreference ?: view.chartSettings.unitPreference
+}
+
+private fun writeExportCsvToCache(
+    context: Context,
+    viewName: String,
+    mode: EntriesExportMode,
+    csvText: String
+): File {
+    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
+    val safeViewName = viewName
+        .lowercase(Locale.US)
+        .replace(Regex("[^a-z0-9]+"), "_")
+        .trim('_')
+        .ifBlank { "entries" }
+    val fileName = "health_disconnect_${safeViewName}_${mode.name.lowercase(Locale.US)}_${System.currentTimeMillis()}.csv"
+    return File(exportDir, fileName).apply { writeText(csvText) }
+}
+
+private fun shareCsv(
+    context: Context,
+    viewName: String,
+    file: File
+) {
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/csv"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.data_view_export_subject, viewName))
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(
+        Intent.createChooser(
+            shareIntent,
+            context.getString(R.string.data_view_export_share_chooser)
+        )
+    )
 }
