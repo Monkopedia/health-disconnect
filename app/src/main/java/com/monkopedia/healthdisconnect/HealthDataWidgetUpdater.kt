@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.util.DisplayMetrics
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
@@ -24,8 +25,12 @@ object HealthDataWidgetUpdater {
         val showSummary: Boolean,
         val summaryMaxLines: Int,
         val titleTextSizeSp: Float,
-        val summaryTextSizeSp: Float,
-        val graphHeightFraction: Float
+        val summaryTextSizeSp: Float
+    )
+
+    internal data class WidgetGraphRenderSize(
+        val widthPx: Int,
+        val heightPx: Int
     )
 
     suspend fun updateAllWidgets(context: Context) {
@@ -130,15 +135,21 @@ object HealthDataWidgetUpdater {
             "HealthDataWidgetUpdater.updateWidget renderGraph appWidgetId=$appWidgetId viewId=${view.id} seriesCount=${seriesList.size}"
         )
 
+        val graphRenderSize = estimateGraphRenderSizePx(
+            sizeInfo = sizeInfo,
+            layoutProfile = layoutProfile,
+            displayMetrics = context.resources.displayMetrics
+        )
+        logWidgetFlow(
+            "HealthDataWidgetUpdater.updateWidget graphRenderSize appWidgetId=$appWidgetId widthPx=${graphRenderSize.widthPx} heightPx=${graphRenderSize.heightPx}"
+        )
         val graphBitmap = renderWidgetGraphBitmap(
             title = info.name,
             seriesList = seriesList,
             settings = view.chartSettings,
             theme = GraphShareTheme.DARK,
-            width = (sizeInfo.widthPx * 2.0f).roundToInt().coerceIn(480, 3200),
-            height = (sizeInfo.heightPx * layoutProfile.graphHeightFraction * 2.0f)
-                .roundToInt()
-                .coerceIn(120, 1800)
+            width = graphRenderSize.widthPx,
+            height = graphRenderSize.heightPx
         )
         val summaryText = buildWidgetSummaryText(context, seriesList)
         val remoteViews = RemoteViews(context.packageName, R.layout.health_graph_widget).apply {
@@ -247,34 +258,75 @@ object HealthDataWidgetUpdater {
                 showSummary = false,
                 summaryMaxLines = 0,
                 titleTextSizeSp = 14f,
-                summaryTextSizeSp = 11.5f,
-                graphHeightFraction = 0.66f
+                summaryTextSizeSp = 11.5f
             )
 
             clampedHeight <= 145 -> WidgetLayoutProfile(
                 showSummary = true,
                 summaryMaxLines = 1,
                 titleTextSizeSp = if (clampedWidth >= 260) 15f else 14f,
-                summaryTextSizeSp = 12f,
-                graphHeightFraction = 0.53f
+                summaryTextSizeSp = 12f
             )
 
             clampedHeight <= 200 -> WidgetLayoutProfile(
                 showSummary = true,
                 summaryMaxLines = 2,
                 titleTextSizeSp = if (clampedWidth >= 300) 15.5f else 15f,
-                summaryTextSizeSp = 12.5f,
-                graphHeightFraction = 0.57f
+                summaryTextSizeSp = 12.5f
             )
 
             else -> WidgetLayoutProfile(
                 showSummary = true,
                 summaryMaxLines = 3,
                 titleTextSizeSp = if (clampedWidth >= 320) 16f else 15.5f,
-                summaryTextSizeSp = 13f,
-                graphHeightFraction = 0.62f
+                summaryTextSizeSp = 13f
             )
         }
+    }
+
+    internal fun estimateGraphRenderSizePx(
+        sizeInfo: WidgetSizeInfo,
+        layoutProfile: WidgetLayoutProfile,
+        displayMetrics: DisplayMetrics
+    ): WidgetGraphRenderSize {
+        fun dp(dp: Float): Float = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            dp,
+            displayMetrics
+        )
+        fun sp(sp: Float): Float = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            sp,
+            displayMetrics
+        )
+
+        val verticalPadding = dp(8f) * 2f
+        val graphTopMargin = dp(4f)
+        val titleLineHeight = sp(layoutProfile.titleTextSizeSp) * 1.18f
+        val summaryBlockHeight = if (layoutProfile.showSummary) {
+            val summaryMarginTop = dp(4f)
+            val summaryLineHeight = sp(layoutProfile.summaryTextSizeSp) * 1.18f
+            summaryMarginTop + (summaryLineHeight * layoutProfile.summaryMaxLines.coerceAtLeast(1))
+        } else {
+            0f
+        }
+        val graphHeightPx = (
+            sizeInfo.heightPx -
+                verticalPadding -
+                graphTopMargin -
+                titleLineHeight -
+                summaryBlockHeight
+            ).roundToInt().coerceAtLeast(dp(42f).roundToInt())
+        val graphWidthPx = (sizeInfo.widthPx - dp(2f)).roundToInt().coerceAtLeast(dp(120f).roundToInt())
+        val renderScale = when {
+            graphWidthPx <= dp(220f).roundToInt() -> 2.9f
+            graphWidthPx <= dp(320f).roundToInt() -> 2.5f
+            else -> 2.2f
+        }
+        return WidgetGraphRenderSize(
+            widthPx = (graphWidthPx * renderScale).roundToInt().coerceIn(400, 3200),
+            heightPx = (graphHeightPx * renderScale).roundToInt().coerceIn(140, 1800)
+        )
     }
 
     private fun resolveWidgetSizeInfo(

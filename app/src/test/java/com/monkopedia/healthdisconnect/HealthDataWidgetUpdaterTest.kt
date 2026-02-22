@@ -3,6 +3,7 @@ package com.monkopedia.healthdisconnect
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
+import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -52,7 +53,6 @@ class HealthDataWidgetUpdaterTest {
 
         assertFalse(profile.showSummary)
         assertEquals(0, profile.summaryMaxLines)
-        assertEquals(0.66f, profile.graphHeightFraction, 0.0001f)
     }
 
     @Test
@@ -61,7 +61,6 @@ class HealthDataWidgetUpdaterTest {
 
         assertTrue(profile.showSummary)
         assertEquals(1, profile.summaryMaxLines)
-        assertEquals(0.53f, profile.graphHeightFraction, 0.0001f)
     }
 
     @Test
@@ -70,6 +69,73 @@ class HealthDataWidgetUpdaterTest {
 
         assertTrue(profile.showSummary)
         assertEquals(3, profile.summaryMaxLines)
-        assertEquals(0.62f, profile.graphHeightFraction, 0.0001f)
+    }
+
+    @Test
+    fun estimateGraphRenderSizePx_scalesWithWidgetSize() {
+        val metrics = app.resources.displayMetrics
+        val small = HealthDataWidgetUpdater.WidgetSizeInfo(
+            widthDp = 250,
+            heightDp = 120,
+            widthPx = (250f * metrics.density).roundToInt(),
+            heightPx = (120f * metrics.density).roundToInt()
+        )
+        val large = HealthDataWidgetUpdater.WidgetSizeInfo(
+            widthDp = 320,
+            heightDp = 220,
+            widthPx = (320f * metrics.density).roundToInt(),
+            heightPx = (220f * metrics.density).roundToInt()
+        )
+
+        val smallRenderSize = HealthDataWidgetUpdater.estimateGraphRenderSizePx(
+            sizeInfo = small,
+            layoutProfile = HealthDataWidgetUpdater.widgetLayoutProfile(small.widthDp, small.heightDp),
+            displayMetrics = metrics
+        )
+        val largeRenderSize = HealthDataWidgetUpdater.estimateGraphRenderSizePx(
+            sizeInfo = large,
+            layoutProfile = HealthDataWidgetUpdater.widgetLayoutProfile(large.widthDp, large.heightDp),
+            displayMetrics = metrics
+        )
+
+        assertTrue(largeRenderSize.widthPx > smallRenderSize.widthPx)
+        assertTrue(largeRenderSize.heightPx > smallRenderSize.heightPx)
+    }
+
+    @Test
+    fun estimateGraphRenderSizePx_givesMoreHeightWhenSummaryIsHidden() {
+        val metrics = app.resources.displayMetrics
+        val sizeInfo = HealthDataWidgetUpdater.WidgetSizeInfo(
+            widthDp = 250,
+            heightDp = 120,
+            widthPx = (250f * metrics.density).roundToInt(),
+            heightPx = (120f * metrics.density).roundToInt()
+        )
+        val hiddenSummaryProfile = HealthDataWidgetUpdater.WidgetLayoutProfile(
+            showSummary = false,
+            summaryMaxLines = 0,
+            titleTextSizeSp = 14f,
+            summaryTextSizeSp = 12f
+        )
+        val shownSummaryProfile = HealthDataWidgetUpdater.WidgetLayoutProfile(
+            showSummary = true,
+            summaryMaxLines = 1,
+            titleTextSizeSp = 14f,
+            summaryTextSizeSp = 12f
+        )
+
+        val hiddenSummarySize = HealthDataWidgetUpdater.estimateGraphRenderSizePx(
+            sizeInfo = sizeInfo,
+            layoutProfile = hiddenSummaryProfile,
+            displayMetrics = metrics
+        )
+        val shownSummarySize = HealthDataWidgetUpdater.estimateGraphRenderSizePx(
+            sizeInfo = sizeInfo,
+            layoutProfile = shownSummaryProfile,
+            displayMetrics = metrics
+        )
+
+        assertEquals(hiddenSummarySize.widthPx, shownSummarySize.widthPx)
+        assertTrue(hiddenSummarySize.heightPx > shownSummarySize.heightPx)
     }
 }

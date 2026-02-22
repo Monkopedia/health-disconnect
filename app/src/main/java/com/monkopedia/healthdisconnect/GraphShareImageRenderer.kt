@@ -396,8 +396,8 @@ fun renderWidgetGraphBitmap(
         return bitmap
     }
 
-    val panelPaddingX = width * 0.018f
-    val panelPaddingY = height * 0.035f
+    val panelPaddingX = width * 0.01f
+    val panelPaddingY = height * 0.02f
     val chartLeft = panelPaddingX
     val chartTop = panelPaddingY
     val chartRight = width - panelPaddingX
@@ -406,15 +406,15 @@ fun renderWidgetGraphBitmap(
     val chartHeight = (chartBottom - chartTop).coerceAtLeast(1f)
 
     val panelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = withAlpha(palette.gridColor, 0.14f)
+        color = withAlpha(palette.gridColor, 0.1f)
         style = Paint.Style.FILL
     }
     val panelStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = withAlpha(palette.axisColor, 0.22f)
+        color = withAlpha(palette.axisColor, 0.14f)
         style = Paint.Style.STROKE
-        strokeWidth = max(1f, min(width, height) * 0.003f)
+        strokeWidth = max(1f, min(width, height) * 0.0024f)
     }
-    val cornerRadius = min(width, height) * 0.045f
+    val cornerRadius = min(width, height) * 0.035f
     canvas.drawRoundRect(
         chartLeft,
         chartTop,
@@ -435,18 +435,18 @@ fun renderWidgetGraphBitmap(
     )
 
     val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = withAlpha(palette.gridColor, 0.38f)
-        strokeWidth = max(1f, min(width, height) * 0.0028f)
+        color = withAlpha(palette.gridColor, 0.28f)
+        strokeWidth = max(1f, min(width, height) * 0.0024f)
     }
     val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = withAlpha(palette.axisColor, 0.58f)
+        color = withAlpha(palette.axisColor, 0.42f)
         strokeWidth = max(1f, min(width, height) * 0.0032f)
     }
 
     if (settings.backgroundStyle == ChartBackgroundStyle.HORIZONTAL_LINES ||
         settings.backgroundStyle == ChartBackgroundStyle.GRID
     ) {
-        val rows = 4
+        val rows = if (height < 280) 2 else 3
         (0..rows).forEach { row ->
             val y = chartTop + (chartHeight * row / rows)
             canvas.drawLine(chartLeft, y, chartRight, y, gridPaint)
@@ -493,8 +493,8 @@ fun renderWidgetGraphBitmap(
     }
 
     if (settings.chartType == ChartType.LINE) {
-        val pointRadius = max(1.25f, min(width, height) * 0.01f)
-        val lineStroke = max(1.5f, min(width, height) * 0.0085f)
+        val pointRadius = max(1.5f, min(width, height) * 0.011f)
+        val lineStroke = max(2.2f, min(width, height) * 0.011f)
         seriesList.forEachIndexed { seriesIndex, series ->
             val color = seriesColors[seriesIndex % seriesColors.size]
             val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -513,8 +513,21 @@ fun renderWidgetGraphBitmap(
                     path.lineTo(x, y)
                 }
             }
+            if (seriesIndex == 0 && series.points.size >= 2) {
+                val fillPath = Path(path)
+                val first = pointToXY(series.points.first(), seriesIndex)
+                val last = pointToXY(series.points.last(), seriesIndex)
+                fillPath.lineTo(last.first, chartBottom)
+                fillPath.lineTo(first.first, chartBottom)
+                fillPath.close()
+                val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    this.color = withAlpha(color, 0.14f)
+                    style = Paint.Style.FILL
+                }
+                canvas.drawPath(fillPath, fillPaint)
+            }
             canvas.drawPath(path, linePaint)
-            if (settings.showDataPoints || allDates.size <= 12) {
+            if (settings.showDataPoints) {
                 val pointFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     this.color = withAlpha(color, 0.95f)
                     style = Paint.Style.FILL
