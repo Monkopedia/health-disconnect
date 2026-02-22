@@ -191,6 +191,39 @@ class DataViewViewEditFlowTest {
     }
 
     @Test
+    fun checkboxRowsToggleWhenRowIsTapped() {
+        val harness = setupHarness()
+        setViewContent(
+            permissionsViewModel = harness.permissionsViewModel,
+            healthDataModel = harness.healthDataModel,
+            viewModel = harness.viewModel
+        )
+
+        openViewConfiguration()
+
+        composeRule.onNodeWithTag("data_view_show_data_points_checkbox").assertIsOff()
+        composeRule.onNodeWithTag("data_view_metric_show_max_checkbox_0", useUnmergedTree = true).assertIsOn()
+        composeRule.onNodeWithTag("data_view_metric_show_min_checkbox_0", useUnmergedTree = true).assertIsOff()
+
+        composeRule.onNodeWithTag("data_view_show_data_points_row")
+            .performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("data_view_show_data_points_checkbox").assertIsOn()
+
+        composeRule.onNodeWithTag("data_view_metric_show_max_row_0", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("data_view_metric_show_max_checkbox_0", useUnmergedTree = true).assertIsOff()
+
+        composeRule.onNodeWithTag("data_view_metric_show_min_row_0", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("data_view_metric_show_max_checkbox_0", useUnmergedTree = true).assertIsOff()
+        composeRule.onNodeWithTag("data_view_metric_show_min_checkbox_0", useUnmergedTree = true).assertIsOn()
+    }
+
+    @Test
     fun shareButtonOpensBottomSheetWithActions() {
         val harness = setupHarness(withGraphData = true)
         setViewContent(

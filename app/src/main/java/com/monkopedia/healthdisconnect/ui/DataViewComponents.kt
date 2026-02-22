@@ -161,7 +161,14 @@ fun viewConfigurationSection(
     }
     scope.item {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    onChartSettingsChanged(
+                        chartSettings.copy(showDataPoints = !chartSettings.showDataPoints)
+                    )
+                }
+                .testTag("data_view_show_data_points_row"),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -313,7 +320,23 @@ fun viewConfigurationSection(
                     )
                 }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        val currentSettings = it.metricSettings ?: metricDefaults()
+                                        it.copy(
+                                            metricSettings = currentSettings.copy(
+                                                showMaxLabel = !settings.showMaxLabel
+                                            )
+                                        )
+                                    } else it
+                                }
+                            )
+                        }
+                        .testTag("data_view_metric_show_max_row_$index"),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -334,7 +357,23 @@ fun viewConfigurationSection(
                     )
                 }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        val currentSettings = it.metricSettings ?: metricDefaults()
+                                        it.copy(
+                                            metricSettings = currentSettings.copy(
+                                                showMinLabel = !settings.showMinLabel
+                                            )
+                                        )
+                                    } else it
+                                }
+                            )
+                        }
+                        .testTag("data_view_metric_show_min_row_$index"),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
