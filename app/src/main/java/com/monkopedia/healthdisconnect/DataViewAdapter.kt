@@ -103,6 +103,7 @@ fun DataViewAdapter(
     val scope = rememberCoroutineScope()
     val createViewTitle = stringResource(R.string.create_view_title)
     val headerOverlayHeight = 56.dp
+    val pageLiftPx = with(LocalDensity.current) { 180.dp.toPx() }
     var headerRowWidthPx by remember { mutableStateOf(0f) }
     var headerClickJob by remember { mutableStateOf<Job?>(null) }
     var renameTargetId by remember { mutableStateOf<Int?>(null) }
@@ -129,7 +130,7 @@ fun DataViewAdapter(
             val clampedOffset = abs(signedOffset).coerceIn(0f, 1f)
             val easedOffset = clampedOffset.toDouble().pow(0.7).toFloat()
             val scale = 1f - (0.06f * easedOffset)
-            val alpha = (1f - (1.55f * clampedOffset)).coerceIn(0f, 1f)
+            val alpha = (1f - (0.95f * clampedOffset)).coerceIn(0f, 1f)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -137,7 +138,7 @@ fun DataViewAdapter(
                         scaleX = scale
                         scaleY = scale
                         this.alpha = alpha
-                        translationY = -52f * easedOffset
+                        translationY = -pageLiftPx * easedOffset
                         rotationY = signedOffset * 7f
                         cameraDistance = 24f * density
                     }
