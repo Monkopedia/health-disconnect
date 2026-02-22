@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -120,7 +121,10 @@ fun SettingsScreen(
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                 containerColor = MaterialTheme.colorScheme.surface
-            )
+            ),
+            // MainActivity already applies system bar insets via root Scaffold padding.
+            // Disable TopAppBar insets here to avoid double top inset on device.
+            windowInsets = WindowInsets(0, 0, 0, 0)
         )
         Spacer(Modifier.height(8.dp))
         Text(
