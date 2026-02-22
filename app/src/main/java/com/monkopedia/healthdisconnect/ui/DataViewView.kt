@@ -750,10 +750,10 @@ private fun GraphShareThemeDialog(
 ) {
     val previewWidth = 960
     val previewHeight = 620
-    var previewBitmap by remember(title, seriesList, settings, selectedTheme) {
+    var previewBitmap by remember {
         mutableStateOf<Bitmap?>(null)
     }
-    var previewLoading by remember(title, seriesList, settings, selectedTheme) {
+    var previewLoading by remember {
         mutableStateOf(true)
     }
     LaunchedEffect(title, seriesList, settings, selectedTheme) {
