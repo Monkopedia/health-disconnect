@@ -52,7 +52,9 @@ import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import org.koin.androidx.compose.koinViewModel
 import kotlinx.coroutines.Job
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -103,7 +105,7 @@ fun DataViewAdapter(
     val scope = rememberCoroutineScope()
     val createViewTitle = stringResource(R.string.create_view_title)
     val headerOverlayHeight = 56.dp
-    val pageLiftPx = with(LocalDensity.current) { 180.dp.toPx() }
+    val pageLiftPx = with(LocalDensity.current) { 45.dp.toPx() }
     var headerRowWidthPx by remember { mutableStateOf(0f) }
     var headerClickJob by remember { mutableStateOf<Job?>(null) }
     var renameTargetId by remember { mutableStateOf<Int?>(null) }
@@ -133,12 +135,13 @@ fun DataViewAdapter(
                         val signedOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
                         val clampedOffset = abs(signedOffset).coerceIn(0f, 1f)
                         val easedOffset = clampedOffset.toDouble().pow(0.7).toFloat()
+                        val curvedLiftOffset = 1f - cos(clampedOffset * (PI.toFloat() / 2f))
                         val scale = 1f - (0.06f * easedOffset)
                         val alpha = (1f - (0.95f * clampedOffset)).coerceIn(0f, 1f)
                         scaleX = scale
                         scaleY = scale
                         this.alpha = alpha
-                        translationY = -pageLiftPx * easedOffset
+                        translationY = -pageLiftPx * curvedLiftOffset
                         rotationY = signedOffset * 7f
                         cameraDistance = 24f * density
                     }
