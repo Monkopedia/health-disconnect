@@ -21,22 +21,31 @@ private val widgetBindingsJsonCodec = Json {
 
 @Serializable
 private data class WidgetBindingsState(
-    val widgetToView: Map<Int, Int> = emptyMap()
+    val widgetToView: Map<Int, Int> = emptyMap(),
+    val pendingRequests: List<PendingWidgetRequest> = emptyList()
 )
 
-internal fun Preferences.toWidgetBindingsState(): Map<Int, Int> {
-    val raw = this[widgetBindingsJson] ?: return emptyMap()
+@Serializable
+data class PendingWidgetRequest(
+    val viewId: Int,
+    val updateWindowName: String? = null
+)
+
+private fun Preferences.widgetBindingsStateOrDefault(): WidgetBindingsState {
+    val raw = this[widgetBindingsJson] ?: return WidgetBindingsState()
     return runCatching {
-        widgetBindingsJsonCodec
-            .decodeFromString(WidgetBindingsState.serializer(), raw)
-            .widgetToView
-    }.getOrElse { emptyMap() }
+        widgetBindingsJsonCodec.decodeFromString(WidgetBindingsState.serializer(), raw)
+    }.getOrElse { WidgetBindingsState() }
 }
 
-private fun encodeWidgetBindingsState(widgetToView: Map<Int, Int>): String {
+internal fun Preferences.toWidgetBindingsState(): Map<Int, Int> {
+    return widgetBindingsStateOrDefault().widgetToView
+}
+
+private fun encodeWidgetBindingsState(state: WidgetBindingsState): String {
     return widgetBindingsJsonCodec.encodeToString(
         WidgetBindingsState.serializer(),
-        WidgetBindingsState(widgetToView = widgetToView)
+        state
     )
 }
 
@@ -52,26 +61,37 @@ suspend fun Context.widgetBindingsSnapshot(): Map<Int, Int> {
 
 suspend fun Context.bindWidgetToView(appWidgetId: Int, viewId: Int) {
     widgetBindingsDataStore.edit { prefs ->
-        val current = prefs.toWidgetBindingsState().toMutableMap()
-        current[appWidgetId] = viewId
-        prefs[widgetBindingsJson] = encodeWidgetBindingsState(current)
+        val state = prefs.widgetBindingsStateOrDefault()
+        val updated = state.widgetToView.toMutableMap().apply {
+            this[appWidgetId] = viewId
+        }
+        prefs[widgetBindingsJson] = encodeWidgetBindingsState(
+            state.copy(widgetToView = updated)
+        )
     }
 }
 
 suspend fun Context.unbindWidget(appWidgetId: Int) {
     widgetBindingsDataStore.edit { prefs ->
-        val current = prefs.toWidgetBindingsState().toMutableMap()
-        current.remove(appWidgetId)
-        prefs[widgetBindingsJson] = encodeWidgetBindingsState(current)
+        val state = prefs.widgetBindingsStateOrDefault()
+        val updated = state.widgetToView.toMutableMap().apply {
+            remove(appWidgetId)
+        }
+        prefs[widgetBindingsJson] = encodeWidgetBindingsState(
+            state.copy(widgetToView = updated)
+        )
     }
 }
 
 suspend fun Context.unbindWidgets(appWidgetIds: IntArray) {
     if (appWidgetIds.isEmpty()) return
     widgetBindingsDataStore.edit { prefs ->
-        val current = prefs.toWidgetBindingsState().toMutableMap()
-        appWidgetIds.forEach { current.remove(it) }
-        prefs[widgetBindingsJson] = encodeWidgetBindingsState(current)
+        val state = prefs.widgetBindingsStateOrDefault()
+        val updated = state.widgetToView.toMutableMap()
+        appWidgetIds.forEach { updated.remove(it) }
+        prefs[widgetBindingsJson] = encodeWidgetBindingsState(
+            state.copy(widgetToView = updated)
+        )
     }
 }
 
@@ -88,4 +108,73 @@ suspend fun Context.widgetIdsForView(viewId: Int): List<Int> {
 
 suspend fun Context.hasWidgetForView(viewId: Int): Boolean {
     return widgetBindingsSnapshot().values.any { it == viewId }
+}
+
+suspend fun Context.enqueuePendingWidgetRequest(
+    viewId: Int,
+    updateWindowName: String?
+) {
+    widgetBindingsDataStore.edit { prefs ->
+        val state = prefs.widgetBindingsStateOrDefault()
+        val updated = state.pendingRequests + PendingWidgetRequest(
+            viewId = viewId,
+            updateWindowName = updateWindowName
+        )
+        prefs[widgetBindingsJson] = encodeWidgetBindingsState(
+            state.copy(pendingRequests = updated)
+        )
+    }
+}
+
+suspend fun Context.consumePendingWidgetRequest(): PendingWidgetRequest? {
+    var consumed: PendingWidgetRequest? = null
+    widgetBindingsDataStore.edit { prefs ->
+        val state = prefs.widgetBindingsStateOrDefault()
+        val first = state.pendingRequests.firstOrNull()
+        consumed = first
+        if (first != null) {
+            prefs[widgetBindingsJson] = encodeWidgetBindingsState(
+                state.copy(pendingRequests = state.pendingRequests.drop(1))
+            )
+        }
+    }
+    return consumed
+}
+
+suspend fun Context.clearPendingWidgetRequests() {
+    widgetBindingsDataStore.edit { prefs ->
+        val state = prefs.widgetBindingsStateOrDefault()
+        if (state.pendingRequests.isNotEmpty()) {
+            prefs[widgetBindingsJson] = encodeWidgetBindingsState(
+                state.copy(pendingRequests = emptyList())
+            )
+        }
+    }
+}
+
+suspend fun Context.pendingWidgetRequestCount(): Int {
+    return widgetBindingsDataStore.data.first().widgetBindingsStateOrDefault().pendingRequests.size
+}
+
+suspend fun Context.consumeMatchingPendingWidgetRequest(
+    viewId: Int,
+    updateWindowName: String?
+): Boolean {
+    var removed = false
+    widgetBindingsDataStore.edit { prefs ->
+        val state = prefs.widgetBindingsStateOrDefault()
+        val index = state.pendingRequests.indexOfFirst { request ->
+            request.viewId == viewId && request.updateWindowName == updateWindowName
+        }
+        if (index >= 0) {
+            val updated = state.pendingRequests.toMutableList().apply {
+                removeAt(index)
+            }
+            prefs[widgetBindingsJson] = encodeWidgetBindingsState(
+                state.copy(pendingRequests = updated)
+            )
+            removed = true
+        }
+    }
+    return removed
 }

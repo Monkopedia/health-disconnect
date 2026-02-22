@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.monkopedia.healthdisconnect.model.WidgetUpdateWindow
+import com.monkopedia.healthdisconnect.consumeMatchingPendingWidgetRequest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,12 +32,18 @@ class WidgetPinSuccessReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                configureWidgetForView(
+                val configured = configureWidgetForView(
                     context = context,
                     appWidgetId = appWidgetId,
                     viewId = viewId,
                     updateWindowOverride = windowOverride
                 )
+                if (configured) {
+                    context.consumeMatchingPendingWidgetRequest(
+                        viewId = viewId,
+                        updateWindowName = windowOverride?.name
+                    )
+                }
             } finally {
                 pendingResult.finish()
             }

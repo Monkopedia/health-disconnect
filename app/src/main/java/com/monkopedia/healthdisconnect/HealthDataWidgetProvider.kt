@@ -3,6 +3,7 @@ package com.monkopedia.healthdisconnect
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import com.monkopedia.healthdisconnect.model.WidgetUpdateWindow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,6 +20,19 @@ class HealthDataWidgetProvider : AppWidgetProvider() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 appWidgetIds.forEach { appWidgetId ->
+                    if (context.widgetViewId(appWidgetId) == null) {
+                        val pending = context.consumePendingWidgetRequest()
+                        if (pending != null) {
+                            configureWidgetForView(
+                                context = context,
+                                appWidgetId = appWidgetId,
+                                viewId = pending.viewId,
+                                updateWindowOverride = pending.updateWindowName?.let { raw ->
+                                    runCatching { WidgetUpdateWindow.valueOf(raw) }.getOrNull()
+                                }
+                            )
+                        }
+                    }
                     HealthDataWidgetScheduler.scheduleForWidget(context, appWidgetId)
                     HealthDataWidgetUpdater.updateWidget(context, appWidgetId, appWidgetManager)
                 }

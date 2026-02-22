@@ -52,4 +52,23 @@ class WidgetBindingStoreTest {
         assertTrue(app.hasWidgetForView(11))
         assertFalse(app.hasWidgetForView(12))
     }
+
+    @Test
+    fun pendingWidgetRequests_queueAndConsumeMatching() = runBlocking {
+        app.enqueuePendingWidgetRequest(viewId = 1, updateWindowName = "HOURS_12")
+        app.enqueuePendingWidgetRequest(viewId = 2, updateWindowName = "HOURS_6")
+        assertEquals(2, app.pendingWidgetRequestCount())
+
+        val removed = app.consumeMatchingPendingWidgetRequest(
+            viewId = 2,
+            updateWindowName = "HOURS_6"
+        )
+        assertTrue(removed)
+        assertEquals(1, app.pendingWidgetRequestCount())
+
+        val next = app.consumePendingWidgetRequest()
+        assertEquals(1, next?.viewId)
+        assertEquals("HOURS_12", next?.updateWindowName)
+        assertEquals(0, app.pendingWidgetRequestCount())
+    }
 }

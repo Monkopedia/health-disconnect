@@ -109,6 +109,8 @@ import com.monkopedia.healthdisconnect.shareEntriesCsv
 import com.monkopedia.healthdisconnect.shareGraphImage
 import com.monkopedia.healthdisconnect.toGraphSharePreferences
 import com.monkopedia.healthdisconnect.updateGraphSharePreferences
+import com.monkopedia.healthdisconnect.enqueuePendingWidgetRequest
+import com.monkopedia.healthdisconnect.consumeMatchingPendingWidgetRequest
 import com.monkopedia.healthdisconnect.widgetBindingsFlow
 import com.monkopedia.healthdisconnect.writeGraphSharePng
 import com.monkopedia.healthdisconnect.writeEntriesCsvToCache
@@ -377,13 +379,23 @@ fun DataViewView(
             callbackIntent,
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
         )
-        val accepted = appWidgetManager.requestPinAppWidget(
-            provider,
-            extras,
-            successCallback
-        )
-        if (!accepted) {
-            addWidgetError = context.getString(R.string.widget_pin_request_failed)
+        actionScope.launch {
+            context.enqueuePendingWidgetRequest(
+                viewId = view!!.id,
+                updateWindowName = widgetUpdateWindow.name
+            )
+            val accepted = appWidgetManager.requestPinAppWidget(
+                provider,
+                extras,
+                successCallback
+            )
+            if (!accepted) {
+                context.consumeMatchingPendingWidgetRequest(
+                    viewId = view!!.id,
+                    updateWindowName = widgetUpdateWindow.name
+                )
+                addWidgetError = context.getString(R.string.widget_pin_request_failed)
+            }
         }
     }
 

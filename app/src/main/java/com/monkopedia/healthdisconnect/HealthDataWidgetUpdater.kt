@@ -43,7 +43,11 @@ object HealthDataWidgetUpdater {
                             R.string.widget_no_views_available
                         }
                     ),
-                    clickIntent = openAppPendingIntent(context)
+                    clickIntent = if (hasViews) {
+                        configureWidgetPendingIntent(context, appWidgetId)
+                    } else {
+                        openAppPendingIntent(context)
+                    }
                 )
             )
             return
@@ -178,6 +182,19 @@ object HealthDataWidgetUpdater {
         return PendingIntent.getActivity(
             context,
             -1,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun configureWidgetPendingIntent(context: Context, appWidgetId: Int): PendingIntent {
+        val intent = Intent(context, HealthDataWidgetConfigureActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+        }
+        return PendingIntent.getActivity(
+            context,
+            appWidgetId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

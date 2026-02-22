@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import com.monkopedia.healthdisconnect.consumeMatchingPendingWidgetRequest
 import com.monkopedia.healthdisconnect.model.WidgetUpdateWindow
 import com.monkopedia.healthdisconnect.room.AppDatabase
 import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
@@ -78,6 +79,10 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
                     updateWindowOverride = updateWindowOverride
                 )
                 if (configured) {
+                    consumeMatchingPendingWidgetRequest(
+                        viewId = preselectedViewId,
+                        updateWindowName = updateWindowOverride?.name
+                    )
                     setResult(
                         RESULT_OK,
                         Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
@@ -109,6 +114,10 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
                             updateWindowOverride = window
                         )
                         if (configured) {
+                            consumeMatchingPendingWidgetRequest(
+                                viewId = viewId,
+                                updateWindowName = window.name
+                            )
                             setResult(
                                 RESULT_OK,
                                 Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
