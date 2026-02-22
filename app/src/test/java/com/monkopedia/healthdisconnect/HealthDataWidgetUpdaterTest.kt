@@ -49,6 +49,30 @@ class HealthDataWidgetUpdaterTest {
     }
 
     @Test
+    fun buildWidgetGraphLabels_singleSeriesIncludesRangeAndDates() {
+        val day = LocalDate.of(2026, 2, 22)
+        val series = listOf(
+            HealthDataModel.MetricSeries(
+                label = "Weight",
+                unit = "lb",
+                points = listOf(
+                    HealthDataModel.MetricPoint(day.minusDays(6), 259.0),
+                    HealthDataModel.MetricPoint(day, 256.0)
+                ),
+                peakValueInWindow = 259.0,
+                minValueInWindow = 256.0
+            )
+        )
+
+        val labels = HealthDataWidgetUpdater.buildWidgetGraphLabels(series)
+
+        assertEquals("\u2191 259 lb", labels.maxLabel)
+        assertEquals("\u2193 256 lb", labels.minLabel)
+        assertTrue(labels.startDateLabel?.endsWith("16") == true)
+        assertTrue(labels.endDateLabel?.endsWith("22") == true)
+    }
+
+    @Test
     fun widgetLayoutProfile_compactHeight_hidesSummary() {
         val profile = HealthDataWidgetUpdater.widgetLayoutProfile(widthDp = 220, heightDp = 100)
 

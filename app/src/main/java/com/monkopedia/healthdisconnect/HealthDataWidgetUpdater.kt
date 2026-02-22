@@ -12,6 +12,7 @@ import android.view.View
 import android.widget.RemoteViews
 import androidx.health.connect.client.HealthConnectClient
 import com.monkopedia.healthdisconnect.room.AppDatabase
+import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
 object HealthDataWidgetUpdater {
@@ -32,6 +33,13 @@ object HealthDataWidgetUpdater {
     internal data class WidgetGraphRenderSize(
         val widthPx: Int,
         val heightPx: Int
+    )
+
+    internal data class WidgetGraphLabels(
+        val maxLabel: String?,
+        val minLabel: String?,
+        val startDateLabel: String?,
+        val endDateLabel: String?
     )
 
     suspend fun updateAllWidgets(context: Context) {
@@ -193,9 +201,11 @@ object HealthDataWidgetUpdater {
             settings = view.chartSettings,
             theme = GraphShareTheme.DARK,
             width = graphRenderSize.widthPx,
-            height = graphRenderSize.heightPx
+            height = graphRenderSize.heightPx,
+            showCornerLabels = false
         )
         val summaryText = buildWidgetSummaryText(context, seriesList)
+        val graphLabels = buildWidgetGraphLabels(seriesList)
         val remoteViews = RemoteViews(context.packageName, R.layout.health_graph_widget).apply {
             setTextViewText(R.id.widget_title, info.name)
             setTextViewTextSize(
@@ -204,8 +214,25 @@ object HealthDataWidgetUpdater {
                 layoutProfile.titleTextSizeSp
             )
             setViewVisibility(R.id.widget_empty, View.GONE)
+            setViewVisibility(R.id.widget_graph_container, View.VISIBLE)
             setViewVisibility(R.id.widget_graph, View.VISIBLE)
             setImageViewBitmap(R.id.widget_graph, graphBitmap)
+            applyWidgetGraphLabel(
+                id = R.id.widget_graph_label_top_start,
+                text = graphLabels.maxLabel
+            )
+            applyWidgetGraphLabel(
+                id = R.id.widget_graph_label_top_end,
+                text = graphLabels.minLabel
+            )
+            applyWidgetGraphLabel(
+                id = R.id.widget_graph_label_bottom_start,
+                text = graphLabels.startDateLabel
+            )
+            applyWidgetGraphLabel(
+                id = R.id.widget_graph_label_bottom_end,
+                text = graphLabels.endDateLabel
+            )
             setTextViewTextSize(
                 R.id.widget_summary,
                 TypedValue.COMPLEX_UNIT_SP,
@@ -265,6 +292,39 @@ object HealthDataWidgetUpdater {
         }.joinToString(separator = "\n")
     }
 
+    internal fun buildWidgetGraphLabels(
+        seriesList: List<HealthDataModel.MetricSeries>
+    ): WidgetGraphLabels {
+        val allDates = seriesList
+            .flatMap { it.points }
+            .map { it.date }
+            .distinct()
+            .sorted()
+        val dateFormatter = if (allDates.firstOrNull()?.year != allDates.lastOrNull()?.year) {
+            DateTimeFormatter.ofPattern("MMM yy")
+        } else {
+            DateTimeFormatter.ofPattern("MMM d")
+        }
+        val firstDateLabel = allDates.firstOrNull()?.format(dateFormatter)
+        val lastDateLabel = allDates.lastOrNull()?.format(dateFormatter)
+        if (seriesList.size != 1) {
+            return WidgetGraphLabels(
+                maxLabel = null,
+                minLabel = null,
+                startDateLabel = firstDateLabel,
+                endDateLabel = lastDateLabel
+            )
+        }
+        val series = seriesList.first()
+        val unit = unitSuffix(series.unit)
+        return WidgetGraphLabels(
+            maxLabel = "\u2191 ${formatAxisValue(series.peakValueInWindow)}$unit",
+            minLabel = "\u2193 ${formatAxisValue(series.minValueInWindow)}$unit",
+            startDateLabel = firstDateLabel,
+            endDateLabel = lastDateLabel
+        )
+    }
+
     private fun placeholderViews(
         context: Context,
         title: String,
@@ -288,9 +348,24 @@ object HealthDataWidgetUpdater {
             )
             setInt(R.id.widget_summary, "setMaxLines", layoutProfile.summaryMaxLines)
             setViewVisibility(R.id.widget_empty, View.VISIBLE)
+            setViewVisibility(R.id.widget_graph_container, View.GONE)
             setViewVisibility(R.id.widget_graph, View.GONE)
+            setViewVisibility(R.id.widget_graph_label_top_start, View.GONE)
+            setViewVisibility(R.id.widget_graph_label_top_end, View.GONE)
+            setViewVisibility(R.id.widget_graph_label_bottom_start, View.GONE)
+            setViewVisibility(R.id.widget_graph_label_bottom_end, View.GONE)
             setViewVisibility(R.id.widget_summary, View.GONE)
             setOnClickPendingIntent(R.id.widget_container, clickIntent)
+        }
+    }
+
+    private fun RemoteViews.applyWidgetGraphLabel(id: Int, text: String?) {
+        if (text.isNullOrBlank()) {
+            setViewVisibility(id, View.GONE)
+            setTextViewText(id, "")
+        } else {
+            setTextViewText(id, text)
+            setViewVisibility(id, View.VISIBLE)
         }
     }
 

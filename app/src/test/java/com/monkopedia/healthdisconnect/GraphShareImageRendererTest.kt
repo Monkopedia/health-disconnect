@@ -150,6 +150,7 @@ class GraphShareImageRendererTest {
         widgetSizes.forEach { (name, widthDp, heightDp) ->
             val sizeInfo = widgetSizeInfo(widthDp = widthDp, heightDp = heightDp)
             val layoutProfile = HealthDataWidgetUpdater.widgetLayoutProfile(widthDp, heightDp)
+            val seriesList = demoWidgetSeries(today)
             val graphRenderSize = HealthDataWidgetUpdater.estimateGraphRenderSizePx(
                 sizeInfo = sizeInfo,
                 layoutProfile = layoutProfile,
@@ -157,7 +158,7 @@ class GraphShareImageRendererTest {
             )
             val graphBitmap = renderWidgetGraphBitmap(
                 title = "Weight",
-                seriesList = demoWidgetSeries(today),
+                seriesList = seriesList,
                 settings = ChartSettings(
                     chartType = ChartType.LINE,
                     backgroundStyle = ChartBackgroundStyle.HORIZONTAL_LINES,
@@ -165,13 +166,16 @@ class GraphShareImageRendererTest {
                 ),
                 theme = GraphShareTheme.DARK,
                 width = graphRenderSize.widthPx,
-                height = graphRenderSize.heightPx
+                height = graphRenderSize.heightPx,
+                showCornerLabels = false
             )
+            val graphLabels = HealthDataWidgetUpdater.buildWidgetGraphLabels(seriesList)
             val launcherBitmap = renderWidgetInLauncherHost(
                 widthPx = sizeInfo.widthPx,
                 heightPx = sizeInfo.heightPx,
                 layoutProfile = layoutProfile,
-                graphBitmap = graphBitmap
+                graphBitmap = graphBitmap,
+                graphLabels = graphLabels
             )
 
             val outputFile = File(outputDir, "$name.png")
@@ -201,7 +205,8 @@ class GraphShareImageRendererTest {
         widthPx: Int,
         heightPx: Int,
         layoutProfile: HealthDataWidgetUpdater.WidgetLayoutProfile,
-        graphBitmap: Bitmap
+        graphBitmap: Bitmap,
+        graphLabels: HealthDataWidgetUpdater.WidgetGraphLabels
     ): Bitmap {
         val view = LayoutInflater.from(app).inflate(
             R.layout.health_graph_widget,
@@ -218,6 +223,22 @@ class GraphShareImageRendererTest {
             visibility = View.VISIBLE
             setImageBitmap(graphBitmap)
         }
+        applyWidgetGraphLabel(
+            labelView = view.findViewById(R.id.widget_graph_label_top_start),
+            text = graphLabels.maxLabel
+        )
+        applyWidgetGraphLabel(
+            labelView = view.findViewById(R.id.widget_graph_label_top_end),
+            text = graphLabels.minLabel
+        )
+        applyWidgetGraphLabel(
+            labelView = view.findViewById(R.id.widget_graph_label_bottom_start),
+            text = graphLabels.startDateLabel
+        )
+        applyWidgetGraphLabel(
+            labelView = view.findViewById(R.id.widget_graph_label_bottom_end),
+            text = graphLabels.endDateLabel
+        )
         view.findViewById<TextView>(R.id.widget_summary).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, layoutProfile.summaryTextSizeSp)
             maxLines = layoutProfile.summaryMaxLines
@@ -234,6 +255,16 @@ class GraphShareImageRendererTest {
         return Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888).also { bitmap ->
             val canvas = Canvas(bitmap)
             view.draw(canvas)
+        }
+    }
+
+    private fun applyWidgetGraphLabel(labelView: TextView, text: String?) {
+        if (text.isNullOrBlank()) {
+            labelView.visibility = View.GONE
+            labelView.text = ""
+        } else {
+            labelView.visibility = View.VISIBLE
+            labelView.text = text
         }
     }
 
