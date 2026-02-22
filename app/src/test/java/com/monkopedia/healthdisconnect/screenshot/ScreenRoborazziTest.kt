@@ -1,7 +1,13 @@
 package com.monkopedia.healthdisconnect.screenshot
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
@@ -112,7 +118,7 @@ abstract class BaseScreenRoborazziTest {
 
     @Test
     fun settingsScreen() {
-        captureScreen("settings") {
+        captureScreen("settings", topInset = 28.dp) {
             SettingsScreen(
                 permissionsViewModel = mockPermissionsViewModelForScreens(),
                 appThemeViewModel = mockAppThemeViewModelForScreens()
@@ -122,7 +128,7 @@ abstract class BaseScreenRoborazziTest {
 
     @Test
     fun settingsThemeDropdownExpandedScreen() {
-        captureScreen("settings_theme_dropdown_expanded") {
+        captureScreen("settings_theme_dropdown_expanded", topInset = 28.dp) {
             SettingsScreen(
                 permissionsViewModel = mockPermissionsViewModelForScreens(),
                 appThemeViewModel = mockAppThemeViewModelForScreens(),
@@ -133,7 +139,7 @@ abstract class BaseScreenRoborazziTest {
 
     @Test
     fun settingsScreenAdvancedExpanded() {
-        captureScreen("settings_advanced") {
+        captureScreen("settings_advanced", topInset = 28.dp) {
             SettingsScreen(
                 permissionsViewModel = mockPermissionsViewModelForScreens(),
                 appThemeViewModel = mockAppThemeViewModelForScreens(),
@@ -779,11 +785,22 @@ abstract class BaseScreenRoborazziTest {
         }
     }
 
-    private fun captureScreen(name: String, darkTheme: Boolean = false, content: @Composable () -> Unit) {
+    private fun captureScreen(
+        name: String,
+        darkTheme: Boolean = false,
+        topInset: Dp = 0.dp,
+        content: @Composable () -> Unit
+    ) {
         captureRoboImage("build/outputs/roborazzi/screens/${name}_$sizeBucket.png") {
             HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
                 Surface {
-                    content()
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = topInset)
+                    ) {
+                        content()
+                    }
                 }
             }
         }
