@@ -558,8 +558,8 @@ fun renderWidgetGraphBitmap(
         }
     }
 
-    val labelTextSize = (min(width, height) * 0.062f).coerceIn(14f, 30f)
-    val dateTextSize = (labelTextSize * 0.92f).coerceAtLeast(13f)
+    val labelTextSize = (height * 0.11f).coerceIn(20f, 40f)
+    val dateTextSize = (labelTextSize * 0.9f).coerceAtLeast(18f)
     val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = if (theme == GraphShareTheme.DARK) 0xFFE6E0E9.toInt() else 0xFF1D1B20.toInt()
         textSize = labelTextSize
@@ -578,8 +578,8 @@ fun renderWidgetGraphBitmap(
     }
     val labelChipRadius = max(4f, min(width, height) * 0.02f)
     val labelPadX = labelTextSize * 0.24f
-    val labelPadY = labelTextSize * 0.18f
-    val labelInset = max(labelPadX, min(width, height) * 0.02f)
+    val labelPadY = labelTextSize * 0.16f
+    val labelInset = max(labelPadX, min(width, height) * 0.015f)
 
     fun drawLabelChip(
         text: String,

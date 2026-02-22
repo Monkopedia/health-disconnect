@@ -1,10 +1,21 @@
 package com.monkopedia.healthdisconnect
 
+import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.util.TypedValue
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.test.core.app.ApplicationProvider
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import java.io.File
 import java.time.LocalDate
+import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,6 +26,8 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class GraphShareImageRendererTest {
+    private val app: Application = ApplicationProvider.getApplicationContext()
+
     @Test
     fun scaledLayoutKeepsGraphSharePreviewContentInBounds() {
         val layout = computeGraphShareLayout(width = 960, height = 620, seriesCount = 3)
@@ -96,7 +109,9 @@ class GraphShareImageRendererTest {
             Triple("widget_4x2_default", 1240, 320),
             Triple("widget_4x3_tall", 1240, 520),
             Triple("widget_5x2_wide", 1520, 320),
-            Triple("widget_3x2_compact", 980, 320)
+            Triple("widget_3x2_compact", 980, 320),
+            Triple("widget_runtime_default_4x2", 760, 210),
+            Triple("widget_runtime_compact_4x2", 640, 170)
         )
 
         sizes.forEach { (name, width, height) ->
@@ -119,6 +134,106 @@ class GraphShareImageRendererTest {
             assertTrue(outputFile.exists())
             assertTrue(outputFile.length() > 0L)
             bitmap.recycle()
+        }
+    }
+
+    @Test
+    fun renderWidgetGraphBitmap_generatesLauncherHostSnapshots() {
+        val today = LocalDate.of(2026, 2, 22)
+        val outputDir = File("build/outputs/widget-renders").apply { mkdirs() }
+        val widgetSizes = listOf(
+            Triple("widget_launcher_host_default_4x2", 322, 121),
+            Triple("widget_launcher_host_compact_4x2", 280, 112),
+            Triple("widget_launcher_host_tall_4x3", 322, 180)
+        )
+
+        widgetSizes.forEach { (name, widthDp, heightDp) ->
+            val sizeInfo = widgetSizeInfo(widthDp = widthDp, heightDp = heightDp)
+            val layoutProfile = HealthDataWidgetUpdater.widgetLayoutProfile(widthDp, heightDp)
+            val graphRenderSize = HealthDataWidgetUpdater.estimateGraphRenderSizePx(
+                sizeInfo = sizeInfo,
+                layoutProfile = layoutProfile,
+                displayMetrics = app.resources.displayMetrics
+            )
+            val graphBitmap = renderWidgetGraphBitmap(
+                title = "Weight",
+                seriesList = demoWidgetSeries(today),
+                settings = ChartSettings(
+                    chartType = ChartType.LINE,
+                    backgroundStyle = ChartBackgroundStyle.HORIZONTAL_LINES,
+                    showDataPoints = false
+                ),
+                theme = GraphShareTheme.DARK,
+                width = graphRenderSize.widthPx,
+                height = graphRenderSize.heightPx
+            )
+            val launcherBitmap = renderWidgetInLauncherHost(
+                widthPx = sizeInfo.widthPx,
+                heightPx = sizeInfo.heightPx,
+                layoutProfile = layoutProfile,
+                graphBitmap = graphBitmap
+            )
+
+            val outputFile = File(outputDir, "$name.png")
+            outputFile.outputStream().use { stream ->
+                launcherBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            }
+
+            assertTrue(outputFile.exists())
+            assertTrue(outputFile.length() > 0L)
+
+            graphBitmap.recycle()
+            launcherBitmap.recycle()
+        }
+    }
+
+    private fun widgetSizeInfo(widthDp: Int, heightDp: Int): HealthDataWidgetUpdater.WidgetSizeInfo {
+        val density = app.resources.displayMetrics.density
+        return HealthDataWidgetUpdater.WidgetSizeInfo(
+            widthDp = widthDp,
+            heightDp = heightDp,
+            widthPx = (widthDp * density).roundToInt(),
+            heightPx = (heightDp * density).roundToInt()
+        )
+    }
+
+    private fun renderWidgetInLauncherHost(
+        widthPx: Int,
+        heightPx: Int,
+        layoutProfile: HealthDataWidgetUpdater.WidgetLayoutProfile,
+        graphBitmap: Bitmap
+    ): Bitmap {
+        val view = LayoutInflater.from(app).inflate(
+            R.layout.health_graph_widget,
+            null,
+            false
+        )
+
+        view.findViewById<TextView>(R.id.widget_title).apply {
+            text = "Weight"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, layoutProfile.titleTextSizeSp)
+        }
+        view.findViewById<TextView>(R.id.widget_empty).visibility = View.GONE
+        view.findViewById<ImageView>(R.id.widget_graph).apply {
+            visibility = View.VISIBLE
+            setImageBitmap(graphBitmap)
+        }
+        view.findViewById<TextView>(R.id.widget_summary).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, layoutProfile.summaryTextSizeSp)
+            maxLines = layoutProfile.summaryMaxLines
+            text = "Weight max: 259 pounds"
+            visibility = if (layoutProfile.showSummary) View.VISIBLE else View.GONE
+        }
+
+        view.layoutParams = ViewGroup.LayoutParams(widthPx, heightPx)
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY)
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(heightPx, View.MeasureSpec.EXACTLY)
+        view.measure(widthSpec, heightSpec)
+        view.layout(0, 0, widthPx, heightPx)
+
+        return Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888).also { bitmap ->
+            val canvas = Canvas(bitmap)
+            view.draw(canvas)
         }
     }
 

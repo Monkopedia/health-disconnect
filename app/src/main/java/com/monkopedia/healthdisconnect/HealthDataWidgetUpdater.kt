@@ -363,13 +363,13 @@ object HealthDataWidgetUpdater {
             ).roundToInt().coerceAtLeast(dp(42f).roundToInt())
         val graphWidthPx = (sizeInfo.widthPx - dp(2f)).roundToInt().coerceAtLeast(dp(120f).roundToInt())
         val renderScale = when {
-            graphWidthPx <= dp(220f).roundToInt() -> 2.9f
-            graphWidthPx <= dp(320f).roundToInt() -> 2.5f
-            else -> 2.2f
+            graphWidthPx <= dp(220f).roundToInt() -> 1.08f
+            graphWidthPx <= dp(320f).roundToInt() -> 1.04f
+            else -> 1.0f
         }
         return WidgetGraphRenderSize(
-            widthPx = (graphWidthPx * renderScale).roundToInt().coerceIn(400, 3200),
-            heightPx = (graphHeightPx * renderScale).roundToInt().coerceIn(140, 1800)
+            widthPx = (graphWidthPx * renderScale).roundToInt().coerceIn(180, 3200),
+            heightPx = (graphHeightPx * renderScale).roundToInt().coerceIn(72, 1800)
         )
     }
 

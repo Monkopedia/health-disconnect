@@ -1,6 +1,7 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import android.util.TypedValue
 import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
 import kotlin.math.roundToInt
@@ -138,4 +139,49 @@ class HealthDataWidgetUpdaterTest {
         assertEquals(hiddenSummarySize.widthPx, shownSummarySize.widthPx)
         assertTrue(hiddenSummarySize.heightPx > shownSummarySize.heightPx)
     }
+
+    @Test
+    fun estimateGraphRenderSizePx_defaultWidgetAvoidsHeavyOversampling() {
+        val metrics = app.resources.displayMetrics
+        fun dp(value: Float): Float = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            value,
+            metrics
+        )
+        fun sp(value: Float): Float = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            value,
+            metrics
+        )
+
+        val sizeInfo = HealthDataWidgetUpdater.WidgetSizeInfo(
+            widthDp = 250,
+            heightDp = 120,
+            widthPx = (250f * metrics.density).roundToInt(),
+            heightPx = (120f * metrics.density).roundToInt()
+        )
+        val profile = HealthDataWidgetUpdater.widgetLayoutProfile(sizeInfo.widthDp, sizeInfo.heightDp)
+        val renderSize = HealthDataWidgetUpdater.estimateGraphRenderSizePx(
+            sizeInfo = sizeInfo,
+            layoutProfile = profile,
+            displayMetrics = metrics
+        )
+
+        val verticalPadding = dp(8f) * 2f
+        val graphTopMargin = dp(4f)
+        val titleLineHeight = sp(profile.titleTextSizeSp) * 1.18f
+        val summaryBlockHeight = dp(4f) + (sp(profile.summaryTextSizeSp) * profile.summaryMaxLines * 1.18f)
+        val graphWidthPx = (sizeInfo.widthPx - dp(2f)).roundToInt()
+        val graphHeightPx = (
+            sizeInfo.heightPx -
+                verticalPadding -
+                graphTopMargin -
+                titleLineHeight -
+                summaryBlockHeight
+            ).roundToInt()
+
+        assertTrue(renderSize.widthPx <= (graphWidthPx * 1.1f).roundToInt())
+        assertTrue(renderSize.heightPx <= (graphHeightPx * 1.1f).roundToInt())
+    }
+
 }
