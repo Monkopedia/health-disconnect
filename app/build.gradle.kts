@@ -261,6 +261,12 @@ tasks.register("allTests") {
     setDependsOn(listOf("unitTestGate", "roborazziGate", "lintDebug", "compileDebugAndroidTestKotlin"))
 }
 
+tasks.register("releaseVerification") {
+    group = "verification"
+    description = "Runs all verification gates including connected instrumentation tests."
+    setDependsOn(listOf("allTests", "connectedDebugAndroidTest"))
+}
+
 tasks.matching { it.name == "testDebugUnitTest" }.configureEach {
     if (this is Test) {
         // Keep unit tests deterministic and reduce intermittent OOM behavior on CI/dev machines.

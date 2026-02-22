@@ -15,6 +15,9 @@ interface DataViewDao {
     @Query("SELECT * FROM data_views WHERE id = :id LIMIT 1")
     suspend fun getById(id: Int): DataViewEntity?
 
+    @Query("SELECT id FROM data_views")
+    suspend fun allIdsSnapshot(): List<Int>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(view: DataViewEntity)
 
@@ -23,6 +26,9 @@ interface DataViewDao {
 
     @Query("DELETE FROM data_views WHERE id = :id")
     suspend fun deleteById(id: Int)
+
+    @Query("DELETE FROM data_views")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -53,4 +59,7 @@ interface DataViewInfoDao {
 
     @Query("DELETE FROM data_view_info WHERE id = :id")
     suspend fun deleteById(id: Int)
+
+    @Query("DELETE FROM data_view_info")
+    suspend fun deleteAll()
 }

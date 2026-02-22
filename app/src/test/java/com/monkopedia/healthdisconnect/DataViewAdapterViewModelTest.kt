@@ -9,6 +9,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.dataViewDataStore
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.dataViewInfoDataStore
+import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.migrationStateDataStore
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
 import com.monkopedia.healthdisconnect.model.DataView
@@ -23,6 +24,7 @@ import com.monkopedia.healthdisconnect.room.DataViewEntity
 import com.monkopedia.healthdisconnect.room.DataViewInfoDao
 import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
 import java.lang.reflect.Field
+import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.runBlocking
@@ -31,9 +33,9 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -69,6 +71,7 @@ class DataViewAdapterViewModelTest {
         runBlocking {
             app.dataViewInfoDataStore.updateData { DataViewInfoList(emptyMap(), emptyList()) }
             app.dataViewDataStore.updateData { DataViewList(emptyMap()) }
+            app.migrationStateDataStore.edit { it.clear() }
         }
     }
 
@@ -77,6 +80,7 @@ class DataViewAdapterViewModelTest {
         runBlocking {
             app.dataViewInfoDataStore.updateData { DataViewInfoList(emptyMap(), emptyList()) }
             app.dataViewDataStore.updateData { DataViewList(emptyMap()) }
+            app.migrationStateDataStore.edit { it.clear() }
             appDb.clearAllTables()
         }
         instanceField.set(null, originalDatabase)
@@ -220,9 +224,8 @@ class DataViewAdapterViewModelTest {
         assertEquals(recordSelection.fqn, view.records.single().fqn)
     }
 
-    @Ignore("SKIPPED: migration via datastore requires instrumentation timing guarantees")
     @Test
-    fun `data store migration creates room rows when empty`() = runBlocking {
+    fun `legacy migration creates room rows and marks completion`() = runBlocking {
         val id = 11
         val migratedInfo = DataViewInfo(id, "Migrated Weight")
         val migratedView = DataView(
@@ -236,8 +239,10 @@ class DataViewAdapterViewModelTest {
             DataViewInfoList(dataViews = mapOf(id to migratedInfo), ordering = listOf(id))
         }
         app.dataViewDataStore.updateData { DataViewList(views = mapOf(id to migratedView)) }
+        app.migrationStateDataStore.edit { it.clear() }
 
-        val viewModel = dataViewAdapterViewModel()
+        val viewModel = dataViewAdapterViewModel(runLegacyMigrationOnInit = false)
+        viewModel.migrateLegacyDataStoreIfNeededForTest()
         val list = awaitViews(viewModel) { it.ordering.isNotEmpty() }
 
         val view = viewModel.dataView(id).first { it.id == id }
@@ -247,6 +252,42 @@ class DataViewAdapterViewModelTest {
         assertEquals(1, view.records.size)
         assertEquals(WeightRecord::class.qualifiedName, view.records.single().fqn)
         assertEquals(ChartSettings(timeWindow = TimeWindow.YEAR_1), view.chartSettings)
+        assertTrue(isLegacyMigrationComplete())
+    }
+
+    @Test
+    fun `legacy migration repairs mismatched room rows before completion`() = runBlocking {
+        val id = 22
+        val migratedInfo = DataViewInfo(id, "Migrated Distance")
+        val migratedView = DataView(
+            id = id,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(DistanceRecord::class)),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.DAYS_90)
+        )
+
+        app.dataViewInfoDataStore.updateData {
+            DataViewInfoList(dataViews = mapOf(id to migratedInfo), ordering = listOf(id))
+        }
+        app.dataViewDataStore.updateData { DataViewList(views = mapOf(id to migratedView)) }
+        app.migrationStateDataStore.edit { it.clear() }
+
+        infoDao.insert(DataViewInfoEntity(id = 999, name = "partial", ordering = 1))
+        assertEquals(1, infoDao.count())
+        assertEquals(0, countDataViews())
+
+        val viewModel = dataViewAdapterViewModel(runLegacyMigrationOnInit = false)
+        viewModel.migrateLegacyDataStoreIfNeededForTest()
+
+        val repairedList = awaitViews(viewModel) { it.ordering == listOf(id) }
+        val repairedView = viewModel.dataView(id).first { it.id == id }
+
+        assertEquals("Migrated Distance", repairedList.dataViews[id]?.name)
+        assertEquals(1, infoDao.count())
+        assertEquals(1, countDataViews())
+        assertEquals(DistanceRecord::class.qualifiedName, repairedView.records.single().fqn)
+        assertEquals(TimeWindow.DAYS_90, repairedView.chartSettings.timeWindow)
+        assertTrue(isLegacyMigrationComplete())
     }
 
     private suspend fun awaitViews(
@@ -288,5 +329,21 @@ class DataViewAdapterViewModelTest {
             dataViewDao = viewDao,
             dataViewInfoDao = infoDao
         )
+    }
+
+    private fun dataViewAdapterViewModel(runLegacyMigrationOnInit: Boolean): DataViewAdapterViewModel {
+        return DataViewAdapterViewModel(
+            app = app,
+            savedStateHandle = SavedStateHandle(),
+            appDatabase = appDb,
+            dataViewDao = viewDao,
+            dataViewInfoDao = infoDao,
+            runLegacyMigrationOnInit = runLegacyMigrationOnInit
+        )
+    }
+
+    private suspend fun isLegacyMigrationComplete(): Boolean {
+        return app.migrationStateDataStore.data.first()[DataViewAdapterViewModel.legacyMigrationCompleteKey]
+            ?: false
     }
 }

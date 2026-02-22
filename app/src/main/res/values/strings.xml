@@ -116,6 +116,7 @@
     <string name="widget_needs_configuration">Tap to configure this widget.</string>
     <string name="widget_linked_view_missing">The linked view no longer exists. Reconfigure this widget.</string>
     <string name="widget_no_graph_data">No graphable metric values available for this view yet.</string>
+    <string name="widget_update_failed">Could not refresh widget data right now. Tap to open the app.</string>
     <string name="widget_permissions_required">Health Connect access is missing for this view. Open the app to reconnect permissions.</string>
     <string name="widget_no_labels_enabled">Min/max labels are disabled for this view.</string>
     <string name="widget_update_window_label">Widget update window</string>

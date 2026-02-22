@@ -12,10 +12,91 @@ import android.view.View
 import android.widget.RemoteViews
 import androidx.health.connect.client.HealthConnectClient
 import com.monkopedia.healthdisconnect.room.AppDatabase
+import com.monkopedia.healthdisconnect.model.DataView
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
+import kotlin.coroutines.cancellation.CancellationException
 
 object HealthDataWidgetUpdater {
+    internal sealed interface WidgetBindingLoadResult {
+        data object Unbound : WidgetBindingLoadResult
+        data class MissingBoundView(val viewId: Int) : WidgetBindingLoadResult
+        data class BoundView(
+            val viewId: Int,
+            val title: String,
+            val view: DataView
+        ) : WidgetBindingLoadResult
+    }
+
+    internal sealed interface WidgetSeriesLoadResult {
+        data class Success(val seriesList: List<HealthDataModel.MetricSeries>) :
+            WidgetSeriesLoadResult
+        data class PermissionDenied(val deniedRecordTypes: Set<String>) : WidgetSeriesLoadResult
+        data class Failure(val exception: Exception) : WidgetSeriesLoadResult
+    }
+
+    internal interface WidgetBindingLoader {
+        suspend fun hasAnyViews(context: Context): Boolean
+        suspend fun loadBinding(context: Context, appWidgetId: Int): WidgetBindingLoadResult
+    }
+
+    internal interface WidgetSeriesLoader {
+        suspend fun loadSeries(context: Context, view: DataView): WidgetSeriesLoadResult
+    }
+
+    internal object RoomWidgetBindingLoader : WidgetBindingLoader {
+        override suspend fun hasAnyViews(context: Context): Boolean {
+            return AppDatabase.getInstance(context).dataViewInfoDao().count() > 0
+        }
+
+        override suspend fun loadBinding(
+            context: Context,
+            appWidgetId: Int
+        ): WidgetBindingLoadResult {
+            val viewId = context.widgetViewId(appWidgetId) ?: return WidgetBindingLoadResult.Unbound
+            val db = AppDatabase.getInstance(context)
+            val info = db.dataViewInfoDao().getById(viewId)
+            val entity = db.dataViewDao().getById(viewId)
+            if (info == null || entity == null) {
+                return WidgetBindingLoadResult.MissingBoundView(viewId)
+            }
+            return WidgetBindingLoadResult.BoundView(
+                viewId = viewId,
+                title = info.name,
+                view = decodeDataViewEntity(entity)
+            )
+        }
+    }
+
+    internal class DefaultWidgetSeriesLoader(
+        private val seriesReader: suspend (
+            app: Application,
+            view: DataView
+        ) -> List<HealthDataModel.MetricSeries> = { app, view ->
+            HealthDataModel(app, autoRefreshMetrics = false).loadAggregatedSeriesForWidget(view)
+        }
+    ) : WidgetSeriesLoader {
+        override suspend fun loadSeries(
+            context: Context,
+            view: DataView
+        ): WidgetSeriesLoadResult {
+            val app = context.applicationContext as Application
+            return try {
+                WidgetSeriesLoadResult.Success(seriesReader(app, view))
+            } catch (exception: HealthDataPermissionDeniedException) {
+                WidgetSeriesLoadResult.PermissionDenied(exception.deniedRecordTypes)
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                WidgetSeriesLoadResult.Failure(exception)
+            }
+        }
+    }
+
+    private val defaultBindingLoader: WidgetBindingLoader = RoomWidgetBindingLoader
+    private val defaultSeriesLoader: WidgetSeriesLoader = DefaultWidgetSeriesLoader()
+
     internal data class WidgetSizeInfo(
         val widthDp: Int,
         val heightDp: Int,
@@ -58,14 +139,30 @@ object HealthDataWidgetUpdater {
         appWidgetId: Int,
         manager: AppWidgetManager = AppWidgetManager.getInstance(context)
     ) {
+        updateWidgetWithLoaders(
+            context = context,
+            appWidgetId = appWidgetId,
+            manager = manager,
+            bindingLoader = defaultBindingLoader,
+            seriesLoader = defaultSeriesLoader
+        )
+    }
+
+    internal suspend fun updateWidgetWithLoaders(
+        context: Context,
+        appWidgetId: Int,
+        manager: AppWidgetManager,
+        bindingLoader: WidgetBindingLoader,
+        seriesLoader: WidgetSeriesLoader
+    ) {
         val sizeInfo = resolveWidgetSizeInfo(context, manager, appWidgetId)
         val layoutProfile = widgetLayoutProfile(sizeInfo.widthDp, sizeInfo.heightDp)
         logWidgetFlow(
             "HealthDataWidgetUpdater.updateWidget size appWidgetId=$appWidgetId widthDp=${sizeInfo.widthDp} heightDp=${sizeInfo.heightDp} widthPx=${sizeInfo.widthPx} heightPx=${sizeInfo.heightPx} showSummary=${layoutProfile.showSummary} maxLines=${layoutProfile.summaryMaxLines}"
         )
-        val viewId = context.widgetViewId(appWidgetId)
-        if (viewId == null) {
-            val hasViews = AppDatabase.getInstance(context).dataViewInfoDao().count() > 0
+        val binding = bindingLoader.loadBinding(context, appWidgetId)
+        if (binding is WidgetBindingLoadResult.Unbound) {
+            val hasViews = bindingLoader.hasAnyViews(context)
             logWidgetFlow(
                 "HealthDataWidgetUpdater.updateWidget unbound appWidgetId=$appWidgetId hasViews=$hasViews"
             )
@@ -91,13 +188,9 @@ object HealthDataWidgetUpdater {
             )
             return
         }
-
-        val db = AppDatabase.getInstance(context)
-        val info = db.dataViewInfoDao().getById(viewId)
-        val entity = db.dataViewDao().getById(viewId)
-        if (info == null || entity == null) {
+        if (binding is WidgetBindingLoadResult.MissingBoundView) {
             logWidgetFlow(
-                "HealthDataWidgetUpdater.updateWidget missingViewData appWidgetId=$appWidgetId boundViewId=$viewId infoNull=${info == null} entityNull=${entity == null}"
+                "HealthDataWidgetUpdater.updateWidget missingViewData appWidgetId=$appWidgetId boundViewId=${binding.viewId}"
             )
             manager.updateAppWidget(
                 appWidgetId,
@@ -112,7 +205,9 @@ object HealthDataWidgetUpdater {
             return
         }
 
-        val view = decodeDataViewEntity(entity)
+        val boundView = binding as WidgetBindingLoadResult.BoundView
+        val view = boundView.view
+        val title = boundView.title
         val missingPermissions = missingReadPermissionsForView(context, view)
         if (missingPermissions.isNotEmpty()) {
             logWidgetFlow(
@@ -122,7 +217,7 @@ object HealthDataWidgetUpdater {
                 appWidgetId,
                 placeholderViews(
                     context = context,
-                    title = info.name,
+                    title = title,
                     message = context.getString(R.string.widget_permissions_required),
                     clickIntent = openAppPendingIntent(context),
                     layoutProfile = layoutProfile
@@ -136,36 +231,52 @@ object HealthDataWidgetUpdater {
             )
             return
         }
-        val app = context.applicationContext as Application
-        val healthDataModel = HealthDataModel(app, autoRefreshMetrics = false)
-        val seriesList = try {
-            healthDataModel.loadAggregatedSeriesForWidget(view)
-        } catch (exception: HealthDataPermissionDeniedException) {
-            logWidgetFlow(
-                "HealthDataWidgetUpdater.updateWidget permissionDeniedFromRead appWidgetId=$appWidgetId viewId=${view.id} denied=${exception.deniedRecordTypes.joinToString(",")}"
-            )
-            manager.updateAppWidget(
-                appWidgetId,
-                placeholderViews(
-                    context = context,
-                    title = info.name,
-                    message = context.getString(R.string.widget_permissions_required),
-                    clickIntent = openAppPendingIntent(context),
-                    layoutProfile = layoutProfile
+        val seriesLoadResult = seriesLoader.loadSeries(context, view)
+        val seriesList = when (seriesLoadResult) {
+            is WidgetSeriesLoadResult.Success -> seriesLoadResult.seriesList
+            is WidgetSeriesLoadResult.PermissionDenied -> {
+                logWidgetFlow(
+                    "HealthDataWidgetUpdater.updateWidget permissionDeniedFromRead appWidgetId=$appWidgetId viewId=${view.id} denied=${seriesLoadResult.deniedRecordTypes.joinToString(",")}"
                 )
-            )
-            HealthDataWidgetScheduler.schedulePostUpdateRefresh(
-                context = context,
-                appWidgetIds = intArrayOf(appWidgetId),
-                delayMillis = 90_000L
-            )
-            return
-        } catch (exception: Exception) {
-            logWidgetFlowError(
-                "HealthDataWidgetUpdater.updateWidget aggregationFailed appWidgetId=$appWidgetId viewId=${view.id}",
-                exception
-            )
-            emptyList()
+                manager.updateAppWidget(
+                    appWidgetId,
+                    placeholderViews(
+                        context = context,
+                        title = title,
+                        message = context.getString(R.string.widget_permissions_required),
+                        clickIntent = openAppPendingIntent(context),
+                        layoutProfile = layoutProfile
+                    )
+                )
+                HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+                    context = context,
+                    appWidgetIds = intArrayOf(appWidgetId),
+                    delayMillis = 90_000L
+                )
+                return
+            }
+            is WidgetSeriesLoadResult.Failure -> {
+                logWidgetFlowError(
+                    "HealthDataWidgetUpdater.updateWidget aggregationFailed appWidgetId=$appWidgetId viewId=${view.id}",
+                    seriesLoadResult.exception
+                )
+                manager.updateAppWidget(
+                    appWidgetId,
+                    placeholderViews(
+                        context = context,
+                        title = title,
+                        message = context.getString(R.string.widget_update_failed),
+                        clickIntent = deepLinkPendingIntent(context, view.id),
+                        layoutProfile = layoutProfile
+                    )
+                )
+                HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+                    context = context,
+                    appWidgetIds = intArrayOf(appWidgetId),
+                    delayMillis = 90_000L
+                )
+                return
+            }
         }
         if (seriesList.isEmpty()) {
             logWidgetFlow(
@@ -175,7 +286,7 @@ object HealthDataWidgetUpdater {
                 appWidgetId,
                 placeholderViews(
                     context = context,
-                    title = info.name,
+                    title = title,
                     message = context.getString(R.string.widget_no_graph_data),
                     clickIntent = deepLinkPendingIntent(context, view.id),
                     layoutProfile = layoutProfile
@@ -196,7 +307,7 @@ object HealthDataWidgetUpdater {
             "HealthDataWidgetUpdater.updateWidget graphRenderSize appWidgetId=$appWidgetId widthPx=${graphRenderSize.widthPx} heightPx=${graphRenderSize.heightPx}"
         )
         val graphBitmap = renderWidgetGraphBitmap(
-            title = info.name,
+            title = title,
             seriesList = seriesList,
             settings = view.chartSettings,
             theme = GraphShareTheme.DARK,
@@ -210,7 +321,7 @@ object HealthDataWidgetUpdater {
         val hasBottomLabels =
             !graphLabels.startDateLabel.isNullOrBlank() || !graphLabels.endDateLabel.isNullOrBlank()
         val remoteViews = RemoteViews(context.packageName, R.layout.health_graph_widget).apply {
-            setTextViewText(R.id.widget_title, info.name)
+            setTextViewText(R.id.widget_title, title)
             setTextViewTextSize(
                 R.id.widget_title,
                 TypedValue.COMPLEX_UNIT_SP,

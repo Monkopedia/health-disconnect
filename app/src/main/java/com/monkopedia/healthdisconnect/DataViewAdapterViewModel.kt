@@ -3,6 +3,9 @@ package com.monkopedia.healthdisconnect
 import android.app.Application
 import android.content.Context
 import androidx.datastore.dataStore
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.health.connect.client.records.Record
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -22,7 +25,6 @@ import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
@@ -37,7 +39,8 @@ class DataViewAdapterViewModel(
     private val savedStateHandle: SavedStateHandle,
     private val appDatabase: AppDatabase = AppDatabase.getInstance(app),
     private val dataViewDao: DataViewDao = appDatabase.dataViewDao(),
-    private val dataViewInfoDao: DataViewInfoDao = appDatabase.dataViewInfoDao()
+    private val dataViewInfoDao: DataViewInfoDao = appDatabase.dataViewInfoDao(),
+    private val runLegacyMigrationOnInit: Boolean = true
 ) : AndroidViewModel(app) {
 
     private val context = getApplication<Application>()
@@ -59,51 +62,84 @@ class DataViewAdapterViewModel(
                 savedStateHandle["lastView"] = list?.let { json.encodeToString(it) }
             }
         }
-        // One-time migration from DataStore to Room if DB is empty
-        viewModelScope.launch {
-            try {
-                val hasData = (dataViewInfoDao.count() > 0) || (dataViewInfoDao.viewCount() > 0)
-                if (!hasData) {
-                    val dsInfo = context.dataViewInfoDataStore.data.first()
-                    val dsViews = context.dataViewDataStore.data.first()
-                    dsInfo.ordering.forEachIndexed { index, id ->
-                        val info = dsInfo.dataViews[id]
-                        if (info != null) {
-                            dataViewInfoDao.insert(
-                                com.monkopedia.healthdisconnect.room.DataViewInfoEntity(
-                                    id = info.id,
-                                    name = info.name,
-                                    ordering = index + 1
-                                )
-                            )
-                        }
-                        val view = dsViews.views[id]
-                        if (view != null) {
-                            val recJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), view.records)
-                            val settingsJson =
-                                Json.encodeToString(ChartSettings.serializer(), view.chartSettings)
-                            dataViewDao.insert(
-                                com.monkopedia.healthdisconnect.room.DataViewEntity(
-                                    id = view.id,
-                                    type = view.type.name,
-                                    recordsJson = recJson,
-                                    settingsJson = settingsJson
-                                )
-                            )
-                        }
-                    }
-                }
-            } catch (exception: Exception) {
-                if (exception is CancellationException) {
-                    throw exception
-                }
-                Log.w(
-                    TAG,
-                    "Migration from DataStore to Room failed; starting with fresh Room state",
-                    exception
-                )
+        if (runLegacyMigrationOnInit) {
+            viewModelScope.launch {
+                migrateLegacyDataStoreIfNeeded()
             }
         }
+    }
+
+    internal suspend fun migrateLegacyDataStoreIfNeededForTest() {
+        migrateLegacyDataStoreIfNeeded()
+    }
+
+    private suspend fun migrateLegacyDataStoreIfNeeded() {
+        val migrationComplete = context.migrationStateDataStore.data.first()[legacyMigrationCompleteKey]
+            ?: false
+        if (migrationComplete) {
+            return
+        }
+        try {
+            appDatabase.withTransaction {
+                val infoCount = dataViewInfoDao.count()
+                val viewCount = dataViewInfoDao.viewCount()
+                if (infoCount == 0 && viewCount == 0) {
+                    migrateLegacyDataStoreIntoRoom()
+                } else {
+                    val infoIds = dataViewInfoDao.allOrderedSnapshot().map { it.id }.toSet()
+                    val viewIds = dataViewDao.allIdsSnapshot().toSet()
+                    if (infoIds != viewIds) {
+                        dataViewInfoDao.deleteAll()
+                        dataViewDao.deleteAll()
+                        migrateLegacyDataStoreIntoRoom()
+                    }
+                }
+            }
+            context.migrationStateDataStore.edit { prefs ->
+                prefs[legacyMigrationCompleteKey] = true
+            }
+        } catch (exception: Exception) {
+            if (exception is CancellationException) {
+                throw exception
+            }
+            Log.w(
+                TAG,
+                "Migration from DataStore to Room failed; migration will retry on next launch",
+                exception
+            )
+        }
+    }
+
+    private suspend fun migrateLegacyDataStoreIntoRoom() {
+        val legacyInfo = context.dataViewInfoDataStore.data.first()
+        val legacyViews = context.dataViewDataStore.data.first()
+        val orderedIds = buildList {
+            addAll(legacyInfo.ordering.filter { id -> legacyViews.views.containsKey(id) })
+            addAll(legacyViews.views.keys.filter { id -> id !in legacyInfo.ordering }.sorted())
+        }
+        orderedIds.forEachIndexed { index, id ->
+            val view = legacyViews.views[id] ?: return@forEachIndexed
+            val infoName = legacyInfo.dataViews[id]?.name
+            val name = infoName?.takeIf { it.isNotBlank() } ?: fallbackViewName(view, id)
+            dataViewInfoDao.insert(
+                DataViewInfoEntity(
+                    id = id,
+                    name = name,
+                    ordering = index + 1
+                )
+            )
+            dataViewDao.insert(encodeDataViewEntity(view, json))
+        }
+    }
+
+    private fun fallbackViewName(view: DataView, fallbackId: Int): String {
+        val firstFqn = view.records.firstOrNull()?.fqn
+        val firstClass = PermissionsViewModel.CLASSES.firstOrNull { cls ->
+            cls.qualifiedName == firstFqn
+        }
+        return PermissionsViewModel.RECORD_NAMES[firstClass]
+            ?: firstClass?.simpleName
+            ?: "View $fallbackId"
     }
 
     suspend fun createView(cls: KClass<out Record>) {
@@ -156,6 +192,8 @@ class DataViewAdapterViewModel(
     companion object {
         val Context.dataViewInfoDataStore by dataStore("dataInfoStore", DataViewListSerializer)
         val Context.dataViewDataStore by dataStore("dataStore", DataViewSerializer)
+        val Context.migrationStateDataStore by preferencesDataStore("migration_state")
+        internal val legacyMigrationCompleteKey = booleanPreferencesKey("legacy_migration_complete")
         private const val TAG = "DataViewAdapterViewModel"
     }
 }
