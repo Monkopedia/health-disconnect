@@ -6,9 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TopAppBarDefaults
@@ -280,117 +281,125 @@ private fun EntriesScreen(
     val copiedMessage = stringResource(R.string.data_view_entry_copied)
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 11.dp, vertical = 13.dp)
-    ) {
-        CenterAlignedTopAppBar(
-            modifier = Modifier.fillMaxWidth(),
-            title = {
-                Text(
-                    text = stringResource(R.string.data_view_entries_for, infoName),
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            navigationIcon = {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.testTag("entries_back_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(R.string.data_view_back)
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            CenterAlignedTopAppBar(
+                modifier = Modifier.fillMaxWidth(),
+                title = {
+                    Text(
+                        text = stringResource(R.string.data_view_entries_for, infoName),
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                }
-            },
-            actions = {
-                IconButton(
-                    onClick = onShareRequested,
-                    enabled = !isExporting,
-                    modifier = Modifier.testTag("entries_share_button")
-                ) {
-                    if (isExporting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
+                },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.testTag("entries_back_button")
+                    ) {
                         Icon(
-                            imageVector = Icons.Rounded.Share,
-                            contentDescription = stringResource(R.string.data_view_export_share)
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.data_view_back)
                         )
                     }
-                }
-            },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            // MainActivity root Scaffold already applies system bar inset.
-            // Disable TopAppBar insets here to avoid double top inset on device.
-            windowInsets = WindowInsets(0, 0, 0, 0)
-        )
-        Spacer(Modifier.height(6.dp))
-        if (data == null) {
-            LoadingScreen()
-            return
-        }
-        LazyColumn(Modifier.fillMaxWidth()) {
-            items(data.size) { index ->
-                val record = data[index]
-                val timestamp = recordTimestampLabel(record)
-                val valuePreview = valuePreviewForRecord(record)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("entries_item_row_$index")
-                        .clickable {
-                            clipboardManager.setText(AnnotatedString(recordDetailsText(record)))
-                            scope.launch {
-                                snackbarHostState.showSnackbar(message = copiedMessage)
-                            }
-                            onEntrySelected(record)
-                        }
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp)
+                },
+                actions = {
+                    IconButton(
+                        onClick = onShareRequested,
+                        enabled = !isExporting,
+                        modifier = Modifier.testTag("entries_share_button")
                     ) {
-                        Text(
-                            text = record::class.simpleName ?: record::class.qualifiedName ?: "Record",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
-                        if (!timestamp.isNullOrBlank()) {
-                            Text(
-                                text = timestamp,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                        if (isExporting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Rounded.Share,
+                                contentDescription = stringResource(R.string.data_view_export_share)
                             )
                         }
                     }
-                    if (!valuePreview.isNullOrBlank()) {
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.CenterEnd
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+    ) { innerPadding ->
+        if (data == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                LoadingScreen()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 11.dp),
+                contentPadding = PaddingValues(top = 19.dp, bottom = 13.dp)
+            ) {
+                items(data.size) { index ->
+                    val record = data[index]
+                    val timestamp = recordTimestampLabel(record)
+                    val valuePreview = valuePreviewForRecord(record)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("entries_item_row_$index")
+                            .clickable {
+                                clipboardManager.setText(AnnotatedString(recordDetailsText(record)))
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(message = copiedMessage)
+                                }
+                                onEntrySelected(record)
+                            }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
                         ) {
                             Text(
-                                text = valuePreview,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.End
+                                text = record::class.simpleName ?: record::class.qualifiedName ?: "Record",
+                                style = MaterialTheme.typography.bodyLarge
                             )
+                            if (!timestamp.isNullOrBlank()) {
+                                Text(
+                                    text = timestamp,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (!valuePreview.isNullOrBlank()) {
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.CenterEnd
+                            ) {
+                                Text(
+                                    text = valuePreview,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.End
+                                )
+                            }
                         }
                     }
+                    HorizontalDivider()
                 }
-                HorizontalDivider()
             }
         }
-        SnackbarHost(hostState = snackbarHostState)
     }
 }
 

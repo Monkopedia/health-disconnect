@@ -65,6 +65,7 @@ fun DataViewAdapter(
     viewModel: DataViewAdapterViewModel = koinViewModel(),
     healthDataModel: HealthDataModel = koinViewModel(),
     permissionsViewModel: PermissionsViewModel = koinViewModel(),
+    modifier: Modifier = Modifier,
     initialPage: Int = 0,
     initialViewId: Int? = null,
     initialPageOffsetFraction: Float = 0f,
@@ -106,7 +107,6 @@ fun DataViewAdapter(
     val createViewTitle = stringResource(R.string.create_view_title)
     val headerOverlayHeight = 56.dp
     val pageLiftPx = with(LocalDensity.current) { 45.dp.toPx() }
-    var headerRowWidthPx by remember { mutableStateOf(0f) }
     var headerClickJob by remember { mutableStateOf<Job?>(null) }
     var renameTargetId by remember { mutableStateOf<Int?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -118,7 +118,7 @@ fun DataViewAdapter(
             createViewTitle
         }
     }
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,
             modifier = Modifier

@@ -2,8 +2,10 @@ package com.monkopedia.healthdisconnect
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
@@ -50,6 +52,7 @@ fun LazyNavigation(
             NavHost(navController = navController, startDestination = Routes.Views) {
                 composable(Routes.Views) {
                     DataViewAdapter(
+                        modifier = Modifier.safeDrawingPadding(),
                         initialViewId = initialViewId,
                         showSettings = { navController.navigate(Routes.Settings) },
                         onOpenEntries = { viewId -> navController.navigate(Routes.entries(viewId)) }

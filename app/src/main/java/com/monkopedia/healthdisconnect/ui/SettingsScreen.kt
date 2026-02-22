@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -95,228 +95,232 @@ fun SettingsScreen(
         permissionsViewModel.onResult(result)
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        CenterAlignedTopAppBar(
-            modifier = Modifier.fillMaxWidth(),
-            title = {
-                Text(
-                    text = stringResource(R.string.settings_title),
-                    style = MaterialTheme.typography.headlineSmall
-                )
-            },
-            navigationIcon = {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.testTag("settings_back_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = stringResource(R.string.data_view_back)
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            CenterAlignedTopAppBar(
+                modifier = Modifier.fillMaxWidth(),
+                title = {
+                    Text(
+                        text = stringResource(R.string.settings_title),
+                        style = MaterialTheme.typography.headlineSmall
                     )
-                }
-            },
-            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            // MainActivity already applies system bar insets via root Scaffold padding.
-            // Disable TopAppBar insets here to avoid double top inset on device.
-            windowInsets = WindowInsets(0, 0, 0, 0)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(
-                if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE) {
-                    R.string.settings_hc_available
-                } else {
-                    R.string.settings_hc_unavailable
-                }
-            ),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Spacer(Modifier.height(12.dp))
-        val selectedThemeLabel = when (themeMode) {
-            AppThemeMode.SYSTEM -> stringResource(R.string.settings_theme_system)
-            AppThemeMode.DARK -> stringResource(R.string.settings_theme_dark)
-            AppThemeMode.LIGHT -> stringResource(R.string.settings_theme_light)
+                },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.testTag("settings_back_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.data_view_back)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
         }
-        Row(
+    ) { innerPadding ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .testTag("settings_theme_row")
-                .clickable { themeDropdownExpanded = true }
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
+            Spacer(Modifier.height(8.dp))
             Text(
-                text = stringResource(R.string.settings_theme_label),
-                modifier = Modifier.testTag("settings_theme_label"),
+                text = stringResource(
+                    if (availabilityStatus == HealthConnectClient.SDK_AVAILABLE) {
+                        R.string.settings_hc_available
+                    } else {
+                        R.string.settings_hc_unavailable
+                    }
+                ),
                 style = MaterialTheme.typography.bodyMedium
             )
-            Box {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = selectedThemeLabel,
-                        modifier = Modifier.testTag("settings_theme_value"),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary
+            Spacer(Modifier.height(12.dp))
+            val selectedThemeLabel = when (themeMode) {
+                AppThemeMode.SYSTEM -> stringResource(R.string.settings_theme_system)
+                AppThemeMode.DARK -> stringResource(R.string.settings_theme_dark)
+                AppThemeMode.LIGHT -> stringResource(R.string.settings_theme_light)
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("settings_theme_row")
+                    .clickable { themeDropdownExpanded = true }
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_theme_label),
+                    modifier = Modifier.testTag("settings_theme_label"),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Box {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = selectedThemeLabel,
+                            modifier = Modifier.testTag("settings_theme_value"),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Rounded.KeyboardArrowDown,
+                            modifier = Modifier.testTag("settings_theme_icon"),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = themeDropdownExpanded,
+                        onDismissRequest = { themeDropdownExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.settings_theme_system)) },
+                            onClick = {
+                                appThemeViewModel.setThemeMode(AppThemeMode.SYSTEM)
+                                themeDropdownExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.settings_theme_dark)) },
+                            onClick = {
+                                appThemeViewModel.setThemeMode(AppThemeMode.DARK)
+                                themeDropdownExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.settings_theme_light)) },
+                            onClick = {
+                                appThemeViewModel.setThemeMode(AppThemeMode.LIGHT)
+                                themeDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(
+                    if (baseGranted) R.string.settings_permissions_granted
+                    else R.string.settings_permissions_not_granted
+                ),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(
+                    if (historyGranted) R.string.settings_history_granted
+                    else R.string.settings_history_not_granted
+                ),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(20.dp))
+            Button(
+                onClick = { requestLauncher.launch(PermissionsViewModel.PERMISSIONS) },
+                enabled = availabilityStatus == HealthConnectClient.SDK_AVAILABLE && !baseGranted
+            ) {
+                Text(stringResource(R.string.settings_request_base_permissions))
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    requestLauncher.launch(
+                        PermissionsViewModel.PERMISSIONS + PermissionsViewModel.HISTORY_PERMISSION
                     )
-                    Spacer(Modifier.width(6.dp))
+                },
+                enabled = availabilityStatus == HealthConnectClient.SDK_AVAILABLE && !historyGranted
+            ) {
+                Text(stringResource(R.string.settings_request_history_permission))
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.settings_permissions_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_advanced_debug),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                IconButton(onClick = { debugExpanded = !debugExpanded }) {
                     Icon(
                         imageVector = Icons.Rounded.KeyboardArrowDown,
-                        modifier = Modifier.testTag("settings_theme_icon"),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                DropdownMenu(
-                    expanded = themeDropdownExpanded,
-                    onDismissRequest = { themeDropdownExpanded = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.settings_theme_system)) },
-                        onClick = {
-                            appThemeViewModel.setThemeMode(AppThemeMode.SYSTEM)
-                            themeDropdownExpanded = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.settings_theme_dark)) },
-                        onClick = {
-                            appThemeViewModel.setThemeMode(AppThemeMode.DARK)
-                            themeDropdownExpanded = false
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.settings_theme_light)) },
-                        onClick = {
-                            appThemeViewModel.setThemeMode(AppThemeMode.LIGHT)
-                            themeDropdownExpanded = false
-                        }
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .then(
+                                if (debugExpanded) Modifier else Modifier
+                            )
                     )
                 }
             }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(
-                if (baseGranted) R.string.settings_permissions_granted
-                else R.string.settings_permissions_not_granted
-            ),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = stringResource(
-                if (historyGranted) R.string.settings_history_granted
-                else R.string.settings_history_not_granted
-            ),
-            style = MaterialTheme.typography.bodyMedium
-        )
-        Spacer(Modifier.height(20.dp))
-        Button(
-            onClick = { requestLauncher.launch(PermissionsViewModel.PERMISSIONS) },
-            enabled = availabilityStatus == HealthConnectClient.SDK_AVAILABLE && !baseGranted
-        ) {
-            Text(stringResource(R.string.settings_request_base_permissions))
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = {
-                requestLauncher.launch(
-                    PermissionsViewModel.PERMISSIONS + PermissionsViewModel.HISTORY_PERMISSION
-                )
-            },
-            enabled = availabilityStatus == HealthConnectClient.SDK_AVAILABLE && !historyGranted
-        ) {
-            Text(stringResource(R.string.settings_request_history_permission))
-        }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = stringResource(R.string.settings_permissions_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(14.dp))
-        HorizontalDivider()
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = stringResource(R.string.settings_advanced_debug),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-            IconButton(onClick = { debugExpanded = !debugExpanded }) {
-                Icon(
-                    imageVector = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .padding(top = 2.dp)
-                        .then(
-                            if (debugExpanded) Modifier else Modifier
-                        )
-                )
-            }
-        }
-        AnimatedVisibility(visible = debugExpanded) {
-            Column {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            debugLoading = true
-                            debugRows = withContext(Dispatchers.IO) {
-                                loadMetricDebugRanges(permissionsViewModel, grantedPermissions)
+            AnimatedVisibility(visible = debugExpanded) {
+                Column {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                debugLoading = true
+                                debugRows = withContext(Dispatchers.IO) {
+                                    loadMetricDebugRanges(permissionsViewModel, grantedPermissions)
+                                }
+                                debugLoading = false
                             }
-                            debugLoading = false
-                        }
-                    },
-                    enabled = availabilityStatus == HealthConnectClient.SDK_AVAILABLE && !debugLoading
-                ) {
-                    Text(stringResource(R.string.settings_refresh_debug_ranges))
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(
-                        if (historyGranted) R.string.settings_history_true else R.string.settings_history_false
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(8.dp))
-                if (debugLoading) {
+                        },
+                        enabled = availabilityStatus == HealthConnectClient.SDK_AVAILABLE && !debugLoading
+                    ) {
+                        Text(stringResource(R.string.settings_refresh_debug_ranges))
+                    }
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        text = stringResource(R.string.loading_message),
+                        text = stringResource(
+                            if (historyGranted) R.string.settings_history_true else R.string.settings_history_false
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                } else {
-                    if (previewDebugRows != null) {
-                        previewDebugRows.forEach { rowText ->
-                            Text(
-                                text = rowText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(4.dp))
-                        }
+                    Spacer(Modifier.height(8.dp))
+                    if (debugLoading) {
+                        Text(
+                            text = stringResource(R.string.loading_message),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     } else {
-                        debugRows.forEach { row ->
-                            val oldestText = row.oldest?.atZone(ZoneId.systemDefault())?.format(dateFormatter)
-                                ?: "n/a"
-                            val newestText = row.newest?.atZone(ZoneId.systemDefault())?.format(dateFormatter)
-                                ?: "n/a"
-                            Text(
-                                text = "${row.label}: perm=${if (row.permissionGranted) "yes" else "no"}, oldest=$oldestText, newest=$newestText",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(4.dp))
+                        if (previewDebugRows != null) {
+                            previewDebugRows.forEach { rowText ->
+                                Text(
+                                    text = rowText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(4.dp))
+                            }
+                        } else {
+                            debugRows.forEach { row ->
+                                val oldestText = row.oldest?.atZone(ZoneId.systemDefault())?.format(dateFormatter)
+                                    ?: "n/a"
+                                val newestText = row.newest?.atZone(ZoneId.systemDefault())?.format(dateFormatter)
+                                    ?: "n/a"
+                                Text(
+                                    text = "${row.label}: perm=${if (row.permissionGranted) "yes" else "no"}, oldest=$oldestText, newest=$newestText",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(Modifier.height(4.dp))
+                            }
                         }
                     }
                 }
