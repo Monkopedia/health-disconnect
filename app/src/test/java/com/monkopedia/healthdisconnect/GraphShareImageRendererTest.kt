@@ -223,12 +223,26 @@ class GraphShareImageRendererTest {
             visibility = View.VISIBLE
             setImageBitmap(graphBitmap)
         }
+        view.findViewById<View>(R.id.widget_graph_labels_top_row).visibility =
+            if (graphLabels.maxLabel.isNullOrBlank() && graphLabels.minLabel.isNullOrBlank()) {
+                View.GONE
+            } else {
+                View.VISIBLE
+            }
         view.findViewById<View>(R.id.widget_graph_labels_bottom_row).visibility =
             if (graphLabels.startDateLabel.isNullOrBlank() && graphLabels.endDateLabel.isNullOrBlank()) {
                 View.GONE
             } else {
                 View.VISIBLE
             }
+        applyWidgetGraphLabel(
+            labelView = view.findViewById(R.id.widget_graph_label_top_start),
+            text = graphLabels.maxLabel
+        )
+        applyWidgetGraphLabel(
+            labelView = view.findViewById(R.id.widget_graph_label_top_end),
+            text = graphLabels.minLabel
+        )
         applyWidgetGraphLabel(
             labelView = view.findViewById(R.id.widget_graph_label_bottom_start),
             text = graphLabels.startDateLabel

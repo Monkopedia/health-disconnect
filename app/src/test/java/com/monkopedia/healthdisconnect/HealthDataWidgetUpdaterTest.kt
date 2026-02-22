@@ -49,7 +49,7 @@ class HealthDataWidgetUpdaterTest {
     }
 
     @Test
-    fun buildWidgetGraphLabels_singleSeriesIncludesDatesOnly() {
+    fun buildWidgetGraphLabels_singleSeriesIncludesValueLabelsWithoutWords() {
         val day = LocalDate.of(2026, 2, 22)
         val series = listOf(
             HealthDataModel.MetricSeries(
@@ -58,12 +58,16 @@ class HealthDataWidgetUpdaterTest {
                 points = listOf(
                     HealthDataModel.MetricPoint(day.minusDays(6), 259.0),
                     HealthDataModel.MetricPoint(day, 256.0)
-                )
+                ),
+                showMaxLabel = true,
+                showMinLabel = true
             )
         )
 
         val labels = HealthDataWidgetUpdater.buildWidgetGraphLabels(series)
 
+        assertEquals("\u2191 259 lb", labels.maxLabel)
+        assertEquals("\u2193 256 lb", labels.minLabel)
         assertTrue(labels.startDateLabel?.endsWith("16") == true)
         assertTrue(labels.endDateLabel?.endsWith("22") == true)
     }
@@ -92,6 +96,8 @@ class HealthDataWidgetUpdaterTest {
 
         val labels = HealthDataWidgetUpdater.buildWidgetGraphLabels(series)
 
+        assertEquals(null, labels.maxLabel)
+        assertEquals(null, labels.minLabel)
         assertTrue(labels.startDateLabel?.endsWith("16") == true)
         assertTrue(labels.endDateLabel?.endsWith("22") == true)
     }
