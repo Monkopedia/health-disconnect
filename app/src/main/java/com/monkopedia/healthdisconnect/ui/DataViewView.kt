@@ -805,7 +805,10 @@ private fun GraphShareThemeDialog(
                 Spacer(Modifier.height(6.dp))
                 val tabThemes = listOf(GraphShareTheme.LIGHT, GraphShareTheme.DARK)
                 val selectedIndex = tabThemes.indexOf(selectedTheme).coerceAtLeast(0)
-                TabRow(selectedTabIndex = selectedIndex) {
+                TabRow(
+                    selectedTabIndex = selectedIndex,
+                    containerColor = MaterialTheme.colorScheme.surface
+                ) {
                     tabThemes.forEachIndexed { index, theme ->
                         Tab(
                             selected = selectedIndex == index,
