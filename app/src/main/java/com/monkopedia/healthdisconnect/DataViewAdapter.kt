@@ -126,15 +126,15 @@ fun DataViewAdapter(
             pageSpacing = 8.dp,
             beyondViewportPageCount = 1
         ) { page ->
-            val signedOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
-            val clampedOffset = abs(signedOffset).coerceIn(0f, 1f)
-            val easedOffset = clampedOffset.toDouble().pow(0.7).toFloat()
-            val scale = 1f - (0.06f * easedOffset)
-            val alpha = (1f - (0.95f * clampedOffset)).coerceIn(0f, 1f)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
+                        val signedOffset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                        val clampedOffset = abs(signedOffset).coerceIn(0f, 1f)
+                        val easedOffset = clampedOffset.toDouble().pow(0.7).toFloat()
+                        val scale = 1f - (0.06f * easedOffset)
+                        val alpha = (1f - (0.95f * clampedOffset)).coerceIn(0f, 1f)
                         scaleX = scale
                         scaleY = scale
                         this.alpha = alpha
