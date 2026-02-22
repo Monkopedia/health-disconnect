@@ -26,6 +26,12 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+class HealthDataPermissionDeniedException(
+    val deniedRecordTypes: Set<String>
+) : IllegalStateException(
+    "Health Connect read permission denied for: ${deniedRecordTypes.joinToString(",")}"
+)
+
 class HealthDataModel @JvmOverloads constructor(
     app: Application,
     private val autoRefreshMetrics: Boolean = true,
@@ -152,6 +158,12 @@ class HealthDataModel @JvmOverloads constructor(
         }
     }
 
+    suspend fun loadRawDataForWidget(view: DataView): List<Record> {
+        return withContext(ioDispatcher) {
+            loadRecordsForView(view, onPartialUpdate = null, throwOnPermissionDenied = true)
+        }
+    }
+
     suspend fun loadAggregatedSeriesForExport(view: DataView): List<MetricSeries> {
         return withContext(ioDispatcher) {
             val records = recordLoader(view, null)
@@ -159,9 +171,21 @@ class HealthDataModel @JvmOverloads constructor(
         }
     }
 
+    suspend fun loadAggregatedSeriesForWidget(view: DataView): List<MetricSeries> {
+        return withContext(ioDispatcher) {
+            val records = loadRecordsForView(
+                view = view,
+                onPartialUpdate = null,
+                throwOnPermissionDenied = true
+            )
+            aggregationEngine.aggregateMetricSeriesList(view, records)
+        }
+    }
+
     private suspend fun loadRecordsForView(
         view: DataView,
-        onPartialUpdate: ((List<Record>) -> Unit)? = null
+        onPartialUpdate: ((List<Record>) -> Unit)? = null,
+        throwOnPermissionDenied: Boolean = false
     ): List<Record> {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
@@ -171,6 +195,7 @@ class HealthDataModel @JvmOverloads constructor(
         val now = timeProvider.now()
         val queryStart = windowStart(view.chartSettings.timeWindow) ?: Instant.EPOCH
         val all = mutableListOf<Record>()
+        val deniedRecordTypes = mutableSetOf<String>()
         for (cls in selections) {
             try {
                 readRecordsInRange(
@@ -188,12 +213,18 @@ class HealthDataModel @JvmOverloads constructor(
                 if (exception is CancellationException) {
                     throw exception
                 }
+                if (exception is SecurityException) {
+                    deniedRecordTypes.add(cls.qualifiedName ?: cls.simpleName.orEmpty())
+                }
                 Log.w(
                     LOG_TAG,
                     "Failed to load records for ${cls.qualifiedName}, continuing with partial dataset",
                     exception
                 )
             }
+        }
+        if (throwOnPermissionDenied && all.isEmpty() && deniedRecordTypes.isNotEmpty()) {
+            throw HealthDataPermissionDeniedException(deniedRecordTypes)
         }
         return all.sortedByDescending { recordTimestamp(it) ?: Instant.EPOCH }
     }

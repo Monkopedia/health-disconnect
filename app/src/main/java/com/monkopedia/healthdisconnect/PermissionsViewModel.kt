@@ -122,11 +122,22 @@ class PermissionsViewModel(
         viewModelScope.launch {
             checkTrigger.emit(Unit)
         }
+        val appContext = getApplication<Application>()
+        viewModelScope.launch {
+            try {
+                HealthDataWidgetScheduler.scheduleAll(appContext)
+                HealthDataWidgetUpdater.updateAllWidgets(appContext)
+                logWidgetFlow("PermissionsViewModel.onResult refreshedWidgets")
+            } catch (exception: Exception) {
+                logWidgetFlowError("PermissionsViewModel.onResult widgetRefreshFailed", exception)
+            }
+        }
     }
 
     companion object {
         private val CHECK_RATE = 30.seconds
         const val HISTORY_PERMISSION = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+        const val BACKGROUND_PERMISSION = HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
         val CLASSES = setOf(
             ActiveCaloriesBurnedRecord::class,
             BasalBodyTemperatureRecord::class,
@@ -168,7 +179,7 @@ class PermissionsViewModel(
             WheelchairPushesRecord::class
         )
         val READ_PERMISSIONS_BY_CLASS = CLASSES.associateWith { HealthPermission.getReadPermission(it) }
-        val PERMISSIONS = READ_PERMISSIONS_BY_CLASS.values.toSet()
+        val PERMISSIONS = READ_PERMISSIONS_BY_CLASS.values.toSet() + BACKGROUND_PERMISSION
         val RECORD_NAMES = mapOf(
             ActiveCaloriesBurnedRecord::class to "Active calories burned",
             BasalBodyTemperatureRecord::class to "Basal body temperature",

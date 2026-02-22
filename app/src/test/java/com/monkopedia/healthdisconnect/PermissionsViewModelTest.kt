@@ -18,6 +18,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -102,5 +103,14 @@ class PermissionsViewModelTest {
             emissions
         )
         collector.await()
+    }
+
+    @Test
+    fun `permissions include background health data access`() {
+        assertTrue(
+            PermissionsViewModel.PERMISSIONS.contains(
+                PermissionsViewModel.BACKGROUND_PERMISSION
+            )
+        )
     }
 }

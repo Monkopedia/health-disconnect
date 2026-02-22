@@ -70,7 +70,6 @@ object HealthDataWidgetScheduler {
                 .setPersisted(false)
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
                 .setMinimumLatency(latency)
-                .setOverrideDeadline(latency + 45_000L)
                 .setExtras(extras)
                 .build()
             scheduler.schedule(jobInfo)

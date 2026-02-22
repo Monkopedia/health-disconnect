@@ -10,6 +10,7 @@ import android.util.DisplayMetrics
 import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
+import androidx.health.connect.client.HealthConnectClient
 import com.monkopedia.healthdisconnect.room.AppDatabase
 import kotlin.math.roundToInt
 
@@ -104,11 +105,54 @@ object HealthDataWidgetUpdater {
         }
 
         val view = decodeDataViewEntity(entity)
+        val missingPermissions = missingReadPermissionsForView(context, view)
+        if (missingPermissions.isNotEmpty()) {
+            logWidgetFlow(
+                "HealthDataWidgetUpdater.updateWidget missingPermissions appWidgetId=$appWidgetId viewId=${view.id} missing=${missingPermissions.joinToString(",")}"
+            )
+            manager.updateAppWidget(
+                appWidgetId,
+                placeholderViews(
+                    context = context,
+                    title = info.name,
+                    message = context.getString(R.string.widget_permissions_required),
+                    clickIntent = openAppPendingIntent(context),
+                    layoutProfile = layoutProfile
+                )
+            )
+            // Keep retrying periodically so widgets recover quickly once permissions are re-granted.
+            HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+                context = context,
+                appWidgetIds = intArrayOf(appWidgetId),
+                delayMillis = 90_000L
+            )
+            return
+        }
         val app = context.applicationContext as Application
         val healthDataModel = HealthDataModel(app, autoRefreshMetrics = false)
-        val seriesList = runCatching {
-            healthDataModel.loadAggregatedSeriesForExport(view)
-        }.getOrElse { exception ->
+        val seriesList = try {
+            healthDataModel.loadAggregatedSeriesForWidget(view)
+        } catch (exception: HealthDataPermissionDeniedException) {
+            logWidgetFlow(
+                "HealthDataWidgetUpdater.updateWidget permissionDeniedFromRead appWidgetId=$appWidgetId viewId=${view.id} denied=${exception.deniedRecordTypes.joinToString(",")}"
+            )
+            manager.updateAppWidget(
+                appWidgetId,
+                placeholderViews(
+                    context = context,
+                    title = info.name,
+                    message = context.getString(R.string.widget_permissions_required),
+                    clickIntent = openAppPendingIntent(context),
+                    layoutProfile = layoutProfile
+                )
+            )
+            HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+                context = context,
+                appWidgetIds = intArrayOf(appWidgetId),
+                delayMillis = 90_000L
+            )
+            return
+        } catch (exception: Exception) {
             logWidgetFlowError(
                 "HealthDataWidgetUpdater.updateWidget aggregationFailed appWidgetId=$appWidgetId viewId=${view.id}",
                 exception
@@ -350,6 +394,35 @@ object HealthDataWidgetUpdater {
             widthPx = (widthDp * density).roundToInt().coerceAtLeast(120),
             heightPx = (heightDp * density).roundToInt().coerceAtLeast(80)
         )
+    }
+
+    private suspend fun missingReadPermissionsForView(
+        context: Context,
+        view: com.monkopedia.healthdisconnect.model.DataView
+    ): Set<String> {
+        val sdkStatus = HealthConnectClient.getSdkStatus(context, "com.google.android.apps.healthdata")
+        if (sdkStatus != HealthConnectClient.SDK_AVAILABLE) {
+            return emptySet()
+        }
+        val classByFqn = PermissionsViewModel.CLASSES.associateBy { it.qualifiedName }
+        val requiredPermissions = (view.records.mapNotNull { selection ->
+            classByFqn[selection.fqn]?.let { cls ->
+                PermissionsViewModel.READ_PERMISSIONS_BY_CLASS[cls]
+            }
+        }.toSet() + PermissionsViewModel.BACKGROUND_PERMISSION)
+        if (requiredPermissions.isEmpty()) {
+            return emptySet()
+        }
+        return runCatching {
+            val granted = HealthConnectClient.getOrCreate(context)
+                .permissionController
+                .getGrantedPermissions()
+            requiredPermissions - granted
+        }.onFailure { exception ->
+            logWidgetFlowError("HealthDataWidgetUpdater.missingReadPermissionsForView failed", exception)
+        }.getOrElse {
+            emptySet()
+        }
     }
 
     private fun deepLinkPendingIntent(context: Context, viewId: Int): PendingIntent {
