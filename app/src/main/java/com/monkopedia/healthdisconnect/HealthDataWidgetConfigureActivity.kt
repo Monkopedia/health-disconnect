@@ -49,7 +49,9 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
             AppWidgetManager.EXTRA_APPWIDGET_ID,
             AppWidgetManager.INVALID_APPWIDGET_ID
         ) ?: AppWidgetManager.INVALID_APPWIDGET_ID
+        logWidgetFlow("WidgetConfigureActivity.onCreate appWidgetId=$appWidgetId")
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
+            logWidgetFlow("WidgetConfigureActivity.onCreate invalidWidgetId finishing")
             finish()
             return
         }
@@ -70,6 +72,9 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
         )?.let { raw ->
             runCatching { WidgetUpdateWindow.valueOf(raw) }.getOrNull()
         }
+        logWidgetFlow(
+            "WidgetConfigureActivity.onCreate preselectedViewId=$preselectedViewId autoConfigure=$autoConfigure updateWindowOverride=${updateWindowOverride?.name}"
+        )
         if (autoConfigure && preselectedViewId != null) {
             lifecycleScope.launch {
                 val configured = configureWidgetForView(
@@ -77,6 +82,9 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
                     appWidgetId = appWidgetId,
                     viewId = preselectedViewId,
                     updateWindowOverride = updateWindowOverride
+                )
+                logWidgetFlow(
+                    "WidgetConfigureActivity.autoConfigure configured=$configured appWidgetId=$appWidgetId viewId=$preselectedViewId"
                 )
                 if (configured) {
                     consumeMatchingPendingWidgetRequest(
@@ -89,11 +97,15 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
                     )
                     finish()
                 } else {
+                    logWidgetFlow(
+                        "WidgetConfigureActivity.autoConfigure fallbackToUi appWidgetId=$appWidgetId viewId=$preselectedViewId"
+                    )
                     renderWidgetConfigUi(preselectedViewId)
                 }
             }
             return
         }
+        logWidgetFlow("WidgetConfigureActivity.showConfigUi appWidgetId=$appWidgetId")
         renderWidgetConfigUi(preselectedViewId)
     }
 
@@ -114,6 +126,9 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
                             updateWindowOverride = window
                         )
                         if (configured) {
+                            logWidgetFlow(
+                                "WidgetConfigureActivity.manualConfigure success appWidgetId=$appWidgetId viewId=$viewId window=${window.name}"
+                            )
                             consumeMatchingPendingWidgetRequest(
                                 viewId = viewId,
                                 updateWindowName = window.name
@@ -123,6 +138,10 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
                                 Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
                             )
                             finish()
+                        } else {
+                            logWidgetFlow(
+                                "WidgetConfigureActivity.manualConfigure failed appWidgetId=$appWidgetId viewId=$viewId"
+                            )
                         }
                     }
                 )

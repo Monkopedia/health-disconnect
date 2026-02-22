@@ -18,6 +18,7 @@ object HealthDataWidgetUpdater {
         val ids = manager.getAppWidgetIds(
             ComponentName(context, HealthDataWidgetProvider::class.java)
         )
+        logWidgetFlow("HealthDataWidgetUpdater.updateAllWidgets count=${ids.size}")
         ids.forEach { appWidgetId ->
             updateWidget(context, appWidgetId, manager)
         }
@@ -31,6 +32,9 @@ object HealthDataWidgetUpdater {
         val viewId = context.widgetViewId(appWidgetId)
         if (viewId == null) {
             val hasViews = AppDatabase.getInstance(context).dataViewInfoDao().count() > 0
+            logWidgetFlow(
+                "HealthDataWidgetUpdater.updateWidget unbound appWidgetId=$appWidgetId hasViews=$hasViews"
+            )
             manager.updateAppWidget(
                 appWidgetId,
                 placeholderViews(
@@ -57,6 +61,9 @@ object HealthDataWidgetUpdater {
         val info = db.dataViewInfoDao().getById(viewId)
         val entity = db.dataViewDao().getById(viewId)
         if (info == null || entity == null) {
+            logWidgetFlow(
+                "HealthDataWidgetUpdater.updateWidget missingViewData appWidgetId=$appWidgetId boundViewId=$viewId infoNull=${info == null} entityNull=${entity == null}"
+            )
             manager.updateAppWidget(
                 appWidgetId,
                 placeholderViews(
@@ -74,8 +81,17 @@ object HealthDataWidgetUpdater {
         val healthDataModel = HealthDataModel(app, autoRefreshMetrics = false)
         val seriesList = runCatching {
             healthDataModel.loadAggregatedSeriesForExport(view)
-        }.getOrElse { emptyList() }
+        }.getOrElse { exception ->
+            logWidgetFlowError(
+                "HealthDataWidgetUpdater.updateWidget aggregationFailed appWidgetId=$appWidgetId viewId=${view.id}",
+                exception
+            )
+            emptyList()
+        }
         if (seriesList.isEmpty()) {
+            logWidgetFlow(
+                "HealthDataWidgetUpdater.updateWidget emptySeries appWidgetId=$appWidgetId viewId=${view.id}"
+            )
             manager.updateAppWidget(
                 appWidgetId,
                 placeholderViews(
@@ -87,6 +103,9 @@ object HealthDataWidgetUpdater {
             )
             return
         }
+        logWidgetFlow(
+            "HealthDataWidgetUpdater.updateWidget renderGraph appWidgetId=$appWidgetId viewId=${view.id} seriesCount=${seriesList.size}"
+        )
 
         val graphBitmap = renderWidgetGraphBitmap(
             title = info.name,
@@ -114,6 +133,9 @@ object HealthDataWidgetUpdater {
             )
         }
         manager.updateAppWidget(appWidgetId, remoteViews)
+        logWidgetFlow(
+            "HealthDataWidgetUpdater.updateWidget success appWidgetId=$appWidgetId viewId=${view.id}"
+        )
     }
 
     internal fun buildWidgetSummaryText(

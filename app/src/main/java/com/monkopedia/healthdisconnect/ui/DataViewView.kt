@@ -103,6 +103,7 @@ import com.monkopedia.healthdisconnect.buildAggregatedEntriesCsv
 import com.monkopedia.healthdisconnect.buildRawEntriesCsv
 import com.monkopedia.healthdisconnect.graphShareDataStore
 import com.monkopedia.healthdisconnect.incrementGraphShareDialogCount
+import com.monkopedia.healthdisconnect.logWidgetFlow
 import com.monkopedia.healthdisconnect.graphShareContentHeight
 import com.monkopedia.healthdisconnect.renderGraphBitmap
 import com.monkopedia.healthdisconnect.shareEntriesCsv
@@ -358,10 +359,14 @@ fun DataViewView(
     fun requestWidgetPin() {
         val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
         if (!appWidgetManager.isRequestPinAppWidgetSupported) {
+            logWidgetFlow("DataViewView.requestWidgetPin unsupportedLauncher viewId=${view!!.id}")
             addWidgetError = context.getString(R.string.widget_pin_not_supported)
             return
         }
         val widgetUpdateWindow = view!!.chartSettings.widgetUpdateWindow
+        logWidgetFlow(
+            "DataViewView.requestWidgetPin start viewId=${view!!.id} updateWindow=${widgetUpdateWindow.name}"
+        )
         val provider = android.content.ComponentName(context, HealthDataWidgetProvider::class.java)
         val extras = android.os.Bundle().apply {
             putInt(HealthDataWidgetContract.EXTRA_PRESELECT_VIEW_ID, view!!.id)
@@ -384,15 +389,24 @@ fun DataViewView(
                 viewId = view!!.id,
                 updateWindowName = widgetUpdateWindow.name
             )
+            logWidgetFlow(
+                "DataViewView.requestWidgetPin queuedPending viewId=${view!!.id} updateWindow=${widgetUpdateWindow.name}"
+            )
             val accepted = appWidgetManager.requestPinAppWidget(
                 provider,
                 extras,
                 successCallback
             )
+            logWidgetFlow(
+                "DataViewView.requestWidgetPin launcherAccepted=$accepted viewId=${view!!.id}"
+            )
             if (!accepted) {
                 context.consumeMatchingPendingWidgetRequest(
                     viewId = view!!.id,
                     updateWindowName = widgetUpdateWindow.name
+                )
+                logWidgetFlow(
+                    "DataViewView.requestWidgetPin rejectedByLauncher viewId=${view!!.id}"
                 )
                 addWidgetError = context.getString(R.string.widget_pin_request_failed)
             }

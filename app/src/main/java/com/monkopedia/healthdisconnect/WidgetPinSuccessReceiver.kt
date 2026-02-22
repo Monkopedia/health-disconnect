@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 class WidgetPinSuccessReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != HealthDataWidgetContract.ACTION_WIDGET_PIN_SUCCESS) {
+            logWidgetFlow("WidgetPinSuccessReceiver ignored action=${intent.action}")
             return
         }
         val appWidgetId = intent.getIntExtra(
@@ -21,7 +22,13 @@ class WidgetPinSuccessReceiver : BroadcastReceiver() {
             AppWidgetManager.INVALID_APPWIDGET_ID
         )
         val viewId = intent.getIntExtra(HealthDataWidgetContract.EXTRA_PRESELECT_VIEW_ID, -1)
+        logWidgetFlow(
+            "WidgetPinSuccessReceiver received appWidgetId=$appWidgetId viewId=$viewId"
+        )
         if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID || viewId < 0) {
+            logWidgetFlow(
+                "WidgetPinSuccessReceiver invalidExtras appWidgetId=$appWidgetId viewId=$viewId"
+            )
             return
         }
         val windowOverride = intent.getStringExtra(
@@ -29,6 +36,9 @@ class WidgetPinSuccessReceiver : BroadcastReceiver() {
         )?.let { raw ->
             runCatching { WidgetUpdateWindow.valueOf(raw) }.getOrNull()
         }
+        logWidgetFlow(
+            "WidgetPinSuccessReceiver parsedWindow window=${windowOverride?.name}"
+        )
         val pendingResult = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
@@ -38,12 +48,20 @@ class WidgetPinSuccessReceiver : BroadcastReceiver() {
                     viewId = viewId,
                     updateWindowOverride = windowOverride
                 )
+                logWidgetFlow(
+                    "WidgetPinSuccessReceiver configured=$configured appWidgetId=$appWidgetId viewId=$viewId"
+                )
                 if (configured) {
                     context.consumeMatchingPendingWidgetRequest(
                         viewId = viewId,
                         updateWindowName = windowOverride?.name
                     )
                 }
+            } catch (exception: Exception) {
+                logWidgetFlowError(
+                    "WidgetPinSuccessReceiver failed appWidgetId=$appWidgetId viewId=$viewId",
+                    exception
+                )
             } finally {
                 pendingResult.finish()
             }

@@ -68,6 +68,9 @@ suspend fun Context.bindWidgetToView(appWidgetId: Int, viewId: Int) {
         prefs[widgetBindingsJson] = encodeWidgetBindingsState(
             state.copy(widgetToView = updated)
         )
+        logWidgetFlow(
+            "bindWidgetToView appWidgetId=$appWidgetId viewId=$viewId totalBindings=${updated.size}"
+        )
     }
 }
 
@@ -80,6 +83,9 @@ suspend fun Context.unbindWidget(appWidgetId: Int) {
         prefs[widgetBindingsJson] = encodeWidgetBindingsState(
             state.copy(widgetToView = updated)
         )
+        logWidgetFlow(
+            "unbindWidget appWidgetId=$appWidgetId totalBindings=${updated.size}"
+        )
     }
 }
 
@@ -91,6 +97,9 @@ suspend fun Context.unbindWidgets(appWidgetIds: IntArray) {
         appWidgetIds.forEach { updated.remove(it) }
         prefs[widgetBindingsJson] = encodeWidgetBindingsState(
             state.copy(widgetToView = updated)
+        )
+        logWidgetFlow(
+            "unbindWidgets count=${appWidgetIds.size} totalBindings=${updated.size}"
         )
     }
 }
@@ -123,6 +132,9 @@ suspend fun Context.enqueuePendingWidgetRequest(
         prefs[widgetBindingsJson] = encodeWidgetBindingsState(
             state.copy(pendingRequests = updated)
         )
+        logWidgetFlow(
+            "enqueuePendingWidgetRequest viewId=$viewId updateWindow=$updateWindowName pendingCount=${updated.size}"
+        )
     }
 }
 
@@ -136,6 +148,11 @@ suspend fun Context.consumePendingWidgetRequest(): PendingWidgetRequest? {
             prefs[widgetBindingsJson] = encodeWidgetBindingsState(
                 state.copy(pendingRequests = state.pendingRequests.drop(1))
             )
+            logWidgetFlow(
+                "consumePendingWidgetRequest viewId=${first.viewId} updateWindow=${first.updateWindowName} remaining=${state.pendingRequests.size - 1}"
+            )
+        } else {
+            logWidgetFlow("consumePendingWidgetRequest noneAvailable")
         }
     }
     return consumed
@@ -147,6 +164,9 @@ suspend fun Context.clearPendingWidgetRequests() {
         if (state.pendingRequests.isNotEmpty()) {
             prefs[widgetBindingsJson] = encodeWidgetBindingsState(
                 state.copy(pendingRequests = emptyList())
+            )
+            logWidgetFlow(
+                "clearPendingWidgetRequests cleared=${state.pendingRequests.size}"
             )
         }
     }
@@ -174,6 +194,13 @@ suspend fun Context.consumeMatchingPendingWidgetRequest(
                 state.copy(pendingRequests = updated)
             )
             removed = true
+            logWidgetFlow(
+                "consumeMatchingPendingWidgetRequest matched viewId=$viewId updateWindow=$updateWindowName remaining=${updated.size}"
+            )
+        } else {
+            logWidgetFlow(
+                "consumeMatchingPendingWidgetRequest noMatch viewId=$viewId updateWindow=$updateWindowName pendingCount=${state.pendingRequests.size}"
+            )
         }
     }
     return removed
