@@ -111,6 +111,13 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/health_graph_widget_info" />
         </receiver>
+        <receiver
+            android:name=".WidgetPinSuccessReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.monkopedia.healthdisconnect.action.WIDGET_PIN_SUCCESS" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".HealthDataWidgetUpdateJobService"

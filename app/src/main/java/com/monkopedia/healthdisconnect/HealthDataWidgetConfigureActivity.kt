@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
 import com.monkopedia.healthdisconnect.model.WidgetUpdateWindow
 import com.monkopedia.healthdisconnect.room.AppDatabase
 import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
@@ -59,10 +60,41 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
             HealthDataWidgetContract.EXTRA_PRESELECT_VIEW_ID,
             -1
         )?.takeIf { it >= 0 }
+        val autoConfigure = intent?.extras?.getBoolean(
+            HealthDataWidgetContract.EXTRA_WIDGET_AUTO_CONFIG,
+            false
+        ) == true
+        val updateWindowOverride = intent?.extras?.getString(
+            HealthDataWidgetContract.EXTRA_WIDGET_UPDATE_WINDOW
+        )?.let { raw ->
+            runCatching { WidgetUpdateWindow.valueOf(raw) }.getOrNull()
+        }
+        if (autoConfigure && preselectedViewId != null) {
+            lifecycleScope.launch {
+                val configured = configureWidgetForView(
+                    context = this@HealthDataWidgetConfigureActivity,
+                    appWidgetId = appWidgetId,
+                    viewId = preselectedViewId,
+                    updateWindowOverride = updateWindowOverride
+                )
+                if (configured) {
+                    setResult(
+                        RESULT_OK,
+                        Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                    )
+                    finish()
+                } else {
+                    renderWidgetConfigUi(preselectedViewId)
+                }
+            }
+            return
+        }
+        renderWidgetConfigUi(preselectedViewId)
+    }
+
+    private fun renderWidgetConfigUi(preselectedViewId: Int?) {
         val db = AppDatabase.getInstance(this)
         val infoDao = db.dataViewInfoDao()
-        val viewDao = db.dataViewDao()
-
         setContent {
             HealthDisconnectTheme(dynamicColor = false) {
                 WidgetConfigScreen(
@@ -70,25 +102,19 @@ class HealthDataWidgetConfigureActivity : ComponentActivity() {
                     preselectedViewId = preselectedViewId,
                     onCancel = { finish() },
                     onConfirm = { viewId, window ->
-                        val activity = this@HealthDataWidgetConfigureActivity
-                        val viewEntity = viewDao.getById(viewId)
-                        if (viewEntity != null) {
-                            val dataView = decodeDataViewEntity(viewEntity)
-                            val updatedView = dataView.copy(
-                                chartSettings = dataView.chartSettings.copy(
-                                    widgetUpdateWindow = window
-                                )
-                            )
-                            viewDao.insert(encodeDataViewEntity(updatedView))
-                        }
-                        activity.bindWidgetToView(appWidgetId, viewId)
-                        HealthDataWidgetScheduler.scheduleForWidget(activity, appWidgetId)
-                        HealthDataWidgetUpdater.updateWidget(activity, appWidgetId)
-                        setResult(
-                            RESULT_OK,
-                            Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                        val configured = configureWidgetForView(
+                            context = this@HealthDataWidgetConfigureActivity,
+                            appWidgetId = appWidgetId,
+                            viewId = viewId,
+                            updateWindowOverride = window
                         )
-                        finish()
+                        if (configured) {
+                            setResult(
+                                RESULT_OK,
+                                Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
+                            )
+                            finish()
+                        }
                     }
                 )
             }

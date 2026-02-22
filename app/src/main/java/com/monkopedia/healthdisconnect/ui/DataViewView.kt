@@ -98,6 +98,7 @@ import com.monkopedia.healthdisconnect.HealthDataWidgetProvider
 import com.monkopedia.healthdisconnect.HealthDataWidgetScheduler
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.WidgetPinSuccessReceiver
 import com.monkopedia.healthdisconnect.buildAggregatedEntriesCsv
 import com.monkopedia.healthdisconnect.buildRawEntriesCsv
 import com.monkopedia.healthdisconnect.graphShareDataStore
@@ -358,11 +359,29 @@ fun DataViewView(
             addWidgetError = context.getString(R.string.widget_pin_not_supported)
             return
         }
+        val widgetUpdateWindow = view!!.chartSettings.widgetUpdateWindow
         val provider = android.content.ComponentName(context, HealthDataWidgetProvider::class.java)
         val extras = android.os.Bundle().apply {
             putInt(HealthDataWidgetContract.EXTRA_PRESELECT_VIEW_ID, view!!.id)
+            putBoolean(HealthDataWidgetContract.EXTRA_WIDGET_AUTO_CONFIG, true)
+            putString(HealthDataWidgetContract.EXTRA_WIDGET_UPDATE_WINDOW, widgetUpdateWindow.name)
         }
-        val accepted = appWidgetManager.requestPinAppWidget(provider, extras, null)
+        val callbackIntent = android.content.Intent(context, WidgetPinSuccessReceiver::class.java).apply {
+            action = HealthDataWidgetContract.ACTION_WIDGET_PIN_SUCCESS
+            putExtra(HealthDataWidgetContract.EXTRA_PRESELECT_VIEW_ID, view!!.id)
+            putExtra(HealthDataWidgetContract.EXTRA_WIDGET_UPDATE_WINDOW, widgetUpdateWindow.name)
+        }
+        val successCallback = android.app.PendingIntent.getBroadcast(
+            context,
+            view!!.id,
+            callbackIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE
+        )
+        val accepted = appWidgetManager.requestPinAppWidget(
+            provider,
+            extras,
+            successCallback
+        )
         if (!accepted) {
             addWidgetError = context.getString(R.string.widget_pin_request_failed)
         }
