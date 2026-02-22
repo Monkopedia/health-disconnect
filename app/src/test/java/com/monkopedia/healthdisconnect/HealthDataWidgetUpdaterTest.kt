@@ -49,7 +49,7 @@ class HealthDataWidgetUpdaterTest {
     }
 
     @Test
-    fun buildWidgetGraphLabels_singleSeriesIncludesRangeAndDates() {
+    fun buildWidgetGraphLabels_singleSeriesIncludesDatesOnly() {
         val day = LocalDate.of(2026, 2, 22)
         val series = listOf(
             HealthDataModel.MetricSeries(
@@ -58,23 +58,18 @@ class HealthDataWidgetUpdaterTest {
                 points = listOf(
                     HealthDataModel.MetricPoint(day.minusDays(6), 259.0),
                     HealthDataModel.MetricPoint(day, 256.0)
-                ),
-                peakValueInWindow = 259.0,
-                minValueInWindow = 256.0,
-                showMinLabel = true
+                )
             )
         )
 
         val labels = HealthDataWidgetUpdater.buildWidgetGraphLabels(series)
 
-        assertEquals("Max 259 lb", labels.maxLabel)
-        assertEquals("Min 256 lb", labels.minLabel)
         assertTrue(labels.startDateLabel?.endsWith("16") == true)
         assertTrue(labels.endDateLabel?.endsWith("22") == true)
     }
 
     @Test
-    fun buildWidgetGraphLabels_respectsMinMaxVisibilityFlags() {
+    fun buildWidgetGraphLabels_forMultiSeriesStillUsesSharedDates() {
         val day = LocalDate.of(2026, 2, 22)
         val series = listOf(
             HealthDataModel.MetricSeries(
@@ -83,18 +78,20 @@ class HealthDataWidgetUpdaterTest {
                 points = listOf(
                     HealthDataModel.MetricPoint(day.minusDays(6), 259.0),
                     HealthDataModel.MetricPoint(day, 256.0)
-                ),
-                peakValueInWindow = 259.0,
-                minValueInWindow = 256.0,
-                showMaxLabel = false,
-                showMinLabel = false
+                )
+            ),
+            HealthDataModel.MetricSeries(
+                label = "Heart rate",
+                unit = "bpm",
+                points = listOf(
+                    HealthDataModel.MetricPoint(day.minusDays(5), 81.0),
+                    HealthDataModel.MetricPoint(day, 66.0)
+                )
             )
         )
 
         val labels = HealthDataWidgetUpdater.buildWidgetGraphLabels(series)
 
-        assertEquals(null, labels.maxLabel)
-        assertEquals(null, labels.minLabel)
         assertTrue(labels.startDateLabel?.endsWith("16") == true)
         assertTrue(labels.endDateLabel?.endsWith("22") == true)
     }

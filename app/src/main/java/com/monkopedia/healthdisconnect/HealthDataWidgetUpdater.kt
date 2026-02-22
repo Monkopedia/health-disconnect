@@ -36,8 +36,6 @@ object HealthDataWidgetUpdater {
     )
 
     internal data class WidgetGraphLabels(
-        val maxLabel: String?,
-        val minLabel: String?,
         val startDateLabel: String?,
         val endDateLabel: String?
     )
@@ -206,7 +204,6 @@ object HealthDataWidgetUpdater {
         )
         val summaryText = buildWidgetSummaryText(context, seriesList)
         val graphLabels = buildWidgetGraphLabels(seriesList)
-        val hasTopLabels = !graphLabels.maxLabel.isNullOrBlank() || !graphLabels.minLabel.isNullOrBlank()
         val hasBottomLabels =
             !graphLabels.startDateLabel.isNullOrBlank() || !graphLabels.endDateLabel.isNullOrBlank()
         val remoteViews = RemoteViews(context.packageName, R.layout.health_graph_widget).apply {
@@ -220,22 +217,10 @@ object HealthDataWidgetUpdater {
             setViewVisibility(R.id.widget_graph_container, View.VISIBLE)
             setViewVisibility(R.id.widget_graph, View.VISIBLE)
             setViewVisibility(
-                R.id.widget_graph_labels_top_row,
-                if (hasTopLabels) View.VISIBLE else View.GONE
-            )
-            setViewVisibility(
                 R.id.widget_graph_labels_bottom_row,
                 if (hasBottomLabels) View.VISIBLE else View.GONE
             )
             setImageViewBitmap(R.id.widget_graph, graphBitmap)
-            applyWidgetGraphLabel(
-                id = R.id.widget_graph_label_top_start,
-                text = graphLabels.maxLabel
-            )
-            applyWidgetGraphLabel(
-                id = R.id.widget_graph_label_top_end,
-                text = graphLabels.minLabel
-            )
             applyWidgetGraphLabel(
                 id = R.id.widget_graph_label_bottom_start,
                 text = graphLabels.startDateLabel
@@ -318,27 +303,7 @@ object HealthDataWidgetUpdater {
         }
         val firstDateLabel = allDates.firstOrNull()?.format(dateFormatter)
         val lastDateLabel = allDates.lastOrNull()?.format(dateFormatter)
-        if (seriesList.size != 1) {
-            return WidgetGraphLabels(
-                maxLabel = null,
-                minLabel = null,
-                startDateLabel = firstDateLabel,
-                endDateLabel = lastDateLabel
-            )
-        }
-        val series = seriesList.first()
-        val unit = unitSuffix(series.unit)
         return WidgetGraphLabels(
-            maxLabel = if (series.showMaxLabel) {
-                "Max ${formatAxisValue(series.peakValueInWindow)}$unit"
-            } else {
-                null
-            },
-            minLabel = if (series.showMinLabel) {
-                "Min ${formatAxisValue(series.minValueInWindow)}$unit"
-            } else {
-                null
-            },
             startDateLabel = firstDateLabel,
             endDateLabel = lastDateLabel
         )
@@ -367,12 +332,9 @@ object HealthDataWidgetUpdater {
             )
             setInt(R.id.widget_summary, "setMaxLines", layoutProfile.summaryMaxLines)
             setViewVisibility(R.id.widget_empty, View.VISIBLE)
-            setViewVisibility(R.id.widget_graph_labels_top_row, View.GONE)
             setViewVisibility(R.id.widget_graph_container, View.GONE)
             setViewVisibility(R.id.widget_graph_labels_bottom_row, View.GONE)
             setViewVisibility(R.id.widget_graph, View.GONE)
-            setViewVisibility(R.id.widget_graph_label_top_start, View.GONE)
-            setViewVisibility(R.id.widget_graph_label_top_end, View.GONE)
             setViewVisibility(R.id.widget_graph_label_bottom_start, View.GONE)
             setViewVisibility(R.id.widget_graph_label_bottom_end, View.GONE)
             setViewVisibility(R.id.widget_summary, View.GONE)
