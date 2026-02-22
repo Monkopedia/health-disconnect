@@ -159,14 +159,22 @@ fun DataViewView(
     onOpenEntriesRequested: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val info by viewModel.dataViews.map { it?.dataViews?.get(it.ordering[page]) }
-        .collectAsState(initial = null)
+    val infoFlow = remember(viewModel, page) {
+        viewModel.dataViews.map { list ->
+            val viewId = list?.ordering?.getOrNull(page) ?: return@map null
+            list.dataViews[viewId]
+        }
+    }
+    val info by infoFlow.collectAsState(initial = null)
     if (info == null) return
     val view by viewModel.dataView(info!!.id).collectAsState(initial = null)
     if (view == null) return
-    val graphSharePreferences by context.graphShareDataStore.data
-        .map { prefs -> prefs.toGraphSharePreferences() }
-        .collectAsState(initial = GraphSharePreferences())
+    val graphSharePreferencesFlow = remember(context) {
+        context.graphShareDataStore.data.map { prefs -> prefs.toGraphSharePreferences() }
+    }
+    val graphSharePreferences by graphSharePreferencesFlow.collectAsState(
+        initial = GraphSharePreferences()
+    )
     val widgetBindings by context.widgetBindingsFlow().collectAsState(initial = emptyMap())
     val grantedPermissions by permissionsViewModel.grantedPermissions.collectAsState(initial = emptySet())
     val hasHistoryPermission = grantedPermissions.contains(PermissionsViewModel.HISTORY_PERMISSION)

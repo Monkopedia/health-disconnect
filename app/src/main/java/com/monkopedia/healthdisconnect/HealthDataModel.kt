@@ -116,11 +116,21 @@ class HealthDataModel @JvmOverloads constructor(
         }
         if (!shouldRefresh) return
         viewModelScope.launch(ioDispatcher) {
-            val values = loadMetricsWithData()
-            synchronized(metricsLock) {
-                metricsWithData.value = values
-                metricsLastRefreshTick = maxOf(metricsLastRefreshTick, refreshTick)
-                metricsLoading = false
+            try {
+                val values = loadMetricsWithData()
+                synchronized(metricsLock) {
+                    metricsWithData.value = values
+                    metricsLastRefreshTick = maxOf(metricsLastRefreshTick, refreshTick)
+                }
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                Log.w(LOG_TAG, "Failed to refresh metrics with data", exception)
+            } finally {
+                synchronized(metricsLock) {
+                    metricsLoading = false
+                }
             }
         }
     }

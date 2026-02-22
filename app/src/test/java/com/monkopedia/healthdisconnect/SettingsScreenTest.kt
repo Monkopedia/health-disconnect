@@ -39,13 +39,14 @@ class SettingsScreenTest {
     fun themeRowLabelValueAndIconShareVerticalAlignment() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         val permissionsViewModel = mockPermissionsViewModel()
+        val appThemeViewModel = AppThemeViewModel(app)
 
         composeRule.setContent {
             HealthDisconnectTheme(dynamicColor = false) {
                 SettingsScreen(
                     onBack = {},
                     permissionsViewModel = permissionsViewModel,
-                    appThemeViewModel = AppThemeViewModel(app),
+                    appThemeViewModel = appThemeViewModel,
                     initialThemeDropdownExpanded = false,
                     previewDebugRows = emptyList()
                 )

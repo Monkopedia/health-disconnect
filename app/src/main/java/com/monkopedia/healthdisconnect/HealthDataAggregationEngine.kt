@@ -254,13 +254,13 @@ class DefaultHealthDataAggregationEngine(
     private fun buildStreamingSeries(states: List<StreamingMetricState>): List<HealthDataModel.MetricSeries> {
         return states.mapNotNull { state ->
             if (state.buckets.isEmpty()) return@mapNotNull null
-                val aggregated = state.buckets
-                    .map { (date, bucket) ->
-                        HealthDataModel.MetricPoint(
-                            date = date,
-                            value = bucket.aggregated(state.metricSettings.aggregation)
-                        )
-                    }
+            val aggregated = state.buckets
+                .map { (date, bucket) ->
+                    HealthDataModel.MetricPoint(
+                        date = date,
+                        value = bucket.aggregated(state.metricSettings.aggregation)
+                    )
+                }
             val points = when (state.metricSettings.smoothing) {
                 com.monkopedia.healthdisconnect.model.SmoothingMode.OFF -> aggregated
                 com.monkopedia.healthdisconnect.model.SmoothingMode.MOVING_AVERAGE_3 -> smooth3(aggregated)

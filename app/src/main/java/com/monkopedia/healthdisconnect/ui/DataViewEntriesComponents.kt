@@ -135,7 +135,10 @@ fun EntriesRouteScreen(
 ) {
     val context = LocalContext.current
     val actionScope = rememberCoroutineScope()
-    val info by viewModel.dataViews.map { it?.dataViews?.get(viewId) }.collectAsState(initial = null)
+    val infoFlow = remember(viewModel, viewId) {
+        viewModel.dataViews.map { it?.dataViews?.get(viewId) }
+    }
+    val info by infoFlow.collectAsState(initial = null)
     val view by viewModel.dataView(viewId).collectAsState(initial = null)
     if (view == null) {
         LoadingScreen()

@@ -13,9 +13,11 @@ import com.monkopedia.healthdisconnect.model.ViewType
 import io.mockk.every
 import io.mockk.mockk
 import java.util.concurrent.atomic.AtomicInteger
+import java.time.Instant
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotEquals
@@ -127,6 +129,57 @@ class HealthDataModelCacheTest {
         assertTrue(cacheEntryCount(model) <= 8)
     }
 
+    @Test
+    fun `metric discovery recovers after initial gateway failure`() = runBlocking {
+        val gateway = object : HealthConnectGateway {
+            val callCount = AtomicInteger(0)
+            @Volatile
+            var failFirst = true
+
+            override suspend fun hasRecordsForType(
+                cls: kotlin.reflect.KClass<out Record>,
+                now: Instant,
+                pageSize: Int
+            ): Boolean {
+                callCount.incrementAndGet()
+                if (failFirst) {
+                    failFirst = false
+                    throw IllegalStateException("simulated failure")
+                }
+                return cls == StepsRecord::class
+            }
+
+            override suspend fun readRecordsInRange(
+                cls: kotlin.reflect.KClass<out Record>,
+                start: Instant,
+                end: Instant,
+                pageSize: Int,
+                onPage: (List<Record>) -> Unit
+            ) = Unit
+        }
+        val model = HealthDataModel(
+            app = ApplicationProvider.getApplicationContext<Application>(),
+            autoRefreshMetrics = false,
+            healthConnectGateway = gateway
+        )
+
+        // Trigger an initial refresh that fails.
+        model.collectMetricsWithData(refreshTick = 0)
+        withTimeout(5_000) {
+            while (gateway.callCount.get() == 0 || metricsLoading(model)) {
+                yield()
+            }
+        }
+
+        // A newer refresh tick should still run and eventually publish metrics.
+        val metrics = withTimeout(5_000) {
+            model.collectMetricsWithData(refreshTick = 1).first()
+        }
+
+        assertTrue(metrics.contains(StepsRecord::class))
+        assertTrue(gateway.callCount.get() > 1)
+    }
+
     private suspend fun loadRecords(model: HealthDataModel, view: DataView, refreshTick: Int): List<Record> =
         withTimeout(5_000) {
             model.collectData(view, refreshTick)
@@ -151,6 +204,12 @@ class HealthDataModelCacheTest {
         @Suppress("UNCHECKED_CAST")
         val cache = field.get(model) as MutableMap<*, *>
         return cache.size
+    }
+
+    private fun metricsLoading(model: HealthDataModel): Boolean {
+        val field = HealthDataModel::class.java.getDeclaredField("metricsLoading")
+        field.isAccessible = true
+        return field.getBoolean(model)
     }
 
     private fun stepsRecord(marker: Long): StepsRecord {

@@ -257,9 +257,8 @@ tasks.register("roborazziGate") {
 
 tasks.register("allTests") {
     group = "verification"
-    description = "Runs unit tests and screenshot generation used by this repository's local CI gate."
-    // Keep this local gate focused on debug build smoke + screenshots to avoid unrelated release test drift.
-    setDependsOn(listOf("unitTestGate", "roborazziGate"))
+    description = "Runs unit tests, screenshot generation, lint, and androidTest compile checks."
+    setDependsOn(listOf("unitTestGate", "roborazziGate", "lintDebug", "compileDebugAndroidTestKotlin"))
 }
 
 tasks.matching { it.name == "testDebugUnitTest" }.configureEach {

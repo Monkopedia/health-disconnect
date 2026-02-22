@@ -31,6 +31,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Before
 import org.junit.Ignore
 import org.junit.Test
@@ -113,6 +114,66 @@ class DataViewAdapterViewModelTest {
         val updated = awaitViews(viewModel) { it.dataViews.isEmpty() }
         assertEquals(0, updated.dataViews.size)
         assertEquals(emptyList<Int>(), updated.ordering)
+    }
+
+    @Test
+    fun `createView rolls back when info insert fails`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+        appDb.openHelper.writableDatabase.execSQL(
+            """
+            CREATE TRIGGER fail_data_view_info_insert
+            BEFORE INSERT ON data_view_info
+            WHEN NEW.id = 1
+            BEGIN
+                SELECT RAISE(FAIL, 'fail info insert');
+            END
+            """.trimIndent()
+        )
+
+        try {
+            assertThrows(Exception::class.java) {
+                runBlocking { viewModel.createView(WeightRecord::class) }
+            }
+
+            assertEquals(0, infoDao.count())
+            assertEquals(0, countDataViews())
+        } finally {
+            appDb.openHelper.writableDatabase.execSQL(
+                "DROP TRIGGER IF EXISTS fail_data_view_info_insert"
+            )
+        }
+    }
+
+    @Test
+    fun `deleteView rolls back when info delete fails`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+        viewModel.createView(WeightRecord::class)
+        assertEquals(1, infoDao.count())
+        assertEquals(1, countDataViews())
+
+        appDb.openHelper.writableDatabase.execSQL(
+            """
+            CREATE TRIGGER fail_data_view_info_delete
+            BEFORE DELETE ON data_view_info
+            WHEN OLD.id = 1
+            BEGIN
+                SELECT RAISE(FAIL, 'fail info delete');
+            END
+            """.trimIndent()
+        )
+
+        try {
+            assertThrows(Exception::class.java) {
+                runBlocking { viewModel.deleteView(1) }
+            }
+
+            assertEquals(1, infoDao.count())
+            assertEquals(1, countDataViews())
+        } finally {
+            appDb.openHelper.writableDatabase.execSQL(
+                "DROP TRIGGER IF EXISTS fail_data_view_info_delete"
+            )
+        }
     }
 
     @Test
@@ -212,10 +273,18 @@ class DataViewAdapterViewModelTest {
         return RecordSelection(DistanceRecord::class)
     }
 
+    private fun countDataViews(): Int {
+        appDb.openHelper.readableDatabase.query("SELECT COUNT(*) FROM data_views").use { cursor ->
+            cursor.moveToFirst()
+            return cursor.getInt(0)
+        }
+    }
+
     private fun dataViewAdapterViewModel(): DataViewAdapterViewModel {
         return DataViewAdapterViewModel(
             app = app,
             savedStateHandle = SavedStateHandle(),
+            appDatabase = appDb,
             dataViewDao = viewDao,
             dataViewInfoDao = infoDao
         )

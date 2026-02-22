@@ -14,9 +14,11 @@ import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataViewInfo
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
+import com.monkopedia.healthdisconnect.room.AppDatabase
 import com.monkopedia.healthdisconnect.room.DataViewDao
 import com.monkopedia.healthdisconnect.room.DataViewInfoDao
 import kotlin.reflect.KClass
+import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -33,8 +35,9 @@ import kotlin.coroutines.cancellation.CancellationException
 class DataViewAdapterViewModel(
     app: Application,
     private val savedStateHandle: SavedStateHandle,
-    private val dataViewDao: DataViewDao,
-    private val dataViewInfoDao: DataViewInfoDao
+    private val appDatabase: AppDatabase = AppDatabase.getInstance(app),
+    private val dataViewDao: DataViewDao = appDatabase.dataViewDao(),
+    private val dataViewInfoDao: DataViewInfoDao = appDatabase.dataViewInfoDao()
 ) : AndroidViewModel(app) {
 
     private val context = getApplication<Application>()
@@ -110,15 +113,17 @@ class DataViewAdapterViewModel(
         val name = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: "Record"
         val recordsJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(com.monkopedia.healthdisconnect.model.RecordSelection(cls)))
         val settingsJson = Json.encodeToString(ChartSettings.serializer(), ChartSettings())
-        dataViewDao.insert(
-            DataViewEntity(
-                id = newId,
-                type = com.monkopedia.healthdisconnect.model.ViewType.CHART.name,
-                recordsJson = recordsJson,
-                settingsJson = settingsJson
+        appDatabase.withTransaction {
+            dataViewDao.insert(
+                DataViewEntity(
+                    id = newId,
+                    type = com.monkopedia.healthdisconnect.model.ViewType.CHART.name,
+                    recordsJson = recordsJson,
+                    settingsJson = settingsJson
+                )
             )
-        )
-        dataViewInfoDao.insert(DataViewInfoEntity(newId, name, nextOrder))
+            dataViewInfoDao.insert(DataViewInfoEntity(newId, name, nextOrder))
+        }
     }
 
     fun dataView(id: Int): Flow<DataView> = flows.updateAndGet {
@@ -135,8 +140,10 @@ class DataViewAdapterViewModel(
     }
 
     suspend fun deleteView(id: Int) {
-        dataViewDao.deleteById(id)
-        dataViewInfoDao.deleteById(id)
+        appDatabase.withTransaction {
+            dataViewDao.deleteById(id)
+            dataViewInfoDao.deleteById(id)
+        }
         flows.value = flows.value - id
     }
 

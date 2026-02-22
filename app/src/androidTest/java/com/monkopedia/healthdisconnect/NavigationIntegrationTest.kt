@@ -61,11 +61,13 @@ class NavigationIntegrationTest {
         seedSingleView(app)
         val adapterViewModel = DataViewAdapterViewModel(app, SavedStateHandle())
         val healthDataModel = HealthDataModel(app, false)
+        val appThemeViewModel = AppThemeViewModel(app)
 
         composeRule.setContent {
             NavigationHarness(
                 viewModel = adapterViewModel,
-                healthDataModel = healthDataModel
+                healthDataModel = healthDataModel,
+                appThemeViewModel = appThemeViewModel
             )
         }
         composeRule.waitForIdle()
@@ -86,11 +88,13 @@ class NavigationIntegrationTest {
         seedSingleView(app)
         val adapterViewModel = DataViewAdapterViewModel(app, SavedStateHandle())
         val healthDataModel = HealthDataModel(app, false)
+        val appThemeViewModel = AppThemeViewModel(app)
 
         composeRule.setContent {
             NavigationHarness(
                 viewModel = adapterViewModel,
-                healthDataModel = healthDataModel
+                healthDataModel = healthDataModel,
+                appThemeViewModel = appThemeViewModel
             )
         }
         composeRule.waitForIdle()
@@ -107,7 +111,8 @@ class NavigationIntegrationTest {
     @Composable
     private fun NavigationHarness(
         viewModel: DataViewAdapterViewModel,
-        healthDataModel: HealthDataModel
+        healthDataModel: HealthDataModel,
+        appThemeViewModel: AppThemeViewModel
     ) {
         HealthDisconnectTheme(dynamicColor = false) {
             val navController = rememberNavController()
@@ -139,7 +144,7 @@ class NavigationIntegrationTest {
                         SettingsScreen(
                             onBack = { navController.popBackStack() },
                             permissionsViewModel = mockPermissionsViewModelForScreen(),
-                            appThemeViewModel = AppThemeViewModel(app)
+                            appThemeViewModel = appThemeViewModel
                         )
                     }
                     composable(
