@@ -16,6 +16,10 @@ import com.monkopedia.healthdisconnect.ui.seriesRangeFromPoints
 import java.io.File
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
+import kotlin.math.min
+
+private const val BASELINE_WIDTH = 1600f
+private const val BASELINE_HEIGHT = 1000f
 
 fun writeGraphSharePng(
     context: Context,
@@ -55,6 +59,47 @@ fun shareGraphImage(context: Context, imageFile: File, title: String) {
     )
 }
 
+internal data class GraphShareLayout(
+    val chartLeft: Float,
+    val chartTop: Float,
+    val chartRight: Float,
+    val chartBottom: Float,
+    val dateY: Float,
+    val dividerY: Float,
+    val peakStartY: Float,
+    val peakRowHeight: Float,
+    val contentBottom: Float
+)
+
+internal fun computeGraphShareLayout(width: Int, height: Int, seriesCount: Int): GraphShareLayout {
+    val xScale = width / BASELINE_WIDTH
+    val yScale = height / BASELINE_HEIGHT
+    fun sx(value: Float): Float = value * xScale
+    fun sy(value: Float): Float = value * yScale
+
+    val chartLeft = sx(160f)
+    val chartTop = sy(140f)
+    val chartRight = width - sx(120f)
+    val chartBottom = sy(640f)
+    val dateY = chartBottom + sy(44f)
+    val dividerY = dateY + sy(20f)
+    val peakStartY = dividerY + sy(40f)
+    val peakRowHeight = sy(36f)
+    val contentBottom = peakStartY + (peakRowHeight * seriesCount.coerceAtLeast(1))
+
+    return GraphShareLayout(
+        chartLeft = chartLeft,
+        chartTop = chartTop,
+        chartRight = chartRight,
+        chartBottom = chartBottom,
+        dateY = dateY,
+        dividerY = dividerY,
+        peakStartY = peakStartY,
+        peakRowHeight = peakRowHeight,
+        contentBottom = contentBottom
+    )
+}
+
 fun renderGraphBitmap(
     title: String,
     seriesList: List<HealthDataModel.MetricSeries>,
@@ -64,40 +109,53 @@ fun renderGraphBitmap(
     height: Int = 1000
 ): Bitmap {
     val palette = paletteFor(theme)
+    val xScale = width / BASELINE_WIDTH
+    val yScale = height / BASELINE_HEIGHT
+    val scale = min(xScale, yScale)
+    fun sx(value: Float): Float = value * xScale
+    fun sy(value: Float): Float = value * yScale
+    fun ss(value: Float): Float = value * scale
+
+    val layout = computeGraphShareLayout(
+        width = width,
+        height = height,
+        seriesCount = seriesList.size
+    )
+
     val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     canvas.drawColor(palette.backgroundColor)
 
     val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = palette.textPrimary
-        textSize = 48f
+        textSize = ss(48f)
     }
     val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = palette.textSecondary
-        textSize = 28f
+        textSize = ss(28f)
     }
     val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = palette.textSecondary
-        textSize = 24f
+        textSize = ss(24f)
     }
     val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = palette.axisColor
-        strokeWidth = 2f
+        strokeWidth = ss(2f)
     }
     val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = palette.gridColor
-        strokeWidth = 1f
+        strokeWidth = ss(1f)
     }
     val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = palette.dividerColor
-        strokeWidth = 1f
+        strokeWidth = ss(1f)
     }
 
-    canvas.drawText(title, 56f, 72f, titlePaint)
+    canvas.drawText(title, sx(56f), sy(72f), titlePaint)
 
     val allPoints = seriesList.flatMap { it.points }
     if (allPoints.isEmpty()) {
-        canvas.drawText("No graphable metric values available yet.", 56f, 144f, bodyPaint)
+        canvas.drawText("No graphable metric values available yet.", sx(56f), sy(144f), bodyPaint)
         return bitmap
     }
 
@@ -109,10 +167,10 @@ fun renderGraphBitmap(
         DateTimeFormatter.ofPattern("MMM d")
     }
 
-    val chartLeft = 160f
-    val chartTop = 140f
-    val chartRight = width - 120f
-    val chartBottom = 640f
+    val chartLeft = layout.chartLeft
+    val chartTop = layout.chartTop
+    val chartRight = layout.chartRight
+    val chartBottom = layout.chartBottom
     val chartWidth = chartRight - chartLeft
     val chartHeight = chartBottom - chartTop
 
@@ -168,12 +226,12 @@ fun renderGraphBitmap(
         seriesList.forEachIndexed { seriesIndex, series ->
             val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = seriesColors[seriesIndex % seriesColors.size]
-                strokeWidth = 4f
+                strokeWidth = ss(4f)
                 style = Paint.Style.STROKE
             }
             val pointPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = seriesColors[seriesIndex % seriesColors.size]
-                strokeWidth = 3f
+                strokeWidth = ss(3f)
                 style = Paint.Style.STROKE
             }
             val path = Path()
@@ -185,7 +243,7 @@ fun renderGraphBitmap(
                     path.lineTo(x, y)
                 }
                 if (settings.showDataPoints) {
-                    canvas.drawCircle(x, y, 5f, pointPaint)
+                    canvas.drawCircle(x, y, ss(5f), pointPaint)
                 }
             }
             canvas.drawPath(path, linePaint)
@@ -214,9 +272,9 @@ fun renderGraphBitmap(
         seriesList.size == 1 -> {
             drawAxisLabels(
                 canvas = canvas,
-                x = 28f,
-                yTop = chartTop + 8f,
-                yBottom = chartBottom - 8f,
+                x = sx(28f),
+                yTop = chartTop + sy(8f),
+                yBottom = chartBottom - sy(8f),
                 alignRight = false,
                 range = rangeFor(0),
                 label = seriesList[0].label,
@@ -229,9 +287,9 @@ fun renderGraphBitmap(
         seriesList.size == 2 -> {
             drawAxisLabels(
                 canvas = canvas,
-                x = 28f,
-                yTop = chartTop + 8f,
-                yBottom = chartBottom - 8f,
+                x = sx(28f),
+                yTop = chartTop + sy(8f),
+                yBottom = chartBottom - sy(8f),
                 alignRight = false,
                 range = rangeFor(0),
                 label = seriesList[0].label,
@@ -241,9 +299,9 @@ fun renderGraphBitmap(
             )
             drawAxisLabels(
                 canvas = canvas,
-                x = width - 28f,
-                yTop = chartTop + 8f,
-                yBottom = chartBottom - 8f,
+                x = width - sx(28f),
+                yTop = chartTop + sy(8f),
+                yBottom = chartBottom - sy(8f),
                 alignRight = true,
                 range = rangeFor(1),
                 label = seriesList[1].label,
@@ -256,9 +314,9 @@ fun renderGraphBitmap(
         else -> {
             drawAxisLabels(
                 canvas = canvas,
-                x = 28f,
-                yTop = chartTop + 8f,
-                yBottom = chartBottom - 8f,
+                x = sx(28f),
+                yTop = chartTop + sy(8f),
+                yBottom = chartBottom - sy(8f),
                 alignRight = false,
                 range = ValueRange(0.0, 1.0),
                 label = "Normalized",
@@ -271,22 +329,22 @@ fun renderGraphBitmap(
 
     val firstDate = allDates.first().format(dateFormatter)
     val lastDate = allDates.last().format(dateFormatter)
-    val dateY = chartBottom + 44f
+    val dateY = layout.dateY
     canvas.drawText(firstDate, chartLeft, dateY, bodyPaint)
     canvas.drawText(lastDate, chartRight - bodyPaint.measureText(lastDate), dateY, bodyPaint)
 
-    val dividerY = dateY + 20f
+    val dividerY = layout.dividerY
     canvas.drawLine(chartLeft, dividerY, chartRight, dividerY, dividerPaint)
 
-    var peakY = dividerY + 40f
+    var peakY = layout.peakStartY
     seriesList.forEachIndexed { index, series ->
         val peakPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = seriesColors[index % seriesColors.size]
-            textSize = 28f
+            textSize = ss(28f)
         }
         val text = "\u25A0 ${series.label} peak: ${formatAxisValue(series.peakValueInWindow)}${unitSuffix(series.unit)}"
         canvas.drawText(text, chartLeft, peakY, peakPaint)
-        peakY += 36f
+        peakY += layout.peakRowHeight
     }
 
     return bitmap
