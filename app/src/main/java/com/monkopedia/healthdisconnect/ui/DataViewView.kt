@@ -89,19 +89,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.records.Record
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
+import com.monkopedia.healthdisconnect.EntriesExportMode
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.GraphSharePreferences
 import com.monkopedia.healthdisconnect.GraphShareTheme
+import com.monkopedia.healthdisconnect.HealthDataWidgetContract
+import com.monkopedia.healthdisconnect.HealthDataWidgetProvider
+import com.monkopedia.healthdisconnect.HealthDataWidgetScheduler
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.buildAggregatedEntriesCsv
+import com.monkopedia.healthdisconnect.buildRawEntriesCsv
 import com.monkopedia.healthdisconnect.graphShareDataStore
 import com.monkopedia.healthdisconnect.incrementGraphShareDialogCount
 import com.monkopedia.healthdisconnect.graphShareContentHeight
 import com.monkopedia.healthdisconnect.renderGraphBitmap
+import com.monkopedia.healthdisconnect.shareEntriesCsv
 import com.monkopedia.healthdisconnect.shareGraphImage
 import com.monkopedia.healthdisconnect.toGraphSharePreferences
 import com.monkopedia.healthdisconnect.updateGraphSharePreferences
+import com.monkopedia.healthdisconnect.widgetBindingsFlow
 import com.monkopedia.healthdisconnect.writeGraphSharePng
+import com.monkopedia.healthdisconnect.writeEntriesCsvToCache
 import org.koin.androidx.compose.koinViewModel
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.model.AggregationMode
@@ -154,6 +163,7 @@ fun DataViewView(
     val graphSharePreferences by context.graphShareDataStore.data
         .map { prefs -> prefs.toGraphSharePreferences() }
         .collectAsState(initial = GraphSharePreferences())
+    val widgetBindings by context.widgetBindingsFlow().collectAsState(initial = emptyMap())
     val grantedPermissions by permissionsViewModel.grantedPermissions.collectAsState(initial = emptySet())
     val hasHistoryPermission = grantedPermissions.contains(PermissionsViewModel.HISTORY_PERMISSION)
     val timeWindowOptions = if (hasHistoryPermission) {
@@ -205,6 +215,14 @@ fun DataViewView(
     var graphShareDoNotShowAgainChecked by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var isGraphShareInProgress by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var graphShareError by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
+    var showShareOptionsSheet by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var showEntriesExportModeDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var pendingEntriesWarningMode by rememberSaveable(view!!.id) {
+        mutableStateOf<EntriesExportMode?>(null)
+    }
+    var isEntriesExporting by rememberSaveable(view!!.id) { mutableStateOf(false) }
+    var entriesExportError by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
+    var addWidgetError by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
     val actionScope = rememberCoroutineScope()
     val refreshLabelFormatter = remember { DateTimeFormatter.ofPattern("h:mm:ss a") }
     var headerWidthPx by remember(view!!.id) { mutableStateOf(0f) }
@@ -214,6 +232,7 @@ fun DataViewView(
     val fallbackHeaderWidthPx = with(density) { 160.dp.toPx() }
     val headerTravel = ((if (headerWidthPx > 0f) headerWidthPx else fallbackHeaderWidthPx) * 0.9f) + (screenWidthPx * 0.35f)
     val headerOffsetAbs = abs(headerPageOffset).coerceIn(0f, 1f)
+    val hasWidgetForCurrentView = widgetBindings.values.any { it == view!!.id }
     fun resetEditStateToSaved() {
         chartSettings = view!!.chartSettings
         selectedSelections = view!!.records.map { selection ->
@@ -247,7 +266,14 @@ fun DataViewView(
             records = normalizedSelections(selectedSelections, chartSettings),
             chartSettings = chartSettings
         )
-        actionScope.launch { viewModel.updateView(newView) }
+        val shouldRescheduleWidgets = hasWidgetForCurrentView &&
+            view!!.chartSettings.widgetUpdateWindow != chartSettings.widgetUpdateWindow
+        actionScope.launch {
+            viewModel.updateView(newView)
+            if (shouldRescheduleWidgets) {
+                HealthDataWidgetScheduler.scheduleForView(context, newView.id)
+            }
+        }
         isEditing.value = false
     }
     val hasGraphShareData = metricSeriesList?.any { it.points.isNotEmpty() } == true
@@ -287,6 +313,58 @@ fun DataViewView(
             } finally {
                 isGraphShareInProgress = false
             }
+        }
+    }
+    fun launchEntriesExport(mode: EntriesExportMode) {
+        actionScope.launch {
+            isEntriesExporting = true
+            try {
+                val currentView = view!!
+                val csvText = when (mode) {
+                    EntriesExportMode.AGGREGATED -> {
+                        val series = healthDataModel.loadAggregatedSeriesForExport(currentView)
+                        buildAggregatedEntriesCsv(currentView, series)
+                    }
+
+                    EntriesExportMode.RAW -> {
+                        val records = healthDataModel.loadRawDataForExport(currentView)
+                        buildRawEntriesCsv(records)
+                    }
+                }
+                val file = withContext(Dispatchers.IO) {
+                    writeEntriesCsvToCache(
+                        context = context,
+                        viewName = info?.name ?: "entries",
+                        mode = mode,
+                        csvText = csvText
+                    )
+                }
+                shareEntriesCsv(
+                    context = context,
+                    viewName = info?.name ?: "entries",
+                    file = file
+                )
+            } catch (exception: Exception) {
+                Log.e(ENTRY_DETAILS_LOG_TAG, "Failed to export entries from graph view", exception)
+                entriesExportError = context.getString(R.string.data_view_export_failed)
+            } finally {
+                isEntriesExporting = false
+            }
+        }
+    }
+    fun requestWidgetPin() {
+        val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
+        if (!appWidgetManager.isRequestPinAppWidgetSupported) {
+            addWidgetError = context.getString(R.string.widget_pin_not_supported)
+            return
+        }
+        val provider = android.content.ComponentName(context, HealthDataWidgetProvider::class.java)
+        val extras = android.os.Bundle().apply {
+            putInt(HealthDataWidgetContract.EXTRA_PRESELECT_VIEW_ID, view!!.id)
+        }
+        val accepted = appWidgetManager.requestPinAppWidget(provider, extras, null)
+        if (!accepted) {
+            addWidgetError = context.getString(R.string.widget_pin_request_failed)
         }
     }
 
@@ -448,9 +526,7 @@ fun DataViewView(
                                     onShareClick = if (hasGraphShareData) {
                                         {
                                             if (isGraphShareInProgress) return@MetricOverTimeChart
-                                            selectedGraphShareTheme = graphSharePreferences.selectedTheme
-                                            graphShareDoNotShowAgainChecked = false
-                                            showGraphThemeDialog = true
+                                            showShareOptionsSheet = true
                                         }
                                     } else {
                                         null
@@ -480,7 +556,8 @@ fun DataViewView(
                     onResetEditStateToSaved = { resetEditStateToSaved() },
                     onShowAddMetricDialog = { showAddMetricDialog = true },
                     onShowDeleteViewConfirmation = { showDeleteViewConfirmation = true },
-                    onReplaceMetric = { replaceMetricTargetFqn = it }
+                    onReplaceMetric = { replaceMetricTargetFqn = it },
+                    showWidgetUpdateWindowControl = hasWidgetForCurrentView
                 )
             }
         }
@@ -645,6 +722,76 @@ fun DataViewView(
             dismissButton = {
                 TextButton(onClick = { showDeleteViewConfirmation = false }) {
                     Text(stringResource(R.string.data_view_cancel))
+                }
+            }
+        )
+    }
+
+    if (showShareOptionsSheet) {
+        GraphShareActionsBottomSheet(
+            onDismiss = { showShareOptionsSheet = false },
+            onShareGraph = {
+                showShareOptionsSheet = false
+                selectedGraphShareTheme = graphSharePreferences.selectedTheme
+                graphShareDoNotShowAgainChecked = false
+                showGraphThemeDialog = true
+            },
+            onShareEntries = {
+                showShareOptionsSheet = false
+                showEntriesExportModeDialog = true
+            },
+            onAddWidget = {
+                showShareOptionsSheet = false
+                requestWidgetPin()
+            }
+        )
+    }
+
+    if (showEntriesExportModeDialog) {
+        GraphEntriesExportModeDialog(
+            onDismiss = { showEntriesExportModeDialog = false },
+            onExportModeSelected = { mode ->
+                showEntriesExportModeDialog = false
+                pendingEntriesWarningMode = mode
+            }
+        )
+    }
+
+    pendingEntriesWarningMode?.let { mode ->
+        DataLeavingAppWarningDialog(
+            title = stringResource(R.string.data_view_export_warning_title),
+            message = stringResource(R.string.data_view_export_warning_message),
+            confirmLabel = stringResource(R.string.data_view_export_continue),
+            dismissLabel = stringResource(R.string.data_view_cancel),
+            onDismiss = { pendingEntriesWarningMode = null },
+            onConfirm = {
+                pendingEntriesWarningMode = null
+                launchEntriesExport(mode)
+            }
+        )
+    }
+
+    entriesExportError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { entriesExportError = null },
+            title = { Text(stringResource(R.string.data_view_export_error_title)) },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { entriesExportError = null }) {
+                    Text(stringResource(R.string.data_view_close))
+                }
+            }
+        )
+    }
+
+    addWidgetError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { addWidgetError = null },
+            title = { Text(stringResource(R.string.widget_add_error_title)) },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { addWidgetError = null }) {
+                    Text(stringResource(R.string.data_view_close))
                 }
             }
         )
@@ -874,6 +1021,96 @@ private fun GraphShareThemeDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.graph_share_cancel))
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GraphShareActionsBottomSheet(
+    onDismiss: () -> Unit,
+    onShareGraph: () -> Unit,
+    onShareEntries: () -> Unit,
+    onAddWidget: () -> Unit
+) {
+    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.graph_share_actions_title),
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = onShareGraph,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("data_view_share_sheet_graph")
+            ) {
+                Text(stringResource(R.string.graph_share_action_graph))
+            }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onShareEntries,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("data_view_share_sheet_entries")
+            ) {
+                Text(stringResource(R.string.graph_share_action_entries))
+            }
+            Spacer(Modifier.height(8.dp))
+            androidx.compose.material3.OutlinedButton(
+                onClick = onAddWidget,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("data_view_share_sheet_widget")
+            ) {
+                Text(stringResource(R.string.graph_share_action_widget))
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun GraphEntriesExportModeDialog(
+    onDismiss: () -> Unit,
+    onExportModeSelected: (EntriesExportMode) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.data_view_export_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.data_view_export_mode_message))
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = { onExportModeSelected(EntriesExportMode.AGGREGATED) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("graph_entries_export_aggregated")
+                ) {
+                    Text(stringResource(R.string.data_view_export_aggregated))
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { onExportModeSelected(EntriesExportMode.RAW) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("graph_entries_export_raw")
+                ) {
+                    Text(stringResource(R.string.data_view_export_raw))
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.data_view_cancel))
             }
         }
     )

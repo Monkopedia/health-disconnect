@@ -34,7 +34,8 @@ data class ChartSettings(
     val yAxisMode: YAxisMode = YAxisMode.AUTO,
     val smoothing: SmoothingMode = SmoothingMode.OFF,
     val unitPreference: UnitPreference = UnitPreference.AUTO,
-    val backgroundStyle: ChartBackgroundStyle = ChartBackgroundStyle.HORIZONTAL_LINES
+    val backgroundStyle: ChartBackgroundStyle = ChartBackgroundStyle.HORIZONTAL_LINES,
+    val widgetUpdateWindow: WidgetUpdateWindow = WidgetUpdateWindow.HOURS_12
 )
 
 @Serializable
@@ -103,6 +104,18 @@ enum class ChartBackgroundStyle {
     NONE,
     HORIZONTAL_LINES,
     GRID
+}
+
+@Serializable
+enum class WidgetUpdateWindow(val intervalHours: Long) {
+    HOURS_3(3),
+    HOURS_6(6),
+    HOURS_12(12),
+    HOURS_24(24);
+
+    fun intervalMillis(): Long {
+        return intervalHours * 60L * 60L * 1000L
+    }
 }
 
 @Serializable

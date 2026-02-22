@@ -96,6 +96,7 @@ import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.SmoothingMode
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
+import com.monkopedia.healthdisconnect.model.WidgetUpdateWindow
 import com.monkopedia.healthdisconnect.model.YAxisMode
 import com.monkopedia.healthdisconnect.model.isConfigValid
 import java.time.format.DateTimeFormatter
@@ -120,7 +121,8 @@ fun viewConfigurationSection(
     onResetEditStateToSaved: () -> Unit,
     onShowAddMetricDialog: () -> Unit,
     onShowDeleteViewConfirmation: () -> Unit,
-    onReplaceMetric: (String) -> Unit
+    onReplaceMetric: (String) -> Unit,
+    showWidgetUpdateWindowControl: Boolean = false
 ) {
     val selectedDisplay = selectedSelections.map { selection ->
         val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
@@ -179,6 +181,19 @@ fun viewConfigurationSection(
             value = chartSettings.backgroundStyle
         ) { onChartSettingsChanged(chartSettings.copy(backgroundStyle = it)) }
         Spacer(Modifier.height(8.dp))
+    }
+    if (showWidgetUpdateWindowControl) {
+        scope.item {
+            EnumCycleRow(
+                label = stringResource(R.string.widget_update_window_label),
+                value = chartSettings.widgetUpdateWindow,
+                options = WidgetUpdateWindow.values().toList(),
+                testTag = "data_view_widget_update_window_value"
+            ) { newValue ->
+                onChartSettingsChanged(chartSettings.copy(widgetUpdateWindow = newValue))
+            }
+            Spacer(Modifier.height(8.dp))
+        }
     }
 
     if (selectedDisplay.isEmpty()) {
@@ -392,6 +407,7 @@ private inline fun <reified T : Enum<T>> EnumCycleRow(
     label: String,
     value: T,
     options: List<T> = enumValues<T>().toList(),
+    testTag: String? = null,
     crossinline onValueChanged: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -406,7 +422,14 @@ private inline fun <reified T : Enum<T>> EnumCycleRow(
     ) {
         Text(label)
         Box {
-            TextButton(onClick = { expanded = true }) {
+            TextButton(
+                onClick = { expanded = true },
+                modifier = if (testTag != null) {
+                    Modifier.testTag(testTag)
+                } else {
+                    Modifier
+                }
+            ) {
                 Text(selectedValue.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercaseChar() })
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {

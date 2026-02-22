@@ -1,6 +1,5 @@
 package com.monkopedia.healthdisconnect.ui
 
-import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.clickable
@@ -69,11 +68,11 @@ import com.monkopedia.healthdisconnect.formatAxisValue
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.recordPrimaryValueLabel
 import com.monkopedia.healthdisconnect.recordTimestampLabel
+import com.monkopedia.healthdisconnect.shareEntriesCsv
 import com.monkopedia.healthdisconnect.unitSuffix
+import com.monkopedia.healthdisconnect.writeEntriesCsvToCache
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.UnitPreference
-import java.io.File
-import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -225,14 +224,18 @@ fun EntriesRouteScreen(
                             }
                         }
                         val file = withContext(Dispatchers.IO) {
-                            writeExportCsvToCache(
+                            writeEntriesCsvToCache(
                                 context = context,
                                 viewName = info?.name ?: "entries",
                                 mode = mode,
                                 csvText = csvText
                             )
                         }
-                        shareCsv(context = context, viewName = info?.name ?: "entries", file = file)
+                        shareEntriesCsv(
+                            context = context,
+                            viewName = info?.name ?: "entries",
+                            file = file
+                        )
                     } catch (exception: Exception) {
                         Log.e(ENTRY_DETAILS_LOG_TAG, "Failed to export entries CSV", exception)
                         exportErrorMessage = context.getString(R.string.data_view_export_failed)
@@ -446,40 +449,4 @@ private fun unitPreferenceForRecord(view: DataView, record: Record): UnitPrefere
         selectedClass?.java?.isAssignableFrom(record.javaClass) == true
     }
     return matchingSelection?.metricSettings?.unitPreference ?: view.chartSettings.unitPreference
-}
-
-private fun writeExportCsvToCache(
-    context: Context,
-    viewName: String,
-    mode: EntriesExportMode,
-    csvText: String
-): File {
-    val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
-    val safeViewName = viewName
-        .lowercase(Locale.US)
-        .replace(Regex("[^a-z0-9]+"), "_")
-        .trim('_')
-        .ifBlank { "entries" }
-    val fileName = "health_disconnect_${safeViewName}_${mode.name.lowercase(Locale.US)}_${System.currentTimeMillis()}.csv"
-    return File(exportDir, fileName).apply { writeText(csvText) }
-}
-
-private fun shareCsv(
-    context: Context,
-    viewName: String,
-    file: File
-) {
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/csv"
-        putExtra(Intent.EXTRA_STREAM, uri)
-        putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.data_view_export_subject, viewName))
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-    context.startActivity(
-        Intent.createChooser(
-            shareIntent,
-            context.getString(R.string.data_view_export_share_chooser)
-        )
-    )
 }

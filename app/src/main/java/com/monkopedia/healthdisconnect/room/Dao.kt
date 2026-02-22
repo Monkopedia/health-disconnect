@@ -12,6 +12,9 @@ interface DataViewDao {
     @Query("SELECT * FROM data_views WHERE id = :id")
     fun dataView(id: Int): Flow<DataViewEntity>
 
+    @Query("SELECT * FROM data_views WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Int): DataViewEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(view: DataViewEntity)
 
@@ -26,6 +29,12 @@ interface DataViewDao {
 interface DataViewInfoDao {
     @Query("SELECT * FROM data_view_info ORDER BY ordering ASC")
     fun allOrdered(): Flow<List<DataViewInfoEntity>>
+
+    @Query("SELECT * FROM data_view_info ORDER BY ordering ASC")
+    suspend fun allOrderedSnapshot(): List<DataViewInfoEntity>
+
+    @Query("SELECT * FROM data_view_info WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Int): DataViewInfoEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(info: DataViewInfoEntity)

@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.test.core.app.ApplicationProvider
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.DataViewInfo
@@ -20,14 +21,19 @@ import com.monkopedia.healthdisconnect.model.DataViewInfoList
 import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.ViewType
+import com.monkopedia.healthdisconnect.model.WidgetUpdateWindow
 import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,8 +45,20 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
 class DataViewViewEditFlowTest {
+    private val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Before
+    fun clearWidgetBindingsBeforeTest() = runBlocking {
+        app.unbindWidgets(app.widgetBindingsSnapshot().keys.toIntArray())
+    }
+
+    @After
+    fun clearWidgetBindingsAfterTest() = runBlocking {
+        app.unbindWidgets(app.widgetBindingsSnapshot().keys.toIntArray())
+    }
 
     @Test
     fun dirtyStateAppearsOnlyAfterUserEdits() {
@@ -172,9 +190,53 @@ class DataViewViewEditFlowTest {
         composeRule.onNodeWithTag("data_view_metric_show_min_checkbox_0", useUnmergedTree = true).assertIsOn()
     }
 
+    @Test
+    fun shareButtonOpensBottomSheetWithActions() {
+        val harness = setupHarness(withGraphData = true)
+        setViewContent(
+            permissionsViewModel = harness.permissionsViewModel,
+            healthDataModel = harness.healthDataModel,
+            viewModel = harness.viewModel
+        )
+
+        composeRule.onNodeWithTag("data_view_graph_share_button").performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("data_view_share_sheet_graph").assertIsDisplayed()
+        composeRule.onNodeWithTag("data_view_share_sheet_entries").assertIsDisplayed()
+        composeRule.onNodeWithTag("data_view_share_sheet_widget").assertIsDisplayed()
+    }
+
+    @Test
+    fun widgetUpdateWindowControlAppearsAndPersistsWhenViewHasWidget() = runBlocking {
+        app.bindWidgetToView(appWidgetId = 9001, viewId = 1)
+
+        val harness = setupHarness()
+        setViewContent(
+            permissionsViewModel = harness.permissionsViewModel,
+            healthDataModel = harness.healthDataModel,
+            viewModel = harness.viewModel
+        )
+
+        openViewConfiguration()
+        composeRule.onNodeWithTag("data_view_widget_update_window_value").assertIsDisplayed()
+        composeRule.onNodeWithTag("data_view_widget_update_window_value").performClick()
+        composeRule.onNodeWithText("Hours 6").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("data_view_save_button").performClick()
+        composeRule.waitForIdle()
+
+        coVerify {
+            harness.viewModel.updateView(match {
+                it.chartSettings.widgetUpdateWindow == WidgetUpdateWindow.HOURS_6
+            })
+        }
+    }
+
     private fun setupHarness(
         initialTimeWindow: TimeWindow = TimeWindow.DAYS_30,
-        initialPermissions: Set<String> = setOf(PermissionsViewModel.HISTORY_PERMISSION)
+        initialPermissions: Set<String> = setOf(PermissionsViewModel.HISTORY_PERMISSION),
+        withGraphData: Boolean = false
     ): EditFlowHarness {
         val dataView = DataView(
             id = 1,
@@ -195,7 +257,22 @@ class DataViewViewEditFlowTest {
 
         val healthDataModel = mockk<HealthDataModel>(relaxed = true)
         every { healthDataModel.collectRecordCount(any(), any()) } returns flowOf(12)
-        every { healthDataModel.collectAggregatedSeries(any(), any()) } returns flowOf(emptyList())
+        every { healthDataModel.collectAggregatedSeries(any(), any()) } returns flowOf(
+            if (withGraphData) {
+                listOf(
+                    HealthDataModel.MetricSeries(
+                        label = "Weight",
+                        unit = "lb",
+                        points = listOf(
+                            HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 20), 157.2),
+                            HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 21), 156.7)
+                        )
+                    )
+                )
+            } else {
+                emptyList()
+            }
+        )
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
 
         val permissionsViewModel = mockk<PermissionsViewModel>(relaxed = true)

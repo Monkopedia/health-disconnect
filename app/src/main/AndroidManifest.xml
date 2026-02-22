@@ -61,6 +61,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".HealthDataWidgetConfigureActivity"
+            android:exported="true"
+            android:label="@string/widget_config_title"
+            android:theme="@style/Theme.HealthDisconnect" />
         <!-- For supported versions through Android 13, create an activity to show the rationale
      of Health Connect permissions once users click the privacy policy link. -->
         <activity
@@ -93,6 +98,25 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_provider_paths" />
         </provider>
+
+        <receiver
+            android:name=".HealthDataWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_title"
+            android:permission="android.permission.BIND_APPWIDGET">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/health_graph_widget_info" />
+        </receiver>
+
+        <service
+            android:name=".HealthDataWidgetUpdateJobService"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
     </application>
 

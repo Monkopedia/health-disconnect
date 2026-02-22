@@ -32,7 +32,10 @@ private object Routes {
 }
 
 @Composable
-fun LazyNavigation(viewModel: LazyNavigationModel = koinViewModel()) {
+fun LazyNavigation(
+    viewModel: LazyNavigationModel = koinViewModel(),
+    initialViewId: Int? = null
+) {
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val isShowingIntro by viewModel.isShowingIntro.collectAsStateWithLifecycle()
     if (isLoading) {
@@ -47,6 +50,7 @@ fun LazyNavigation(viewModel: LazyNavigationModel = koinViewModel()) {
             NavHost(navController = navController, startDestination = Routes.Views) {
                 composable(Routes.Views) {
                     DataViewAdapter(
+                        initialViewId = initialViewId,
                         showSettings = { navController.navigate(Routes.Settings) },
                         onOpenEntries = { viewId -> navController.navigate(Routes.entries(viewId)) }
                     )

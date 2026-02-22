@@ -126,21 +126,7 @@ class DataViewAdapterViewModel(
     }[id]!!
 
     suspend fun updateView(view: DataView) {
-        val recordsJson = Json.encodeToString(
-            kotlinx.serialization.builtins.ListSerializer(
-                com.monkopedia.healthdisconnect.model.RecordSelection.serializer()
-            ),
-            view.records
-        )
-        val settingsJson = Json.encodeToString(ChartSettings.serializer(), view.chartSettings)
-        dataViewDao.insert(
-            DataViewEntity(
-                id = view.id,
-                type = view.type.name,
-                recordsJson = recordsJson,
-                settingsJson = settingsJson
-            )
-        )
+        dataViewDao.insert(encodeDataViewEntity(view, json))
     }
 
     suspend fun renameView(id: Int, name: String) {
@@ -156,31 +142,7 @@ class DataViewAdapterViewModel(
 
     private fun createDataView(id: Int): Flow<DataView> =
         dataViewDao.dataView(id).map { entity ->
-            val records = Json.decodeFromString(
-                kotlinx.serialization.builtins.ListSerializer(
-                    com.monkopedia.healthdisconnect.model.RecordSelection.serializer()
-                ),
-                entity.recordsJson
-            )
-            val settings = try {
-                Json.decodeFromString(ChartSettings.serializer(), entity.settingsJson)
-            } catch (exception: Exception) {
-                if (exception is CancellationException) {
-                    throw exception
-                }
-                Log.w(
-                    TAG,
-                    "Failed to parse saved chart settings for data view ${entity.id}",
-                    exception
-                )
-                ChartSettings()
-            }
-            DataView(
-                id = entity.id,
-                type = com.monkopedia.healthdisconnect.model.ViewType.valueOf(entity.type),
-                records = records,
-                chartSettings = settings
-            )
+            decodeDataViewEntity(entity, json)
         }
 
     // Keep DataStore accessors for migration only

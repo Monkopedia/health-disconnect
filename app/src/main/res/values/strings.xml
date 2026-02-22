@@ -87,6 +87,10 @@
     <string name="data_view_export_failed">Could not export data right now. Please try again.</string>
     <string name="graph_share_button_content_description">Share graph image</string>
     <string name="graph_share_dialog_title">Share Graph</string>
+    <string name="graph_share_actions_title">Share Options</string>
+    <string name="graph_share_action_graph">Share graph image</string>
+    <string name="graph_share_action_entries">Share entries CSV</string>
+    <string name="graph_share_action_widget">Add home screen widget</string>
     <string name="graph_share_theme_dialog_title">Select Graph Theme</string>
     <string name="graph_share_warning_title">Before You Share</string>
     <string name="graph_share_warning_message">Health Disconnect does not use the internet. Once this image leaves the app, you are responsible for keeping it safe.</string>
@@ -102,4 +106,25 @@
     <string name="graph_share_preview_failed">Unable to render graph preview.</string>
     <string name="graph_share_error_title">Graph Share Failed</string>
     <string name="graph_share_failed_message">Unable to generate or share the graph image right now.</string>
+
+    <string name="widget_title">Health Disconnect Graph</string>
+    <string name="widget_description">Shows a configured Health Disconnect graph on your home screen.</string>
+    <string name="widget_config_title">Configure Widget</string>
+    <string name="widget_config_select_view">Select view</string>
+    <string name="widget_config_add">Add widget</string>
+    <string name="widget_no_views_available">No views are available yet. Open the app and create a view first.</string>
+    <string name="widget_needs_configuration">Tap to configure this widget.</string>
+    <string name="widget_linked_view_missing">The linked view no longer exists. Reconfigure this widget.</string>
+    <string name="widget_no_graph_data">No graphable metric values available for this view yet.</string>
+    <string name="widget_no_labels_enabled">Min/max labels are disabled for this view.</string>
+    <string name="widget_update_window_label">Widget update window</string>
+    <string name="widget_update_window_3h">Every 3 hours</string>
+    <string name="widget_update_window_6h">Every 6 hours</string>
+    <string name="widget_update_window_12h">Every 12 hours</string>
+    <string name="widget_update_window_24h">Every 24 hours</string>
+    <string name="widget_max_format">%1$s max: %2$s%3$s</string>
+    <string name="widget_min_format">%1$s min: %2$s%3$s</string>
+    <string name="widget_add_error_title">Unable to Add Widget</string>
+    <string name="widget_pin_not_supported">This launcher does not support adding pinned widgets.</string>
+    <string name="widget_pin_request_failed">Could not start the add-widget flow right now.</string>
 </resources>

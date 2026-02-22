@@ -365,6 +365,44 @@ fun renderGraphBitmap(
     return bitmap
 }
 
+fun renderWidgetGraphBitmap(
+    title: String,
+    seriesList: List<HealthDataModel.MetricSeries>,
+    settings: ChartSettings,
+    theme: GraphShareTheme,
+    width: Int = 1200,
+    height: Int = 760
+): Bitmap {
+    val fullBitmap = renderGraphBitmap(
+        title = title,
+        seriesList = seriesList,
+        settings = settings,
+        theme = theme,
+        width = width,
+        height = height
+    )
+    val layout = computeGraphShareLayout(
+        width = width,
+        height = height,
+        seriesCount = seriesList.size
+    )
+    val top = (layout.chartTop - (height * 0.04f)).toInt().coerceAtLeast(0)
+    val bottom = (layout.dividerY + (height * 0.015f)).toInt().coerceAtMost(fullBitmap.height)
+    val croppedHeight = bottom - top
+    if (croppedHeight <= 0 || croppedHeight >= fullBitmap.height) {
+        return fullBitmap
+    }
+    val cropped = Bitmap.createBitmap(
+        fullBitmap,
+        0,
+        top,
+        fullBitmap.width,
+        croppedHeight
+    )
+    fullBitmap.recycle()
+    return cropped
+}
+
 private fun drawAxisLabels(
     canvas: Canvas,
     x: Float,

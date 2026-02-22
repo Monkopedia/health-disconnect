@@ -15,6 +15,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,7 @@ fun DataViewAdapter(
     healthDataModel: HealthDataModel = koinViewModel(),
     permissionsViewModel: PermissionsViewModel = koinViewModel(),
     initialPage: Int = 0,
+    initialViewId: Int? = null,
     initialPageOffsetFraction: Float = 0f,
     showSettings: () -> Unit,
     onOpenEntries: (Int) -> Unit = {}
@@ -74,10 +76,29 @@ fun DataViewAdapter(
         initialPageOffsetFraction = initialPageOffsetFraction,
         pageCount = { viewCount + 1 }
     )
+    var handledInitialViewId by remember { mutableStateOf<Int?>(null) }
 
     if (listInfo == null) {
         LoadingScreen()
         return
+    }
+    LaunchedEffect(initialViewId, listInfo?.ordering) {
+        val targetViewId = initialViewId
+        if (targetViewId == null) {
+            handledInitialViewId = null
+            return@LaunchedEffect
+        }
+        if (handledInitialViewId == targetViewId) return@LaunchedEffect
+        val targetPage = listInfo!!.ordering.indexOf(targetViewId)
+        if (targetPage < 0) {
+            handledInitialViewId = targetViewId
+            return@LaunchedEffect
+        }
+        val boundedPage = targetPage.coerceIn(0, pagerState.pageCount - 1)
+        if (boundedPage != pagerState.currentPage) {
+            pagerState.scrollToPage(boundedPage)
+        }
+        handledInitialViewId = targetViewId
     }
     val scope = rememberCoroutineScope()
     val createViewTitle = stringResource(R.string.create_view_title)
