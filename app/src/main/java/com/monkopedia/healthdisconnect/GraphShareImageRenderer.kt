@@ -15,6 +15,7 @@ import com.monkopedia.healthdisconnect.ui.ValueRange
 import com.monkopedia.healthdisconnect.ui.seriesRangeFromPoints
 import java.io.File
 import java.time.format.DateTimeFormatter
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
@@ -98,6 +99,20 @@ internal fun computeGraphShareLayout(width: Int, height: Int, seriesCount: Int):
         peakRowHeight = peakRowHeight,
         contentBottom = contentBottom
     )
+}
+
+internal fun graphShareContentHeight(
+    width: Int,
+    height: Int,
+    seriesCount: Int,
+    bottomPaddingPx: Float = 0f
+): Int {
+    val contentBottom = computeGraphShareLayout(
+        width = width,
+        height = height,
+        seriesCount = seriesCount
+    ).contentBottom
+    return ceil(contentBottom + bottomPaddingPx).toInt().coerceIn(1, height)
 }
 
 fun renderGraphBitmap(

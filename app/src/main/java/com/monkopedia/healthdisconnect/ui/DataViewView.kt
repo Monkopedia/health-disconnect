@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -94,6 +95,7 @@ import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.graphShareDataStore
 import com.monkopedia.healthdisconnect.incrementGraphShareDialogCount
+import com.monkopedia.healthdisconnect.graphShareContentHeight
 import com.monkopedia.healthdisconnect.renderGraphBitmap
 import com.monkopedia.healthdisconnect.shareGraphImage
 import com.monkopedia.healthdisconnect.toGraphSharePreferences
@@ -745,6 +747,8 @@ private fun GraphShareThemeDialog(
     onDismiss: () -> Unit,
     onContinue: () -> Unit
 ) {
+    val previewWidth = 960
+    val previewHeight = 620
     var previewBitmap by remember(title, seriesList, settings, selectedTheme) {
         mutableStateOf<Bitmap?>(null)
     }
@@ -755,18 +759,40 @@ private fun GraphShareThemeDialog(
         previewLoading = true
         previewBitmap = withContext(Dispatchers.Default) {
             runCatching {
-                renderGraphBitmap(
+                val fullBitmap = renderGraphBitmap(
                     title = title,
                     seriesList = seriesList,
                     settings = settings,
                     theme = selectedTheme,
-                    width = 960,
-                    height = 620
+                    width = previewWidth,
+                    height = previewHeight
                 )
+                val wrappedHeight = graphShareContentHeight(
+                    width = previewWidth,
+                    height = previewHeight,
+                    seriesCount = seriesList.size,
+                    bottomPaddingPx = 12f
+                )
+                if (wrappedHeight < fullBitmap.height) {
+                    val croppedBitmap = Bitmap.createBitmap(
+                        fullBitmap,
+                        0,
+                        0,
+                        fullBitmap.width,
+                        wrappedHeight
+                    )
+                    fullBitmap.recycle()
+                    croppedBitmap
+                } else {
+                    fullBitmap
+                }
             }.getOrNull()
         }
         previewLoading = false
     }
+    val previewAspectRatio = previewBitmap?.let { bitmap ->
+        bitmap.width.toFloat() / bitmap.height.toFloat()
+    } ?: (previewWidth.toFloat() / previewHeight.toFloat())
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.graph_share_theme_dialog_title)) },
@@ -802,7 +828,7 @@ private fun GraphShareThemeDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(190.dp)
+                        .aspectRatio(previewAspectRatio)
                         .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                 ) {
                     when {

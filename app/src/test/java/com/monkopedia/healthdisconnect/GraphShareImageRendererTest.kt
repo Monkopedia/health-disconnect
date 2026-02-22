@@ -1,5 +1,6 @@
 package com.monkopedia.healthdisconnect
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -24,5 +25,35 @@ class GraphShareImageRendererTest {
         assertTrue(layout.chartRight <= 1600f)
         assertTrue(layout.chartBottom <= 1000f)
         assertTrue(layout.contentBottom <= 1000f)
+    }
+
+    @Test
+    fun graphShareContentHeightWrapsToSeriesLabelBottom() {
+        val oneSeriesHeight = graphShareContentHeight(
+            width = 960,
+            height = 620,
+            seriesCount = 1
+        )
+        val threeSeriesHeight = graphShareContentHeight(
+            width = 960,
+            height = 620,
+            seriesCount = 3
+        )
+
+        assertTrue(oneSeriesHeight < 620)
+        assertTrue(threeSeriesHeight < 620)
+        assertTrue(threeSeriesHeight > oneSeriesHeight)
+    }
+
+    @Test
+    fun graphShareContentHeightClampsToBitmapHeight() {
+        val clampedHeight = graphShareContentHeight(
+            width = 960,
+            height = 620,
+            seriesCount = 3,
+            bottomPaddingPx = 500f
+        )
+
+        assertEquals(620, clampedHeight)
     }
 }
