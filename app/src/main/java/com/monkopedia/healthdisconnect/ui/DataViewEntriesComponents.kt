@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -326,7 +327,10 @@ private fun EntriesScreen(
             },
             colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                 containerColor = MaterialTheme.colorScheme.surface
-            )
+            ),
+            // MainActivity root Scaffold already applies system bar inset.
+            // Disable TopAppBar insets here to avoid double top inset on device.
+            windowInsets = WindowInsets(0, 0, 0, 0)
         )
         Spacer(Modifier.height(6.dp))
         if (data == null) {
