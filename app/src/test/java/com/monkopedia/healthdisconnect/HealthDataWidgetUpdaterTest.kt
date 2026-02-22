@@ -66,10 +66,32 @@ class HealthDataWidgetUpdaterTest {
 
         val labels = HealthDataWidgetUpdater.buildWidgetGraphLabels(series)
 
-        assertEquals("\u2191 259 lb", labels.maxLabel)
-        assertEquals("\u2193 256 lb", labels.minLabel)
+        assertEquals("259 lb", labels.maxLabel)
+        assertEquals("256 lb", labels.minLabel)
         assertTrue(labels.startDateLabel?.endsWith("16") == true)
         assertTrue(labels.endDateLabel?.endsWith("22") == true)
+    }
+
+    @Test
+    fun buildWidgetGraphLabels_singleSeriesIncludesAxisLabelsEvenWhenSummaryMinMaxDisabled() {
+        val day = LocalDate.of(2026, 2, 22)
+        val series = listOf(
+            HealthDataModel.MetricSeries(
+                label = "Weight",
+                unit = "lb",
+                points = listOf(
+                    HealthDataModel.MetricPoint(day.minusDays(6), 259.0),
+                    HealthDataModel.MetricPoint(day, 256.0)
+                ),
+                showMaxLabel = false,
+                showMinLabel = false
+            )
+        )
+
+        val labels = HealthDataWidgetUpdater.buildWidgetGraphLabels(series)
+
+        assertEquals("259 lb", labels.maxLabel)
+        assertEquals("256 lb", labels.minLabel)
     }
 
     @Test

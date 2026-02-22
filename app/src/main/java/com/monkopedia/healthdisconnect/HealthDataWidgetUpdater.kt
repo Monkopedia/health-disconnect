@@ -217,6 +217,7 @@ object HealthDataWidgetUpdater {
                 layoutProfile.titleTextSizeSp
             )
             setViewVisibility(R.id.widget_empty, View.GONE)
+            setViewVisibility(R.id.widget_graph_content_row, View.VISIBLE)
             setViewVisibility(R.id.widget_graph_container, View.VISIBLE)
             setViewVisibility(R.id.widget_graph, View.VISIBLE)
             setViewVisibility(
@@ -321,15 +322,11 @@ object HealthDataWidgetUpdater {
         val series = seriesList.singleOrNull()
         val unit = unitSuffix(series?.unit)
         return WidgetGraphLabels(
-            maxLabel = if (series?.showMaxLabel == true) {
-                "\u2191 ${formatAxisValue(series.peakValueInWindow)}$unit"
-            } else {
-                null
+            maxLabel = series?.let {
+                "${formatAxisValue(it.peakValueInWindow)}$unit"
             },
-            minLabel = if (series?.showMinLabel == true) {
-                "\u2193 ${formatAxisValue(series.minValueInWindow)}$unit"
-            } else {
-                null
+            minLabel = series?.let {
+                "${formatAxisValue(it.minValueInWindow)}$unit"
             },
             startDateLabel = firstDateLabel,
             endDateLabel = lastDateLabel
@@ -359,6 +356,7 @@ object HealthDataWidgetUpdater {
             )
             setInt(R.id.widget_summary, "setMaxLines", layoutProfile.summaryMaxLines)
             setViewVisibility(R.id.widget_empty, View.VISIBLE)
+            setViewVisibility(R.id.widget_graph_content_row, View.GONE)
             setViewVisibility(R.id.widget_graph_labels_top_row, View.GONE)
             setViewVisibility(R.id.widget_graph_container, View.GONE)
             setViewVisibility(R.id.widget_graph_labels_bottom_row, View.GONE)
