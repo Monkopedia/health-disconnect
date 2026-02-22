@@ -44,7 +44,9 @@ data class MetricChartSettings(
     val bucketSize: BucketSize = BucketSize.DAY,
     val yAxisMode: YAxisMode = YAxisMode.AUTO,
     val smoothing: SmoothingMode = SmoothingMode.OFF,
-    val unitPreference: UnitPreference = UnitPreference.AUTO
+    val unitPreference: UnitPreference = UnitPreference.AUTO,
+    val showMaxLabel: Boolean = true,
+    val showMinLabel: Boolean = false
 )
 
 @Serializable

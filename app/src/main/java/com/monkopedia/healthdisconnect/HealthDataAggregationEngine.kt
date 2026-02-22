@@ -65,7 +65,9 @@ class DefaultHealthDataAggregationEngine(
             bucketSize = view.chartSettings.bucketSize,
             yAxisMode = view.chartSettings.yAxisMode,
             smoothing = view.chartSettings.smoothing,
-            unitPreference = view.chartSettings.unitPreference
+            unitPreference = view.chartSettings.unitPreference,
+            showMaxLabel = true,
+            showMinLabel = false
         )
     }
 
@@ -117,6 +119,9 @@ class DefaultHealthDataAggregationEngine(
                     unit = measurements.firstNotNullOfOrNull { it.unitLabel },
                     points = points,
                     peakValueInWindow = measurements.maxOf { it.value },
+                    minValueInWindow = measurements.minOf { it.value },
+                    showMaxLabel = metricSettings.showMaxLabel,
+                    showMinLabel = metricSettings.showMinLabel,
                     yAxisMode = metricSettings.yAxisMode
                 )
             }
@@ -175,6 +180,10 @@ class DefaultHealthDataAggregationEngine(
                         metricState.peakValue = when (val current = metricState.peakValue) {
                             null -> measurement.value
                             else -> kotlin.math.max(current, measurement.value)
+                        }
+                        metricState.minValue = when (val current = metricState.minValue) {
+                            null -> measurement.value
+                            else -> kotlin.math.min(current, measurement.value)
                         }
                         val bucketDate = toBucketDate(
                             measurementTimestampDate(measurement.timestamp, zoneId),
@@ -261,6 +270,9 @@ class DefaultHealthDataAggregationEngine(
                 unit = state.unit,
                 points = points,
                 peakValueInWindow = state.peakValue ?: 0.0,
+                minValueInWindow = state.minValue ?: 0.0,
+                showMaxLabel = state.metricSettings.showMaxLabel,
+                showMinLabel = state.metricSettings.showMinLabel,
                 yAxisMode = state.metricSettings.yAxisMode
             )
         }
@@ -296,6 +308,7 @@ class DefaultHealthDataAggregationEngine(
         val metricSettings: MetricChartSettings,
         var unit: String? = null,
         var peakValue: Double? = null,
+        var minValue: Double? = null,
         val buckets: TreeMap<LocalDate, BucketAccumulator> = TreeMap()
     )
 }

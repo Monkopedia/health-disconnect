@@ -297,6 +297,9 @@ class HealthDataModel @JvmOverloads constructor(
         val unit: String?,
         val points: List<MetricPoint>,
         val peakValueInWindow: Double = points.maxOfOrNull { it.value } ?: 0.0,
+        val minValueInWindow: Double = points.minOfOrNull { it.value } ?: 0.0,
+        val showMaxLabel: Boolean = true,
+        val showMinLabel: Boolean = false,
         val yAxisMode: YAxisMode = YAxisMode.AUTO
     )
 

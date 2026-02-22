@@ -297,6 +297,48 @@ fun viewConfigurationSection(
                         }
                     )
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.data_view_label_show_max))
+                    Checkbox(
+                        checked = settings.showMaxLabel,
+                        modifier = Modifier.testTag("data_view_metric_show_max_checkbox_$index"),
+                        onCheckedChange = { checked ->
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        val currentSettings = it.metricSettings ?: metricDefaults()
+                                        it.copy(metricSettings = currentSettings.copy(showMaxLabel = checked))
+                                    } else it
+                                }
+                            )
+                        }
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.data_view_label_show_min))
+                    Checkbox(
+                        checked = settings.showMinLabel,
+                        modifier = Modifier.testTag("data_view_metric_show_min_checkbox_$index"),
+                        onCheckedChange = { checked ->
+                            onSelectedSelectionsChanged(
+                                selectedSelections.map {
+                                    if (it.fqn == selection.fqn) {
+                                        val currentSettings = it.metricSettings ?: metricDefaults()
+                                        it.copy(metricSettings = currentSettings.copy(showMinLabel = checked))
+                                    } else it
+                                }
+                            )
+                        }
+                    )
+                }
             }
         }
     }
@@ -335,7 +377,9 @@ internal fun ChartSettings.toMetricChartSettings(): MetricChartSettings {
         bucketSize = bucketSize,
         yAxisMode = yAxisMode,
         smoothing = smoothing,
-        unitPreference = unitPreference
+        unitPreference = unitPreference,
+        showMaxLabel = true,
+        showMinLabel = false
     )
 }
 

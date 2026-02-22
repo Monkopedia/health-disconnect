@@ -205,6 +205,49 @@ class HealthDataModelStreamingTest {
         assertEquals(listOf(1, 3), counts)
     }
 
+    @Test
+    fun `stream propagates min max label preferences and min value`() = runBlocking {
+        val model = HealthDataModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            autoRefreshMetrics = false
+        )
+        val selection = RecordSelection(
+            fqn = StepsRecord::class.qualifiedName!!,
+            metricSettings = MetricChartSettings(
+                aggregation = AggregationMode.SUM,
+                timeWindow = TimeWindow.ALL,
+                bucketSize = BucketSize.DAY,
+                yAxisMode = YAxisMode.AUTO,
+                smoothing = SmoothingMode.OFF,
+                unitPreference = UnitPreference.AUTO,
+                showMaxLabel = false,
+                showMinLabel = true
+            )
+        )
+        val view = DataView(
+            id = 5,
+            type = ViewType.CHART,
+            records = listOf(selection),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.ALL, bucketSize = BucketSize.DAY)
+        )
+
+        val day = Instant.parse("2026-02-17T10:00:00Z")
+        val emissions = model.collectAggregatedSeries(view) { _, _, _, onPage ->
+            onPage(
+                listOf(
+                    stepsRecord(100, day),
+                    stepsRecord(900, day)
+                )
+            )
+        }.toList()
+
+        val finalSeries = emissions.last().single()
+        assertEquals(900.0, finalSeries.peakValueInWindow, 0.001)
+        assertEquals(100.0, finalSeries.minValueInWindow, 0.001)
+        assertEquals(false, finalSeries.showMaxLabel)
+        assertEquals(true, finalSeries.showMinLabel)
+    }
+
     private fun stepsRecord(count: Long, time: Instant): StepsRecord {
         val record = mockk<StepsRecord>(relaxed = true)
         every { record.count } returns count

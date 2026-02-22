@@ -61,12 +61,15 @@
     <string name="data_view_label_y_axis">Y-axis</string>
     <string name="data_view_label_smoothing">Smoothing</string>
     <string name="data_view_label_units">Units</string>
+    <string name="data_view_label_show_max">Show max label</string>
+    <string name="data_view_label_show_min">Show min label</string>
     <string name="data_view_label_background">Background</string>
     <string name="data_view_save">Save</string>
     <string name="data_view_discard">Discard</string>
     <string name="data_view_cancel">Cancel</string>
     <string name="data_view_normalized">Normalized</string>
-    <string name="data_view_peak_format">%1$s peak: %2$s%3$s</string>
+    <string name="data_view_max_format">%1$s max: %2$s%3$s</string>
+    <string name="data_view_min_format">%1$s min: %2$s%3$s</string>
     <string name="data_view_entry_details_title">Entry Details</string>
     <string name="data_view_close">Close</string>
     <string name="data_view_last_refreshed">Last refreshed: %1$s</string>

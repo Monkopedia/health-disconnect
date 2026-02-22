@@ -366,16 +366,36 @@ internal fun MetricOverTimeChart(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        val summaryRows = buildList {
             seriesList.forEachIndexed { index, series ->
+                val rowColor = seriesColors[index % seriesColors.size].copy(alpha = 0.9f)
+                if (series.showMaxLabel) {
+                    add(
+                        stringResource(
+                            R.string.data_view_max_format,
+                            "\u25A0 ${series.label}",
+                            formatAxisValue(series.peakValueInWindow),
+                            series.unit?.let { " $it" } ?: ""
+                        ) to rowColor
+                    )
+                }
+                if (series.showMinLabel) {
+                    add(
+                        stringResource(
+                            R.string.data_view_min_format,
+                            "\u25A0 ${series.label}",
+                            formatAxisValue(series.minValueInWindow),
+                            series.unit?.let { " $it" } ?: ""
+                        ) to rowColor
+                    )
+                }
+            }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            summaryRows.forEach { (text, color) ->
                 Text(
-                    stringResource(
-                        R.string.data_view_peak_format,
-                        "\u25A0 ${series.label}",
-                        formatAxisValue(series.peakValueInWindow),
-                        series.unit?.let { " $it" } ?: ""
-                    ),
-                    color = seriesColors[index % seriesColors.size].copy(alpha = 0.9f),
+                    text = text,
+                    color = color,
                     style = MaterialTheme.typography.bodySmall
                 )
             }

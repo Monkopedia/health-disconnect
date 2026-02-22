@@ -8,9 +8,11 @@ import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.semantics.SemanticsActions
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.DataViewInfo
@@ -130,6 +132,44 @@ class DataViewViewEditFlowTest {
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("Year 1").assertIsDisplayed()
+    }
+
+    @Test
+    fun metricMinMaxLegendTogglesPersistOnSave() {
+        val harness = setupHarness()
+        setViewContent(
+            permissionsViewModel = harness.permissionsViewModel,
+            healthDataModel = harness.healthDataModel,
+            viewModel = harness.viewModel
+        )
+
+        openViewConfiguration()
+        composeRule.onNodeWithTag("data_view_metric_show_max_checkbox_0", useUnmergedTree = true).assertIsOn()
+        composeRule.onNodeWithTag("data_view_metric_show_min_checkbox_0", useUnmergedTree = true).assertIsOff()
+
+        composeRule.onNodeWithTag("data_view_metric_show_max_checkbox_0", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.onNodeWithTag("data_view_metric_show_min_checkbox_0", useUnmergedTree = true)
+            .performSemanticsAction(SemanticsActions.OnClick)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("data_view_metric_show_max_checkbox_0", useUnmergedTree = true).assertIsOff()
+        composeRule.onNodeWithTag("data_view_metric_show_min_checkbox_0", useUnmergedTree = true).assertIsOn()
+        composeRule.onNodeWithTag("data_view_save_button").assertIsDisplayed()
+        composeRule.onNodeWithTag("data_view_save_button").performClick()
+        composeRule.waitForIdle()
+
+        coVerify(exactly = 1) {
+            harness.viewModel.updateView(match {
+                val settings = it.records.first().metricSettings
+                settings != null &&
+                    !settings.showMaxLabel &&
+                    settings.showMinLabel
+            })
+        }
+
+        openViewConfiguration()
+        composeRule.onNodeWithTag("data_view_metric_show_max_checkbox_0", useUnmergedTree = true).assertIsOff()
+        composeRule.onNodeWithTag("data_view_metric_show_min_checkbox_0", useUnmergedTree = true).assertIsOn()
     }
 
     private fun setupHarness(
