@@ -6,13 +6,28 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.util.TypedValue
 import android.view.View
 import android.widget.RemoteViews
-import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.room.AppDatabase
-import java.util.Locale
+import kotlin.math.roundToInt
 
 object HealthDataWidgetUpdater {
+    internal data class WidgetSizeInfo(
+        val widthDp: Int,
+        val heightDp: Int,
+        val widthPx: Int,
+        val heightPx: Int
+    )
+
+    internal data class WidgetLayoutProfile(
+        val showSummary: Boolean,
+        val summaryMaxLines: Int,
+        val titleTextSizeSp: Float,
+        val summaryTextSizeSp: Float,
+        val graphHeightFraction: Float
+    )
+
     suspend fun updateAllWidgets(context: Context) {
         val manager = AppWidgetManager.getInstance(context)
         val ids = manager.getAppWidgetIds(
@@ -29,6 +44,11 @@ object HealthDataWidgetUpdater {
         appWidgetId: Int,
         manager: AppWidgetManager = AppWidgetManager.getInstance(context)
     ) {
+        val sizeInfo = resolveWidgetSizeInfo(context, manager, appWidgetId)
+        val layoutProfile = widgetLayoutProfile(sizeInfo.widthDp, sizeInfo.heightDp)
+        logWidgetFlow(
+            "HealthDataWidgetUpdater.updateWidget size appWidgetId=$appWidgetId widthDp=${sizeInfo.widthDp} heightDp=${sizeInfo.heightDp} widthPx=${sizeInfo.widthPx} heightPx=${sizeInfo.heightPx} showSummary=${layoutProfile.showSummary} maxLines=${layoutProfile.summaryMaxLines}"
+        )
         val viewId = context.widgetViewId(appWidgetId)
         if (viewId == null) {
             val hasViews = AppDatabase.getInstance(context).dataViewInfoDao().count() > 0
@@ -51,7 +71,8 @@ object HealthDataWidgetUpdater {
                         configureWidgetPendingIntent(context, appWidgetId)
                     } else {
                         openAppPendingIntent(context)
-                    }
+                    },
+                    layoutProfile = layoutProfile
                 )
             )
             return
@@ -70,7 +91,8 @@ object HealthDataWidgetUpdater {
                     context = context,
                     title = context.getString(R.string.app_name),
                     message = context.getString(R.string.widget_linked_view_missing),
-                    clickIntent = openAppPendingIntent(context)
+                    clickIntent = openAppPendingIntent(context),
+                    layoutProfile = layoutProfile
                 )
             )
             return
@@ -98,7 +120,8 @@ object HealthDataWidgetUpdater {
                     context = context,
                     title = info.name,
                     message = context.getString(R.string.widget_no_graph_data),
-                    clickIntent = deepLinkPendingIntent(context, view.id)
+                    clickIntent = deepLinkPendingIntent(context, view.id),
+                    layoutProfile = layoutProfile
                 )
             )
             return
@@ -111,14 +134,33 @@ object HealthDataWidgetUpdater {
             title = info.name,
             seriesList = seriesList,
             settings = view.chartSettings,
-            theme = GraphShareTheme.LIGHT
+            theme = GraphShareTheme.DARK,
+            width = (sizeInfo.widthPx * 2.0f).roundToInt().coerceIn(480, 3200),
+            height = (sizeInfo.heightPx * layoutProfile.graphHeightFraction * 2.0f)
+                .roundToInt()
+                .coerceIn(120, 1800)
         )
         val summaryText = buildWidgetSummaryText(context, seriesList)
         val remoteViews = RemoteViews(context.packageName, R.layout.health_graph_widget).apply {
             setTextViewText(R.id.widget_title, info.name)
+            setTextViewTextSize(
+                R.id.widget_title,
+                TypedValue.COMPLEX_UNIT_SP,
+                layoutProfile.titleTextSizeSp
+            )
             setViewVisibility(R.id.widget_empty, View.GONE)
             setViewVisibility(R.id.widget_graph, View.VISIBLE)
             setImageViewBitmap(R.id.widget_graph, graphBitmap)
+            setTextViewTextSize(
+                R.id.widget_summary,
+                TypedValue.COMPLEX_UNIT_SP,
+                layoutProfile.summaryTextSizeSp
+            )
+            setInt(R.id.widget_summary, "setMaxLines", layoutProfile.summaryMaxLines)
+            setViewVisibility(
+                R.id.widget_summary,
+                if (layoutProfile.showSummary) View.VISIBLE else View.GONE
+            )
             setTextViewText(
                 R.id.widget_summary,
                 if (summaryText.isBlank()) {
@@ -172,16 +214,90 @@ object HealthDataWidgetUpdater {
         context: Context,
         title: String,
         message: String,
-        clickIntent: PendingIntent
+        clickIntent: PendingIntent,
+        layoutProfile: WidgetLayoutProfile
     ): RemoteViews {
         return RemoteViews(context.packageName, R.layout.health_graph_widget).apply {
             setTextViewText(R.id.widget_title, title)
+            setTextViewTextSize(
+                R.id.widget_title,
+                TypedValue.COMPLEX_UNIT_SP,
+                layoutProfile.titleTextSizeSp
+            )
             setTextViewText(R.id.widget_empty, message)
             setTextViewText(R.id.widget_summary, "")
+            setTextViewTextSize(
+                R.id.widget_summary,
+                TypedValue.COMPLEX_UNIT_SP,
+                layoutProfile.summaryTextSizeSp
+            )
+            setInt(R.id.widget_summary, "setMaxLines", layoutProfile.summaryMaxLines)
             setViewVisibility(R.id.widget_empty, View.VISIBLE)
             setViewVisibility(R.id.widget_graph, View.GONE)
+            setViewVisibility(R.id.widget_summary, View.GONE)
             setOnClickPendingIntent(R.id.widget_container, clickIntent)
         }
+    }
+
+    internal fun widgetLayoutProfile(widthDp: Int, heightDp: Int): WidgetLayoutProfile {
+        val clampedWidth = widthDp.coerceAtLeast(120)
+        val clampedHeight = heightDp.coerceAtLeast(80)
+        return when {
+            clampedHeight <= 110 -> WidgetLayoutProfile(
+                showSummary = false,
+                summaryMaxLines = 0,
+                titleTextSizeSp = 14f,
+                summaryTextSizeSp = 11.5f,
+                graphHeightFraction = 0.66f
+            )
+
+            clampedHeight <= 145 -> WidgetLayoutProfile(
+                showSummary = true,
+                summaryMaxLines = 1,
+                titleTextSizeSp = if (clampedWidth >= 260) 15f else 14f,
+                summaryTextSizeSp = 12f,
+                graphHeightFraction = 0.53f
+            )
+
+            clampedHeight <= 200 -> WidgetLayoutProfile(
+                showSummary = true,
+                summaryMaxLines = 2,
+                titleTextSizeSp = if (clampedWidth >= 300) 15.5f else 15f,
+                summaryTextSizeSp = 12.5f,
+                graphHeightFraction = 0.57f
+            )
+
+            else -> WidgetLayoutProfile(
+                showSummary = true,
+                summaryMaxLines = 3,
+                titleTextSizeSp = if (clampedWidth >= 320) 16f else 15.5f,
+                summaryTextSizeSp = 13f,
+                graphHeightFraction = 0.62f
+            )
+        }
+    }
+
+    private fun resolveWidgetSizeInfo(
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetId: Int
+    ): WidgetSizeInfo {
+        val options = manager.getAppWidgetOptions(appWidgetId)
+        val widthDp = options.getInt(
+            AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH,
+            250
+        ).coerceAtLeast(120)
+        val heightDp = options.getInt(
+            AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT,
+            120
+        ).coerceAtLeast(80)
+        val density = context.resources.displayMetrics.density
+        return WidgetSizeInfo(
+            widthDp = widthDp,
+            heightDp = heightDp,
+            widthPx = (widthDp * density).roundToInt().coerceAtLeast(120),
+            heightPx = (heightDp * density).roundToInt().coerceAtLeast(80)
+        )
     }
 
     private fun deepLinkPendingIntent(context: Context, viewId: Int): PendingIntent {

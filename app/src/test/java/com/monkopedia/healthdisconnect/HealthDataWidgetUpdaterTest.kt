@@ -3,6 +3,7 @@ package com.monkopedia.healthdisconnect
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import java.time.LocalDate
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,5 +44,32 @@ class HealthDataWidgetUpdaterTest {
         assertTrue(summary.contains("Weight min"))
         assertTrue(summary.contains("Heart rate min"))
         assertFalse(summary.contains("Heart rate max"))
+    }
+
+    @Test
+    fun widgetLayoutProfile_compactHeight_hidesSummary() {
+        val profile = HealthDataWidgetUpdater.widgetLayoutProfile(widthDp = 220, heightDp = 100)
+
+        assertFalse(profile.showSummary)
+        assertEquals(0, profile.summaryMaxLines)
+        assertEquals(0.66f, profile.graphHeightFraction, 0.0001f)
+    }
+
+    @Test
+    fun widgetLayoutProfile_default4x2_usesSingleSummaryLineAndWideGraph() {
+        val profile = HealthDataWidgetUpdater.widgetLayoutProfile(widthDp = 250, heightDp = 120)
+
+        assertTrue(profile.showSummary)
+        assertEquals(1, profile.summaryMaxLines)
+        assertEquals(0.53f, profile.graphHeightFraction, 0.0001f)
+    }
+
+    @Test
+    fun widgetLayoutProfile_largeHeight_allowsMoreSummaryLines() {
+        val profile = HealthDataWidgetUpdater.widgetLayoutProfile(widthDp = 320, heightDp = 240)
+
+        assertTrue(profile.showSummary)
+        assertEquals(3, profile.summaryMaxLines)
+        assertEquals(0.62f, profile.graphHeightFraction, 0.0001f)
     }
 }

@@ -1,9 +1,16 @@
 package com.monkopedia.healthdisconnect
 
+import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
+import com.monkopedia.healthdisconnect.model.ChartSettings
+import com.monkopedia.healthdisconnect.model.ChartType
+import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class GraphShareImageRendererTest {
     @Test
     fun scaledLayoutKeepsGraphSharePreviewContentInBounds() {
@@ -55,5 +62,38 @@ class GraphShareImageRendererTest {
         )
 
         assertEquals(620, clampedHeight)
+    }
+
+    @Test
+    fun renderWidgetGraphBitmap_usesRequestedSizeAndDarkBackground() {
+        val today = LocalDate.of(2026, 2, 22)
+        val bitmap = renderWidgetGraphBitmap(
+            title = "Weight",
+            seriesList = listOf(
+                HealthDataModel.MetricSeries(
+                    label = "Weight",
+                    unit = "lb",
+                    points = listOf(
+                        HealthDataModel.MetricPoint(today.minusDays(2), 257.0),
+                        HealthDataModel.MetricPoint(today.minusDays(1), 258.0),
+                        HealthDataModel.MetricPoint(today, 259.0)
+                    ),
+                    peakValueInWindow = 259.0,
+                    minValueInWindow = 257.0
+                )
+            ),
+            settings = ChartSettings(
+                chartType = ChartType.LINE,
+                backgroundStyle = ChartBackgroundStyle.HORIZONTAL_LINES,
+                showDataPoints = false
+            ),
+            theme = GraphShareTheme.DARK,
+            width = 800,
+            height = 220
+        )
+
+        assertEquals(800, bitmap.width)
+        assertEquals(220, bitmap.height)
+        bitmap.recycle()
     }
 }

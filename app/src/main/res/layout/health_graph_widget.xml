@@ -5,7 +5,7 @@
     android:layout_height="match_parent"
     android:background="@drawable/widget_background"
     android:orientation="vertical"
-    android:padding="12dp">
+    android:padding="8dp">
 
     <TextView
         android:id="@+id/widget_title"
@@ -13,24 +13,24 @@
         android:layout_height="wrap_content"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textColor="#F2F1F6"
-        android:textSize="16sp"
+        android:textColor="#F7F3FF"
+        android:textSize="15sp"
         android:textStyle="bold" />
 
     <TextView
         android:id="@+id/widget_empty"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:textColor="#CAC4D0"
-        android:textSize="13sp"
+        android:layout_marginTop="6dp"
+        android:textColor="#DDD6EB"
+        android:textSize="12sp"
         android:visibility="gone" />
 
     <ImageView
         android:id="@+id/widget_graph"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="4dp"
         android:layout_weight="1"
         android:adjustViewBounds="true"
         android:contentDescription="@null"
@@ -40,9 +40,9 @@
         android:id="@+id/widget_summary"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:maxLines="6"
-        android:textColor="#E8DEF8"
-        android:textSize="12sp" />
+        android:layout_marginTop="4dp"
+        android:maxLines="4"
+        android:textColor="#F2ECFF"
+        android:textSize="13sp" />
 
 </LinearLayout>

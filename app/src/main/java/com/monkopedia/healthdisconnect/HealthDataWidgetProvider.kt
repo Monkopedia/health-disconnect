@@ -3,6 +3,7 @@ package com.monkopedia.healthdisconnect
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
+import android.os.Bundle
 import com.monkopedia.healthdisconnect.model.WidgetUpdateWindow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +86,31 @@ class HealthDataWidgetProvider : AppWidgetProvider() {
                 HealthDataWidgetUpdater.updateAllWidgets(context)
             } catch (exception: Exception) {
                 logWidgetFlowError("HealthDataWidgetProvider.onEnabled failed", exception)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle
+    ) {
+        super.onAppWidgetOptionsChanged(context, appWidgetManager, appWidgetId, newOptions)
+        logWidgetFlow(
+            "HealthDataWidgetProvider.onAppWidgetOptionsChanged appWidgetId=$appWidgetId minW=${newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)} minH=${newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT)} maxW=${newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH)} maxH=${newOptions.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT)}"
+        )
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                HealthDataWidgetUpdater.updateWidget(context, appWidgetId, appWidgetManager)
+            } catch (exception: Exception) {
+                logWidgetFlowError(
+                    "HealthDataWidgetProvider.onAppWidgetOptionsChanged failed appWidgetId=$appWidgetId",
+                    exception
+                )
             } finally {
                 pendingResult.finish()
             }

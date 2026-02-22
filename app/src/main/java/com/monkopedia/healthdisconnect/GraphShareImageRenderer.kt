@@ -373,34 +373,184 @@ fun renderWidgetGraphBitmap(
     width: Int = 1200,
     height: Int = 760
 ): Bitmap {
-    val fullBitmap = renderGraphBitmap(
-        title = title,
-        seriesList = seriesList,
-        settings = settings,
-        theme = theme,
-        width = width,
-        height = height
-    )
-    val layout = computeGraphShareLayout(
-        width = width,
-        height = height,
-        seriesCount = seriesList.size
-    )
-    val top = (layout.chartTop - (height * 0.04f)).toInt().coerceAtLeast(0)
-    val bottom = (layout.dividerY + (height * 0.015f)).toInt().coerceAtMost(fullBitmap.height)
-    val croppedHeight = bottom - top
-    if (croppedHeight <= 0 || croppedHeight >= fullBitmap.height) {
-        return fullBitmap
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val palette = paletteFor(theme)
+    val backgroundColor = if (theme == GraphShareTheme.DARK) 0xFF2A2832.toInt() else palette.backgroundColor
+    canvas.drawColor(backgroundColor)
+    val seriesColors = if (theme == GraphShareTheme.DARK) {
+        listOf(
+            0xFFFFA000.toInt(),
+            0xFFD0BCFF.toInt(),
+            0xFF81C784.toInt(),
+            0xFF4FC3F7.toInt(),
+            0xFFFFCC80.toInt(),
+            0xFFE57373.toInt()
+        )
+    } else {
+        palette.seriesColors
     }
-    val cropped = Bitmap.createBitmap(
-        fullBitmap,
-        0,
-        top,
-        fullBitmap.width,
-        croppedHeight
+
+    val allPoints = seriesList.flatMap { it.points }
+    if (allPoints.isEmpty()) {
+        return bitmap
+    }
+
+    val panelPaddingX = width * 0.018f
+    val panelPaddingY = height * 0.035f
+    val chartLeft = panelPaddingX
+    val chartTop = panelPaddingY
+    val chartRight = width - panelPaddingX
+    val chartBottom = height - panelPaddingY
+    val chartWidth = (chartRight - chartLeft).coerceAtLeast(1f)
+    val chartHeight = (chartBottom - chartTop).coerceAtLeast(1f)
+
+    val panelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = withAlpha(palette.gridColor, 0.14f)
+        style = Paint.Style.FILL
+    }
+    val panelStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = withAlpha(palette.axisColor, 0.22f)
+        style = Paint.Style.STROKE
+        strokeWidth = max(1f, min(width, height) * 0.003f)
+    }
+    val cornerRadius = min(width, height) * 0.045f
+    canvas.drawRoundRect(
+        chartLeft,
+        chartTop,
+        chartRight,
+        chartBottom,
+        cornerRadius,
+        cornerRadius,
+        panelPaint
     )
-    fullBitmap.recycle()
-    return cropped
+    canvas.drawRoundRect(
+        chartLeft,
+        chartTop,
+        chartRight,
+        chartBottom,
+        cornerRadius,
+        cornerRadius,
+        panelStroke
+    )
+
+    val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = withAlpha(palette.gridColor, 0.38f)
+        strokeWidth = max(1f, min(width, height) * 0.0028f)
+    }
+    val axisPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = withAlpha(palette.axisColor, 0.58f)
+        strokeWidth = max(1f, min(width, height) * 0.0032f)
+    }
+
+    if (settings.backgroundStyle == ChartBackgroundStyle.HORIZONTAL_LINES ||
+        settings.backgroundStyle == ChartBackgroundStyle.GRID
+    ) {
+        val rows = 4
+        (0..rows).forEach { row ->
+            val y = chartTop + (chartHeight * row / rows)
+            canvas.drawLine(chartLeft, y, chartRight, y, gridPaint)
+        }
+    }
+    if (settings.backgroundStyle == ChartBackgroundStyle.GRID) {
+        val allDates = allPoints.map { it.date }.distinct().sorted()
+        val cols = max(1, allDates.size - 1)
+        (0..cols).forEach { col ->
+            val x = chartLeft + (chartWidth * col / cols)
+            canvas.drawLine(x, chartTop, x, chartBottom, gridPaint)
+        }
+    }
+
+    canvas.drawLine(chartLeft, chartBottom, chartRight, chartBottom, axisPaint)
+
+    val allDates = allPoints.map { it.date }.distinct().sorted()
+    if (allDates.isEmpty()) {
+        return bitmap
+    }
+    val dateIndex = allDates.withIndex().associate { it.value to it.index }
+    val useSeparateNormalization = seriesList.size > 1
+    val globalRange = seriesRangeFromPoints(
+        allPoints,
+        seriesList.firstOrNull()?.yAxisMode ?: YAxisMode.AUTO
+    )
+    val perSeriesRanges = seriesList.map { series ->
+        seriesRangeFromPoints(series.points, series.yAxisMode)
+    }
+    fun rangeFor(index: Int): ValueRange {
+        return if (useSeparateNormalization) perSeriesRanges[index] else globalRange
+    }
+    fun normalized(value: Double, range: ValueRange): Float {
+        return ((value - range.min) / (range.max - range.min)).toFloat().coerceIn(0f, 1f)
+    }
+
+    val xStep = if (allDates.size > 1) chartWidth / (allDates.size - 1) else 0f
+    fun pointToXY(point: HealthDataModel.MetricPoint, seriesIndex: Int): Pair<Float, Float> {
+        val index = dateIndex[point.date] ?: 0
+        val x = chartLeft + (xStep * index)
+        val yNorm = normalized(point.value, rangeFor(seriesIndex))
+        val y = chartBottom - (yNorm * chartHeight)
+        return x to y
+    }
+
+    if (settings.chartType == ChartType.LINE) {
+        val pointRadius = max(1.25f, min(width, height) * 0.01f)
+        val lineStroke = max(1.5f, min(width, height) * 0.0085f)
+        seriesList.forEachIndexed { seriesIndex, series ->
+            val color = seriesColors[seriesIndex % seriesColors.size]
+            val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = color
+                strokeWidth = lineStroke
+                style = Paint.Style.STROKE
+                strokeCap = Paint.Cap.ROUND
+                strokeJoin = Paint.Join.ROUND
+            }
+            val path = Path()
+            series.points.forEachIndexed { index, point ->
+                val (x, y) = pointToXY(point, seriesIndex)
+                if (index == 0) {
+                    path.moveTo(x, y)
+                } else {
+                    path.lineTo(x, y)
+                }
+            }
+            canvas.drawPath(path, linePaint)
+            if (settings.showDataPoints || allDates.size <= 12) {
+                val pointFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    this.color = withAlpha(color, 0.95f)
+                    style = Paint.Style.FILL
+                }
+                series.points.forEach { point ->
+                    val (x, y) = pointToXY(point, seriesIndex)
+                    canvas.drawCircle(x, y, pointRadius, pointFill)
+                }
+            }
+        }
+    } else {
+        val slotWidth = chartWidth / allDates.size
+        val barGroupWidth = slotWidth * 0.82f
+        val barWidth = barGroupWidth / max(1, seriesList.size)
+        allDates.forEachIndexed { dateIndexValue, date ->
+            val groupLeft = chartLeft + (slotWidth * dateIndexValue) + ((slotWidth - barGroupWidth) / 2f)
+            seriesList.forEachIndexed { seriesIndex, series ->
+                val value = series.points.firstOrNull { it.date == date }?.value ?: return@forEachIndexed
+                val yNorm = normalized(value, rangeFor(seriesIndex))
+                val top = chartBottom - (yNorm * chartHeight)
+                val left = groupLeft + (barWidth * seriesIndex)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = seriesColors[seriesIndex % seriesColors.size]
+                    style = Paint.Style.FILL
+                }
+                canvas.drawRect(left, top, left + barWidth, chartBottom, paint)
+            }
+        }
+    }
+
+    return bitmap
+}
+
+private fun withAlpha(color: Int, alphaFraction: Float): Int {
+    val alpha = (alphaFraction.coerceIn(0f, 1f) * 255f).toInt()
+    return (color and 0x00FFFFFF) or (alpha shl 24)
 }
 
 private fun drawAxisLabels(
