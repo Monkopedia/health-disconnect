@@ -39,6 +39,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.SnackbarHost
@@ -807,7 +808,7 @@ private fun GraphShareThemeDialog(
                 val selectedIndex = tabThemes.indexOf(selectedTheme).coerceAtLeast(0)
                 TabRow(
                     selectedTabIndex = selectedIndex,
-                    containerColor = MaterialTheme.colorScheme.surface
+                    containerColor = AlertDialogDefaults.containerColor
                 ) {
                     tabThemes.forEachIndexed { index, theme ->
                         Tab(
