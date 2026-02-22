@@ -11,6 +11,7 @@ object HealthDataWidgetScheduler {
     fun cancelWidgetJob(context: Context, appWidgetId: Int) {
         val scheduler = context.jobScheduler() ?: return
         scheduler.cancel(jobIdFor(appWidgetId))
+        scheduler.cancel(oneShotJobIdFor(appWidgetId))
     }
 
     fun cancelWidgetJobs(context: Context, appWidgetIds: IntArray) {
@@ -50,6 +51,32 @@ object HealthDataWidgetScheduler {
         }
     }
 
+    fun schedulePostUpdateRefresh(
+        context: Context,
+        appWidgetIds: IntArray,
+        delayMillis: Long = 20_000L
+    ) {
+        if (appWidgetIds.isEmpty()) return
+        val scheduler = context.jobScheduler() ?: return
+        val serviceComponent = ComponentName(context, HealthDataWidgetUpdateJobService::class.java)
+        appWidgetIds.distinct().forEach { appWidgetId ->
+            val extras = PersistableBundle().apply {
+                putInt(HealthDataWidgetContract.EXTRA_WIDGET_ID, appWidgetId)
+            }
+            val jobId = oneShotJobIdFor(appWidgetId)
+            scheduler.cancel(jobId)
+            val latency = delayMillis.coerceAtLeast(0L)
+            val jobInfo = JobInfo.Builder(jobId, serviceComponent)
+                .setPersisted(false)
+                .setRequiredNetworkType(JobInfo.NETWORK_TYPE_NONE)
+                .setMinimumLatency(latency)
+                .setOverrideDeadline(latency + 45_000L)
+                .setExtras(extras)
+                .build()
+            scheduler.schedule(jobInfo)
+        }
+    }
+
     private fun scheduleWidgetJob(
         context: Context,
         appWidgetId: Int,
@@ -75,5 +102,9 @@ object HealthDataWidgetScheduler {
 
     private fun jobIdFor(appWidgetId: Int): Int {
         return HealthDataWidgetContract.JOB_ID_BASE + appWidgetId
+    }
+
+    private fun oneShotJobIdFor(appWidgetId: Int): Int {
+        return jobIdFor(appWidgetId) xor 0x40000000
     }
 }

@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -103,5 +104,44 @@ class HealthDataWidgetSchedulerTest {
         val jobId = HealthDataWidgetContract.JOB_ID_BASE + widgetId
         val exists = scheduler.allPendingJobs.any { it.id == jobId }
         assertEquals(false, exists)
+    }
+
+    @Test
+    fun schedulePostUpdateRefresh_enqueuesOneShotJobsForWidgetIds() {
+        val widgetIds = intArrayOf(41, 42, 41)
+
+        HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+            context = app,
+            appWidgetIds = widgetIds,
+            delayMillis = 12_000L
+        )
+
+        val scheduler = app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
+        val oneShotJobs = scheduler.allPendingJobs
+            .filter { !it.isPeriodic }
+            .sortedBy { it.extras.getInt(HealthDataWidgetContract.EXTRA_WIDGET_ID) }
+
+        assertEquals(2, oneShotJobs.size)
+        assertEquals(41, oneShotJobs[0].extras.getInt(HealthDataWidgetContract.EXTRA_WIDGET_ID))
+        assertEquals(42, oneShotJobs[1].extras.getInt(HealthDataWidgetContract.EXTRA_WIDGET_ID))
+        assertTrue(oneShotJobs.all { it.minLatencyMillis >= 12_000L })
+    }
+
+    @Test
+    fun cancelWidgetJob_removesScheduledOneShotRefreshJob() {
+        val widgetId = 87
+        HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+            context = app,
+            appWidgetIds = intArrayOf(widgetId),
+            delayMillis = 5_000L
+        )
+
+        HealthDataWidgetScheduler.cancelWidgetJob(app, widgetId)
+
+        val scheduler = app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
+        val oneShotExists = scheduler.allPendingJobs.any {
+            !it.isPeriodic && it.extras.getInt(HealthDataWidgetContract.EXTRA_WIDGET_ID, -1) == widgetId
+        }
+        assertEquals(false, oneShotExists)
     }
 }
