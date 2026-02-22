@@ -558,13 +558,17 @@ fun renderWidgetGraphBitmap(
         }
     }
 
-    val labelTextSize = (min(width, height) * 0.078f).coerceIn(18f, 40f)
+    val labelTextSize = (min(width, height) * 0.062f).coerceIn(14f, 30f)
+    val dateTextSize = (labelTextSize * 0.92f).coerceAtLeast(13f)
     val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = if (theme == GraphShareTheme.DARK) 0xFFE6E0E9.toInt() else 0xFF1D1B20.toInt()
         textSize = labelTextSize
     }
+    val datePaint = Paint(labelPaint).apply {
+        textSize = dateTextSize
+    }
     val labelChipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = withAlpha(backgroundColor, if (theme == GraphShareTheme.DARK) 0.78f else 0.86f)
+        color = withAlpha(backgroundColor, if (theme == GraphShareTheme.DARK) 0.72f else 0.84f)
         style = Paint.Style.FILL
     }
     val labelChipStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -573,16 +577,22 @@ fun renderWidgetGraphBitmap(
         strokeWidth = max(1f, min(width, height) * 0.0022f)
     }
     val labelChipRadius = max(4f, min(width, height) * 0.02f)
-    val labelPadX = labelTextSize * 0.3f
-    val labelPadY = labelTextSize * 0.22f
+    val labelPadX = labelTextSize * 0.24f
+    val labelPadY = labelTextSize * 0.18f
     val labelInset = max(labelPadX, min(width, height) * 0.02f)
 
-    fun drawLabelChip(text: String, anchorX: Float, baselineY: Float, alignRight: Boolean) {
-        val textWidth = labelPaint.measureText(text)
+    fun drawLabelChip(
+        text: String,
+        anchorX: Float,
+        baselineY: Float,
+        alignRight: Boolean,
+        paint: Paint
+    ) {
+        val textWidth = paint.measureText(text)
         val left = if (alignRight) anchorX - textWidth else anchorX
         val right = if (alignRight) anchorX else anchorX + textWidth
-        val top = baselineY + labelPaint.ascent()
-        val bottom = baselineY + labelPaint.descent()
+        val top = baselineY + paint.ascent()
+        val bottom = baselineY + paint.descent()
         canvas.drawRoundRect(
             left - labelPadX,
             top - labelPadY,
@@ -601,11 +611,11 @@ fun renderWidgetGraphBitmap(
             labelChipRadius,
             labelChipStroke
         )
-        canvas.drawText(text, left, baselineY, labelPaint)
+        canvas.drawText(text, left, baselineY, paint)
     }
 
     val topLabelBaseline = chartTop + labelInset + labelTextSize
-    val bottomLabelBaseline = chartBottom - labelInset
+    val bottomLabelBaseline = chartBottom - labelInset - (labelTextSize * 0.08f)
     if (allDates.size > 1) {
         val dateFormatter = if (allDates.size > 365) {
             DateTimeFormatter.ofPattern("MMM yy")
@@ -616,20 +626,22 @@ fun renderWidgetGraphBitmap(
             allDates.first().format(dateFormatter),
             chartLeft + labelInset,
             bottomLabelBaseline,
-            alignRight = false
+            alignRight = false,
+            paint = datePaint
         )
         drawLabelChip(
             allDates.last().format(dateFormatter),
             chartRight - labelInset,
             bottomLabelBaseline,
-            alignRight = true
+            alignRight = true,
+            paint = datePaint
         )
     }
     if (seriesList.size == 1) {
         val range = rangeFor(0)
         val unit = unitSuffix(seriesList.first().unit)
-        val maxLabel = "max ${formatAxisValue(range.max)}$unit"
-        val minLabel = "min ${formatAxisValue(range.min)}$unit"
+        val maxLabel = "\u2191 ${formatAxisValue(range.max)}$unit"
+        val minLabel = "\u2193 ${formatAxisValue(range.min)}$unit"
         val maxLabelWidth = labelPaint.measureText(maxLabel)
         val minLabelWidth = labelPaint.measureText(minLabel)
         val neededWidth = maxLabelWidth + minLabelWidth + (labelInset * 5f)
@@ -638,20 +650,23 @@ fun renderWidgetGraphBitmap(
                 maxLabel,
                 chartLeft + labelInset,
                 topLabelBaseline,
-                alignRight = false
+                alignRight = false,
+                paint = labelPaint
             )
             drawLabelChip(
                 minLabel,
                 chartRight - labelInset,
                 topLabelBaseline,
-                alignRight = true
+                alignRight = true,
+                paint = labelPaint
             )
         } else {
             drawLabelChip(
                 maxLabel,
                 chartLeft + labelInset,
                 topLabelBaseline,
-                alignRight = false
+                alignRight = false,
+                paint = labelPaint
             )
         }
     }
