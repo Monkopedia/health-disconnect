@@ -65,6 +65,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.Modifier
@@ -93,6 +95,7 @@ import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.WidgetPinSuccessReceiver
 import com.monkopedia.healthdisconnect.buildAggregatedEntriesCsv
 import com.monkopedia.healthdisconnect.buildRawEntriesCsv
+import com.monkopedia.healthdisconnect.chartSeriesColors
 import com.monkopedia.healthdisconnect.graphShareDataStore
 import com.monkopedia.healthdisconnect.incrementGraphShareDialogCount
 import com.monkopedia.healthdisconnect.logWidgetFlow
@@ -274,6 +277,12 @@ fun DataViewView(
         isEditing.value = false
     }
     val hasGraphShareData = metricSeriesList?.any { it.points.isNotEmpty() } == true
+    val currentColorScheme = MaterialTheme.colorScheme
+    val activeGraphTheme = if (currentColorScheme.surface.luminance() < 0.5f) {
+        GraphShareTheme.DARK
+    } else {
+        GraphShareTheme.LIGHT
+    }
     val showGraphShareDoNotShowAgain = graphSharePreferences.dialogShownCount >= 2
     val shouldSkipGraphShareWarning =
         graphSharePreferences.hideDialog && graphSharePreferences.dialogShownCount >= 3
@@ -291,12 +300,22 @@ fun DataViewView(
                     hideDialog = hideDialogAfterShare
                 )
                 val imageFile = withContext(Dispatchers.IO) {
+                    val seriesColorsOverride = if (selectedTheme == activeGraphTheme) {
+                        chartSeriesColors(
+                            theme = selectedTheme,
+                            primaryColor = currentColorScheme.primary.toArgb(),
+                            secondaryColor = currentColorScheme.secondary.toArgb()
+                        )
+                    } else {
+                        null
+                    }
                     writeGraphSharePng(
                         context = context,
                         title = info!!.name,
                         seriesList = currentSeries,
                         settings = view!!.chartSettings,
-                        theme = selectedTheme
+                        theme = selectedTheme,
+                        seriesColorsOverride = seriesColorsOverride
                     )
                 }
                 shareGraphImage(

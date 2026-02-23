@@ -27,13 +27,15 @@ fun writeGraphSharePng(
     title: String,
     seriesList: List<HealthDataModel.MetricSeries>,
     settings: ChartSettings,
-    theme: GraphShareTheme
+    theme: GraphShareTheme,
+    seriesColorsOverride: List<Int>? = null
 ): File {
     val bitmap = renderGraphBitmap(
         title = title,
         seriesList = seriesList,
         settings = settings,
-        theme = theme
+        theme = theme,
+        seriesColorsOverride = seriesColorsOverride
     )
     val exportDir = File(context.cacheDir, "exports").apply { mkdirs() }
     val safeTitle = title.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_').ifBlank { "graph" }
@@ -121,9 +123,13 @@ fun renderGraphBitmap(
     settings: ChartSettings,
     theme: GraphShareTheme,
     width: Int = 1600,
-    height: Int = 1000
+    height: Int = 1000,
+    seriesColorsOverride: List<Int>? = null
 ): Bitmap {
     val palette = paletteFor(theme)
+    val seriesColors = seriesColorsOverride
+        ?.takeIf { it.isNotEmpty() }
+        ?: palette.seriesColors
     val xScale = width / BASELINE_WIDTH
     val yScale = height / BASELINE_HEIGHT
     val scale = min(xScale, yScale)
@@ -236,7 +242,6 @@ fun renderGraphBitmap(
         return x to y
     }
 
-    val seriesColors = palette.seriesColors
     if (settings.chartType == ChartType.LINE) {
         seriesList.forEachIndexed { seriesIndex, series ->
             val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -379,18 +384,7 @@ fun renderWidgetGraphBitmap(
     val palette = paletteFor(theme)
     val backgroundColor = if (theme == GraphShareTheme.DARK) 0xFF2A2832.toInt() else palette.backgroundColor
     canvas.drawColor(backgroundColor)
-    val seriesColors = if (theme == GraphShareTheme.DARK) {
-        listOf(
-            0xFFFFA000.toInt(),
-            0xFFD0BCFF.toInt(),
-            0xFF81C784.toInt(),
-            0xFF4FC3F7.toInt(),
-            0xFFFFCC80.toInt(),
-            0xFFE57373.toInt()
-        )
-    } else {
-        palette.seriesColors
-    }
+    val seriesColors = palette.seriesColors
 
     val allPoints = seriesList.flatMap { it.points }
     if (allPoints.isEmpty()) {
@@ -719,14 +713,7 @@ private fun paletteFor(theme: GraphShareTheme): GraphSharePalette {
             dividerColor = 0x66CAC4D0,
             textPrimary = 0xFFE6E0E9.toInt(),
             textSecondary = 0xFFCAC4D0.toInt(),
-            seriesColors = listOf(
-                0xFFD0BCFF.toInt(),
-                0xFFD1B3FF.toInt(),
-                0xFFFFB74D.toInt(),
-                0xFF81C784.toInt(),
-                0xFF4FC3F7.toInt(),
-                0xFFE57373.toInt()
-            )
+            seriesColors = defaultChartSeriesColors(GraphShareTheme.DARK)
         )
     } else {
         GraphSharePalette(
@@ -736,14 +723,7 @@ private fun paletteFor(theme: GraphShareTheme): GraphSharePalette {
             dividerColor = 0x6679747E,
             textPrimary = 0xFF1D1B20.toInt(),
             textSecondary = 0xFF49454F.toInt(),
-            seriesColors = listOf(
-                0xFF6750A4.toInt(),
-                0xFF7D5260.toInt(),
-                0xFF625B71.toInt(),
-                0xFF2E7D32.toInt(),
-                0xFFC62828.toInt(),
-                0xFF1565C0.toInt()
-            )
+            seriesColors = defaultChartSeriesColors(GraphShareTheme.LIGHT)
         )
     }
 }

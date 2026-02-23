@@ -30,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -38,6 +40,7 @@ import com.monkopedia.healthdisconnect.EntriesExportMode
 import com.monkopedia.healthdisconnect.GraphShareTheme
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.chartSeriesColors
 import com.monkopedia.healthdisconnect.graphShareContentHeight
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.renderGraphBitmap
@@ -54,6 +57,21 @@ internal fun GraphShareThemeDialog(
     onDismiss: () -> Unit,
     onContinue: () -> Unit
 ) {
+    val colorScheme = MaterialTheme.colorScheme
+    val activeGraphTheme = if (colorScheme.surface.luminance() < 0.5f) {
+        GraphShareTheme.DARK
+    } else {
+        GraphShareTheme.LIGHT
+    }
+    val shareSeriesColorsOverride = if (selectedTheme == activeGraphTheme) {
+        chartSeriesColors(
+            theme = selectedTheme,
+            primaryColor = colorScheme.primary.toArgb(),
+            secondaryColor = colorScheme.secondary.toArgb()
+        )
+    } else {
+        null
+    }
     val previewWidth = 960
     val previewHeight = 620
     var previewBitmap by remember {
@@ -62,7 +80,7 @@ internal fun GraphShareThemeDialog(
     var previewLoading by remember {
         mutableStateOf(true)
     }
-    LaunchedEffect(title, seriesList, settings, selectedTheme) {
+    LaunchedEffect(title, seriesList, settings, selectedTheme, shareSeriesColorsOverride) {
         previewLoading = true
         previewBitmap = withContext(Dispatchers.Default) {
             runCatching {
@@ -72,7 +90,8 @@ internal fun GraphShareThemeDialog(
                     settings = settings,
                     theme = selectedTheme,
                     width = previewWidth,
-                    height = previewHeight
+                    height = previewHeight,
+                    seriesColorsOverride = shareSeriesColorsOverride
                 )
                 val wrappedHeight = graphShareContentHeight(
                     width = previewWidth,

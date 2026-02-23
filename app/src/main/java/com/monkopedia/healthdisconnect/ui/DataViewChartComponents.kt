@@ -27,6 +27,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
@@ -34,7 +35,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.monkopedia.healthdisconnect.HealthDataModel
+import com.monkopedia.healthdisconnect.GraphShareTheme
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.chartSeriesColors
 import com.monkopedia.healthdisconnect.formatValueWithUnit
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
@@ -150,25 +153,12 @@ internal fun MetricOverTimeChart(
     val gridColor: Color = MaterialTheme.colorScheme.outlineVariant
     val normalizedAxisColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
     val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
-    val seriesColors = if (isDarkTheme) {
-        listOf(
-            MaterialTheme.colorScheme.primary,
-            Color(0xFFD1B3FF),
-            Color(0xFFFFB74D),
-            Color(0xFF81C784),
-            Color(0xFF4FC3F7),
-            Color(0xFFE57373)
-        )
-    } else {
-        listOf(
-            MaterialTheme.colorScheme.primary,
-            Color(0xFF7E57C2),
-            MaterialTheme.colorScheme.secondary,
-            Color(0xFF2E7D32),
-            Color(0xFFC62828),
-            Color(0xFF1565C0)
-        )
-    }
+    val chartTheme = if (isDarkTheme) GraphShareTheme.DARK else GraphShareTheme.LIGHT
+    val seriesColors = chartSeriesColors(
+        theme = chartTheme,
+        primaryColor = MaterialTheme.colorScheme.primary.toArgb(),
+        secondaryColor = MaterialTheme.colorScheme.secondary.toArgb()
+    ).map { Color(it) }
     val spansMultipleYears = allDates.map { it.year }.distinct().size > 1
     val labelFormatter = if (spansMultipleYears) {
         DateTimeFormatter.ofPattern("MMM d, yyyy")
