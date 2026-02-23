@@ -163,7 +163,7 @@ internal fun MetricOverTimeChart(
     } else {
         listOf(
             MaterialTheme.colorScheme.primary,
-            MaterialTheme.colorScheme.tertiary,
+            Color(0xFF7E57C2),
             MaterialTheme.colorScheme.secondary,
             Color(0xFF2E7D32),
             Color(0xFFC62828),
