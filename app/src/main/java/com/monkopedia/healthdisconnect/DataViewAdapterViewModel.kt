@@ -168,11 +168,13 @@ class DataViewAdapterViewModel(
 
     suspend fun updateView(view: DataView) {
         dataViewDao.insert(encodeDataViewEntity(view, json))
+        triggerWidgetRefreshForView(view.id)
     }
 
     suspend fun renameView(id: Int, name: String) {
         if (name.isBlank()) return
         dataViewInfoDao.updateName(id, name.trim())
+        triggerWidgetRefreshForView(id)
     }
 
     suspend fun deleteView(id: Int) {
@@ -187,6 +189,20 @@ class DataViewAdapterViewModel(
         dataViewDao.dataView(id).map { entity ->
             decodeDataViewEntity(entity, json)
         }
+
+    private suspend fun triggerWidgetRefreshForView(viewId: Int) {
+        val widgetIds = context.widgetIdsForView(viewId)
+        if (widgetIds.isEmpty()) return
+        HealthDataWidgetScheduler.scheduleForView(context, viewId)
+        HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+            context = context,
+            appWidgetIds = widgetIds.toIntArray(),
+            delayMillis = 0L
+        )
+        logWidgetFlow(
+            "DataViewAdapterViewModel.triggerWidgetRefreshForView viewId=$viewId widgets=${widgetIds.joinToString(",")}"
+        )
+    }
 
     // Keep DataStore accessors for migration only
     companion object {

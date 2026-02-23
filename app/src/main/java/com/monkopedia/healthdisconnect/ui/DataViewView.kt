@@ -88,7 +88,6 @@ import com.monkopedia.healthdisconnect.GraphSharePreferences
 import com.monkopedia.healthdisconnect.GraphShareTheme
 import com.monkopedia.healthdisconnect.HealthDataWidgetContract
 import com.monkopedia.healthdisconnect.HealthDataWidgetProvider
-import com.monkopedia.healthdisconnect.HealthDataWidgetScheduler
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.WidgetPinSuccessReceiver
@@ -269,13 +268,8 @@ fun DataViewView(
             records = normalizedSelections(selectedSelections, chartSettings),
             chartSettings = chartSettings
         )
-        val shouldRescheduleWidgets = hasWidgetForCurrentView &&
-            view!!.chartSettings.widgetUpdateWindow != chartSettings.widgetUpdateWindow
         actionScope.launch {
             viewModel.updateView(newView)
-            if (shouldRescheduleWidgets) {
-                HealthDataWidgetScheduler.scheduleForView(context, newView.id)
-            }
         }
         isEditing.value = false
     }

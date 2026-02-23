@@ -1,6 +1,8 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import android.app.job.JobScheduler
+import android.content.Context
 import android.os.Looper
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.WeightRecord
@@ -72,7 +74,10 @@ class DataViewAdapterViewModelTest {
             app.dataViewInfoDataStore.updateData { DataViewInfoList(emptyMap(), emptyList()) }
             app.dataViewDataStore.updateData { DataViewList(emptyMap()) }
             app.migrationStateDataStore.edit { it.clear() }
+            app.unbindWidgets(app.widgetBindingsSnapshot().keys.toIntArray())
         }
+        val scheduler = app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
+        scheduler.allPendingJobs.forEach { scheduler.cancel(it.id) }
     }
 
     @After
@@ -81,8 +86,11 @@ class DataViewAdapterViewModelTest {
             app.dataViewInfoDataStore.updateData { DataViewInfoList(emptyMap(), emptyList()) }
             app.dataViewDataStore.updateData { DataViewList(emptyMap()) }
             app.migrationStateDataStore.edit { it.clear() }
+            app.unbindWidgets(app.widgetBindingsSnapshot().keys.toIntArray())
             appDb.clearAllTables()
         }
+        val scheduler = app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
+        scheduler.allPendingJobs.forEach { scheduler.cancel(it.id) }
         instanceField.set(null, originalDatabase)
         appDb.close()
     }
@@ -197,6 +205,37 @@ class DataViewAdapterViewModelTest {
         assertEquals(1, updated.records.size)
         assertEquals(DistanceRecord::class.qualifiedName, updated.records.single().fqn)
         assertEquals(TimeWindow.YEAR_1, updated.chartSettings.timeWindow)
+    }
+
+    @Test
+    fun `updateView schedules widget update jobs for bound widgets`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+        viewModel.createView(WeightRecord::class)
+        awaitViews(viewModel) { it.dataViews.size == 1 }
+
+        val widgetId = 73
+        app.bindWidgetToView(widgetId, 1)
+
+        viewModel.updateView(appDataView(distanceRecordSelection()))
+
+        val scheduler = app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
+        val periodicJobId = HealthDataWidgetContract.JOB_ID_BASE + widgetId
+        val oneShotJobId = periodicJobId xor 0x40000000
+
+        assertTrue(
+            scheduler.allPendingJobs.any { job ->
+                job.id == periodicJobId &&
+                    job.isPeriodic &&
+                    job.extras.getInt(HealthDataWidgetContract.EXTRA_WIDGET_ID) == widgetId
+            }
+        )
+        assertTrue(
+            scheduler.allPendingJobs.any { job ->
+                job.id == oneShotJobId &&
+                    !job.isPeriodic &&
+                    job.extras.getInt(HealthDataWidgetContract.EXTRA_WIDGET_ID) == widgetId
+            }
+        )
     }
 
     @Test
