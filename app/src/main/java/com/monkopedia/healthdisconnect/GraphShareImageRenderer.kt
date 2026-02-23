@@ -514,19 +514,6 @@ fun renderWidgetGraphBitmap(
                     path.lineTo(x, y)
                 }
             }
-            if (seriesIndex == 0 && series.points.size >= 2) {
-                val fillPath = Path(path)
-                val first = pointToXY(series.points.first(), seriesIndex)
-                val last = pointToXY(series.points.last(), seriesIndex)
-                fillPath.lineTo(last.first, chartBottom)
-                fillPath.lineTo(first.first, chartBottom)
-                fillPath.close()
-                val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    this.color = withAlpha(color, 0.14f)
-                    style = Paint.Style.FILL
-                }
-                canvas.drawPath(fillPath, fillPaint)
-            }
             canvas.drawPath(path, linePaint)
             if (settings.showDataPoints) {
                 val pointFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
