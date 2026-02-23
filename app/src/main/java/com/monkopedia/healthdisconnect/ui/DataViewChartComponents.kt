@@ -1,7 +1,6 @@
 package com.monkopedia.healthdisconnect.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
@@ -150,7 +150,7 @@ internal fun MetricOverTimeChart(
     val axisColor: Color = MaterialTheme.colorScheme.outline
     val gridColor: Color = MaterialTheme.colorScheme.outlineVariant
     val normalizedAxisColor: Color = MaterialTheme.colorScheme.onSurfaceVariant
-    val isDarkTheme = isSystemInDarkTheme()
+    val isDarkTheme = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val seriesColors = if (isDarkTheme) {
         listOf(
             MaterialTheme.colorScheme.primary,
