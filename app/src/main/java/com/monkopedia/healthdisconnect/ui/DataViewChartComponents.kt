@@ -35,12 +35,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.R
-import com.monkopedia.healthdisconnect.formatAxisValue
+import com.monkopedia.healthdisconnect.formatValueWithUnit
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.YAxisMode
-import com.monkopedia.healthdisconnect.unitSuffix
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
@@ -370,22 +369,30 @@ internal fun MetricOverTimeChart(
             seriesList.forEachIndexed { index, series ->
                 val rowColor = seriesColors[index % seriesColors.size].copy(alpha = 0.9f)
                 if (series.showMaxLabel) {
+                    val formattedMax = formatValueWithUnit(
+                        value = series.peakValueInWindow,
+                        unit = series.unit
+                    )
                     add(
                         stringResource(
                             R.string.data_view_max_format,
                             "\u25A0 ${series.label}",
-                            formatAxisValue(series.peakValueInWindow),
-                            series.unit?.let { " $it" } ?: ""
+                            formattedMax,
+                            ""
                         ) to rowColor
                     )
                 }
                 if (series.showMinLabel) {
+                    val formattedMin = formatValueWithUnit(
+                        value = series.minValueInWindow,
+                        unit = series.unit
+                    )
                     add(
                         stringResource(
                             R.string.data_view_min_format,
                             "\u25A0 ${series.label}",
-                            formatAxisValue(series.minValueInWindow),
-                            series.unit?.let { " $it" } ?: ""
+                            formattedMin,
+                            ""
                         ) to rowColor
                     )
                 }
@@ -449,7 +456,7 @@ internal fun AxisLabels(
         horizontalAlignment = if (alignEnd) Alignment.End else Alignment.Start
     ) {
         Text(
-            "${formatAxisValue(range.max)}${unitSuffix(unit)}",
+            formatValueWithUnit(range.max, unit),
             color = color,
             textAlign = textAlign,
             modifier = Modifier.fillMaxWidth(),
@@ -463,7 +470,7 @@ internal fun AxisLabels(
             style = MaterialTheme.typography.labelSmall
         )
         Text(
-            "${formatAxisValue(range.min)}${unitSuffix(unit)}",
+            formatValueWithUnit(range.min, unit),
             color = color,
             textAlign = textAlign,
             modifier = Modifier.fillMaxWidth(),

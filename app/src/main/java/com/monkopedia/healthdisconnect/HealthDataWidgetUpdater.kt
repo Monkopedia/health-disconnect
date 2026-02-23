@@ -392,22 +392,30 @@ object HealthDataWidgetUpdater {
         return buildList {
             seriesList.forEach { series ->
                 if (series.showMaxLabel) {
+                    val formattedMax = formatValueWithUnit(
+                        value = series.peakValueInWindow,
+                        unit = series.unit
+                    )
                     add(
                         context.getString(
                             R.string.widget_max_format,
                             series.label,
-                            formatAxisValue(series.peakValueInWindow),
-                            series.unit?.let { " $it" } ?: ""
+                            formattedMax,
+                            ""
                         )
                     )
                 }
                 if (series.showMinLabel) {
+                    val formattedMin = formatValueWithUnit(
+                        value = series.minValueInWindow,
+                        unit = series.unit
+                    )
                     add(
                         context.getString(
                             R.string.widget_min_format,
                             series.label,
-                            formatAxisValue(series.minValueInWindow),
-                            series.unit?.let { " $it" } ?: ""
+                            formattedMin,
+                            ""
                         )
                     )
                 }
@@ -431,13 +439,12 @@ object HealthDataWidgetUpdater {
         val firstDateLabel = allDates.firstOrNull()?.format(dateFormatter)
         val lastDateLabel = allDates.lastOrNull()?.format(dateFormatter)
         val series = seriesList.singleOrNull()
-        val unit = unitSuffix(series?.unit)
         return WidgetGraphLabels(
             maxLabel = series?.let {
-                "${formatAxisValue(it.peakValueInWindow)}$unit"
+                formatValueWithUnit(it.peakValueInWindow, it.unit)
             },
             minLabel = series?.let {
-                "${formatAxisValue(it.minValueInWindow)}$unit"
+                formatValueWithUnit(it.minValueInWindow, it.unit)
             },
             startDateLabel = firstDateLabel,
             endDateLabel = lastDateLabel

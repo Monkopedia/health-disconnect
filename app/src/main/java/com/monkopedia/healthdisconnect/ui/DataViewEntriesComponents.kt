@@ -66,12 +66,11 @@ import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.buildAggregatedEntriesCsv
 import com.monkopedia.healthdisconnect.buildRawEntriesCsv
-import com.monkopedia.healthdisconnect.formatAxisValue
+import com.monkopedia.healthdisconnect.formatValueWithUnit
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.recordPrimaryValueLabel
 import com.monkopedia.healthdisconnect.recordTimestampLabel
 import com.monkopedia.healthdisconnect.shareEntriesCsv
-import com.monkopedia.healthdisconnect.unitSuffix
 import com.monkopedia.healthdisconnect.writeEntriesCsvToCache
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.UnitPreference
@@ -451,7 +450,7 @@ private fun formatRecordValuePreview(
     val unitPreference = unitPreferenceForRecord(view, record)
     val measurement = measurementExtractor.extractMeasurement(record, unitPreference)
     return if (measurement != null) {
-        "${formatAxisValue(measurement.value)}${unitSuffix(measurement.unitLabel)}"
+        formatValueWithUnit(measurement.value, measurement.unitLabel)
     } else {
         recordPrimaryValueLabel(record)
     }

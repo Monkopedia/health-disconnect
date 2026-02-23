@@ -357,7 +357,7 @@ fun renderGraphBitmap(
             color = seriesColors[index % seriesColors.size]
             textSize = ss(28f)
         }
-        val text = "\u25A0 ${series.label} peak: ${formatAxisValue(series.peakValueInWindow)}${unitSuffix(series.unit)}"
+        val text = "\u25A0 ${series.label} peak: ${formatValueWithUnit(series.peakValueInWindow, series.unit)}"
         canvas.drawText(text, chartLeft, peakY, peakPaint)
         peakY += layout.peakRowHeight
     }
@@ -641,9 +641,8 @@ fun renderWidgetGraphBitmap(
         }
         if (seriesList.size == 1) {
             val range = rangeFor(0)
-            val unit = unitSuffix(seriesList.first().unit)
-            val maxLabel = "\u2191 ${formatAxisValue(range.max)}$unit"
-            val minLabel = "\u2193 ${formatAxisValue(range.min)}$unit"
+            val maxLabel = "\u2191 ${formatValueWithUnit(range.max, seriesList.first().unit)}"
+            val minLabel = "\u2193 ${formatValueWithUnit(range.min, seriesList.first().unit)}"
             val maxLabelWidth = labelPaint.measureText(maxLabel)
             val minLabelWidth = labelPaint.measureText(minLabel)
             val neededWidth = maxLabelWidth + minLabelWidth + (labelInset * 5f)
@@ -695,8 +694,8 @@ private fun drawAxisLabels(
     color: Int
 ) {
     val axisPaint = Paint(paint).apply { this.color = color }
-    val maxText = "${formatAxisValue(range.max)}${unitSuffix(unit)}"
-    val minText = "${formatAxisValue(range.min)}${unitSuffix(unit)}"
+    val maxText = formatValueWithUnit(range.max, unit)
+    val minText = formatValueWithUnit(range.min, unit)
     drawAxisText(canvas, maxText, x, yTop, alignRight, axisPaint)
     drawAxisText(canvas, label, x, (yTop + yBottom) / 2f, alignRight, axisPaint)
     drawAxisText(canvas, minText, x, yBottom, alignRight, axisPaint)

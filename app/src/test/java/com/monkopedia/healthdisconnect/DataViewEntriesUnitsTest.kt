@@ -80,7 +80,7 @@ class DataViewEntriesUnitsTest {
         }
 
         composeRule.onNodeWithTag("entries_item_row_0").assertIsDisplayed()
-        composeRule.onNodeWithText("pounds", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("lbs", substring = true).assertIsDisplayed()
     }
 
     private fun fakeWeightRecord(kilograms: Double): WeightRecord {

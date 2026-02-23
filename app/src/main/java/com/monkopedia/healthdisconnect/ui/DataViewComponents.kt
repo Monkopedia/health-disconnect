@@ -100,11 +100,9 @@ import com.monkopedia.healthdisconnect.model.YAxisMode
 import com.monkopedia.healthdisconnect.model.isConfigValid
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
-import com.monkopedia.healthdisconnect.formatAxisValue
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.recordPrimaryValueLabel
 import com.monkopedia.healthdisconnect.recordTimestampLabel
-import com.monkopedia.healthdisconnect.unitSuffix
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 

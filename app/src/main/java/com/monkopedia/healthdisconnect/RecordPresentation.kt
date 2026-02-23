@@ -1,24 +1,33 @@
 package com.monkopedia.healthdisconnect
 
 import androidx.health.connect.client.records.Record
-import java.time.format.DateTimeFormatter
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.abs
+import kotlin.math.floor
+import kotlin.math.log10
 import kotlin.math.roundToInt
 
 data class ParsedMeasurementText(val value: Double, val unit: String?)
 
 fun formatAxisValue(value: Double): String {
-    return if (abs(value) < 10) {
-        String.format("%.1f", value)
-    } else {
-        value.roundToInt().toString()
-    }
+    if (!value.isFinite()) return value.toString()
+    if (value == 0.0) return "0"
+    val rounded = roundToSignificantFigures(value, significantFigures = 3)
+    val normalized = if (rounded == -0.0) 0.0 else rounded
+    return BigDecimal.valueOf(normalized).stripTrailingZeros().toPlainString()
 }
 
-fun unitSuffix(unit: String?): String {
-    return if (unit.isNullOrBlank()) "" else " $unit"
+fun formatValueWithUnit(value: Double, unit: String?): String {
+    val normalizedUnit = unit?.trim().takeUnless { it.isNullOrBlank() } ?: return formatAxisValue(value)
+    if (isMinuteUnit(normalizedUnit)) {
+        return formatMinutesWithUnit(value)
+    }
+    val abbreviatedUnit = abbreviateUnit(normalizedUnit)
+    return "${formatAxisValue(value)} $abbreviatedUnit"
 }
 
 fun recordDetailsText(record: Record): String {
@@ -99,7 +108,7 @@ fun recordPrimaryValueLabel(record: Record): String? {
                         .replace(Regex("([a-z])([A-Z])"), "$1 $2")
                     if (value != null) {
                         candidates += Candidate(
-                            valueText = "${formatAxisValue(value)} $unit",
+                            valueText = formatValueWithUnit(value, unit),
                             score = baseScore + 20
                         )
                     }
@@ -109,7 +118,7 @@ fun recordPrimaryValueLabel(record: Record): String? {
                             valueText = if (measurement.unit.isNullOrBlank()) {
                                 formatAxisValue(measurement.value)
                             } else {
-                                "${formatAxisValue(measurement.value)} ${measurement.unit}"
+                                formatValueWithUnit(measurement.value, measurement.unit)
                             },
                             score = baseScore + 5
                         )
@@ -126,4 +135,71 @@ fun parseMeasurementFromText(text: String): ParsedMeasurementText? {
     val value = match.groupValues[1].toDoubleOrNull() ?: return null
     val unit = match.groupValues.getOrNull(2)?.trim().orEmpty().ifBlank { null }
     return ParsedMeasurementText(value, unit)
+}
+
+private fun roundToSignificantFigures(value: Double, significantFigures: Int): Double {
+    if (value == 0.0) return 0.0
+    val exponent = floor(log10(abs(value))).toInt()
+    val scale = significantFigures - exponent - 1
+    return BigDecimal.valueOf(value).setScale(scale, RoundingMode.HALF_UP).toDouble()
+}
+
+private fun isMinuteUnit(unit: String): Boolean {
+    return when (canonicalUnit(unit)) {
+        "minute",
+        "minutes",
+        "min",
+        "mins" -> true
+        else -> false
+    }
+}
+
+private fun formatMinutesWithUnit(value: Double): String {
+    val roundedMinutes = value.roundToInt()
+    val sign = if (roundedMinutes < 0) "-" else ""
+    val absMinutes = kotlin.math.abs(roundedMinutes)
+    if (absMinutes < 60) {
+        return "$sign${absMinutes} mins"
+    }
+    val hours = absMinutes / 60
+    val minutes = absMinutes % 60
+    val hourLabel = if (hours == 1) "hr" else "hrs"
+    return "$sign$hours $hourLabel $minutes mins"
+}
+
+private fun abbreviateUnit(unit: String): String {
+    return when (canonicalUnit(unit)) {
+        "pounds" -> "lbs"
+        "pound", "lb", "lbs" -> "lb"
+        "ounces", "ounce", "oz" -> "oz"
+        "kilograms", "kilogram", "kg" -> "kg"
+        "grams", "gram", "g" -> "g"
+        "milligrams", "milligram", "mg" -> "mg"
+        "micrograms", "microgram", "mcg" -> "mcg"
+        "miles", "mile", "mi" -> "mi"
+        "kilometers", "kilometer", "km" -> "km"
+        "meters", "meter", "m" -> "m"
+        "meterspersecond", "meterssec", "mps", "ms" -> "m/s"
+        "kilometersperhour", "kmh" -> "km/h"
+        "milesperhour", "milesh", "mph" -> "mph"
+        "liters", "liter", "litres", "litre", "l" -> "L"
+        "milliliters", "milliliter", "millilitres", "millilitre", "ml" -> "mL"
+        "kilocalories", "kilocalorie", "kcal" -> "kcal"
+        "calories", "calorie", "cal" -> "cal"
+        "kilojoules", "kilojoule", "kj" -> "kJ"
+        "joules", "joule", "j" -> "J"
+        "millimetersofmercury", "millimetersmercury", "mmhg" -> "mmHg"
+        "millimolesperliter", "mmoll" -> "mmol/L"
+        "milligramsperdeciliter", "mgdl" -> "mg/dL"
+        "beatsperminute", "bpm" -> "bpm"
+        "revolutionsperminute", "rpm" -> "rpm"
+        "count", "counts" -> "ct"
+        "percent", "percentage", "pct", "%" -> "%"
+        "minutes", "minute", "min", "mins" -> "mins"
+        else -> unit
+    }
+}
+
+private fun canonicalUnit(unit: String): String {
+    return unit.trim().lowercase().replace(Regex("[^a-z0-9%]+"), "")
 }
