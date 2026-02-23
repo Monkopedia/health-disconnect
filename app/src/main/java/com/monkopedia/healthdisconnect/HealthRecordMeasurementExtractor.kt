@@ -2,17 +2,21 @@ package com.monkopedia.healthdisconnect
 
 import android.util.Log
 import androidx.health.connect.client.records.BloodGlucoseRecord
+import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.units.Energy
+import androidx.health.connect.client.units.Mass
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import kotlin.reflect.KClass
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.reflect.KClass
 
 data class MetricMeasurement(
     val timestamp: Instant,
@@ -61,6 +65,17 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
             record = record,
             timestamp = timestamp,
             metricKey = metricKey
+        )?.let { return it }
+        extractBloodPressureMetric(
+            record = record,
+            timestamp = timestamp,
+            metricKey = metricKey
+        )?.let { return it }
+        extractNutritionMetric(
+            record = record,
+            timestamp = timestamp,
+            metricKey = metricKey,
+            unitPreference = unitPreference
         )?.let { return it }
         staticExtractors[record::class]?.let { extractor ->
             return extractor(record, unitPreference, timestamp)
@@ -183,19 +198,64 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
     }
 
     override fun availableMetrics(recordClass: KClass<out Record>): List<ExtractableMetric> {
-        return if (recordClass == SleepSessionRecord::class) {
-            listOf(
-                ExtractableMetric(
-                    key = null,
-                    label = "Sleep Duration"
-                ),
-                ExtractableMetric(
-                    key = SLEEP_STAGE_METRIC_KEY,
-                    label = "Sleep Stage"
+        return when (recordClass) {
+            SleepSessionRecord::class -> {
+                listOf(
+                    ExtractableMetric(
+                        key = null,
+                        label = "Sleep Duration"
+                    ),
+                    ExtractableMetric(
+                        key = SLEEP_STAGE_METRIC_KEY,
+                        label = "Sleep Stage"
+                    )
                 )
-            )
-        } else {
-            listOf(ExtractableMetric())
+            }
+            BloodPressureRecord::class -> {
+                listOf(
+                    ExtractableMetric(
+                        key = null,
+                        label = "Blood Pressure Systolic"
+                    ),
+                    ExtractableMetric(
+                        key = BLOOD_PRESSURE_DIASTOLIC_METRIC_KEY,
+                        label = "Blood Pressure Diastolic"
+                    )
+                )
+            }
+            NutritionRecord::class -> {
+                listOf(
+                    ExtractableMetric(
+                        key = null,
+                        label = "Nutrition Energy"
+                    ),
+                    ExtractableMetric(
+                        key = NUTRITION_ENERGY_FROM_FAT_METRIC_KEY,
+                        label = "Nutrition Energy From Fat"
+                    ),
+                    ExtractableMetric(
+                        key = NUTRITION_PROTEIN_METRIC_KEY,
+                        label = "Nutrition Protein"
+                    ),
+                    ExtractableMetric(
+                        key = NUTRITION_TOTAL_CARBOHYDRATE_METRIC_KEY,
+                        label = "Nutrition Total Carbohydrate"
+                    ),
+                    ExtractableMetric(
+                        key = NUTRITION_TOTAL_FAT_METRIC_KEY,
+                        label = "Nutrition Total Fat"
+                    ),
+                    ExtractableMetric(
+                        key = NUTRITION_SUGAR_METRIC_KEY,
+                        label = "Nutrition Sugar"
+                    ),
+                    ExtractableMetric(
+                        key = NUTRITION_DIETARY_FIBER_METRIC_KEY,
+                        label = "Nutrition Dietary Fiber"
+                    )
+                )
+            }
+            else -> listOf(ExtractableMetric())
         }
     }
 
@@ -271,6 +331,119 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
             value = value,
             unitLabel = "stage",
             sourceField = "Stages.Stage"
+        )
+    }
+
+    private fun extractBloodPressureMetric(
+        record: Record,
+        timestamp: Instant,
+        metricKey: String?
+    ): MetricMeasurement? {
+        val bloodPressureRecord = record as? BloodPressureRecord ?: return null
+        return when (metricKey) {
+            null -> MetricMeasurement(
+                timestamp = timestamp,
+                value = bloodPressureRecord.systolic.inMillimetersOfMercury,
+                unitLabel = "mmHg",
+                sourceField = "Systolic"
+            )
+            BLOOD_PRESSURE_DIASTOLIC_METRIC_KEY -> MetricMeasurement(
+                timestamp = timestamp,
+                value = bloodPressureRecord.diastolic.inMillimetersOfMercury,
+                unitLabel = "mmHg",
+                sourceField = "Diastolic"
+            )
+            else -> null
+        }
+    }
+
+    private fun extractNutritionMetric(
+        record: Record,
+        timestamp: Instant,
+        metricKey: String?,
+        unitPreference: UnitPreference
+    ): MetricMeasurement? {
+        val nutritionRecord = record as? NutritionRecord ?: return null
+        return when (metricKey) {
+            null -> nutritionEnergyMeasurement(
+                timestamp = timestamp,
+                energy = nutritionRecord.energy,
+                sourceField = "Energy",
+                unitPreference = unitPreference
+            )
+            NUTRITION_ENERGY_FROM_FAT_METRIC_KEY -> nutritionEnergyMeasurement(
+                timestamp = timestamp,
+                energy = nutritionRecord.energyFromFat,
+                sourceField = "EnergyFromFat",
+                unitPreference = unitPreference
+            )
+            NUTRITION_PROTEIN_METRIC_KEY -> nutritionMassMeasurement(
+                timestamp = timestamp,
+                mass = nutritionRecord.protein,
+                sourceField = "Protein",
+                unitPreference = unitPreference
+            )
+            NUTRITION_TOTAL_CARBOHYDRATE_METRIC_KEY -> nutritionMassMeasurement(
+                timestamp = timestamp,
+                mass = nutritionRecord.totalCarbohydrate,
+                sourceField = "TotalCarbohydrate",
+                unitPreference = unitPreference
+            )
+            NUTRITION_TOTAL_FAT_METRIC_KEY -> nutritionMassMeasurement(
+                timestamp = timestamp,
+                mass = nutritionRecord.totalFat,
+                sourceField = "TotalFat",
+                unitPreference = unitPreference
+            )
+            NUTRITION_SUGAR_METRIC_KEY -> nutritionMassMeasurement(
+                timestamp = timestamp,
+                mass = nutritionRecord.sugar,
+                sourceField = "Sugar",
+                unitPreference = unitPreference
+            )
+            NUTRITION_DIETARY_FIBER_METRIC_KEY -> nutritionMassMeasurement(
+                timestamp = timestamp,
+                mass = nutritionRecord.dietaryFiber,
+                sourceField = "DietaryFiber",
+                unitPreference = unitPreference
+            )
+            else -> null
+        }
+    }
+
+    private fun nutritionEnergyMeasurement(
+        timestamp: Instant,
+        energy: Energy?,
+        sourceField: String,
+        unitPreference: UnitPreference
+    ): MetricMeasurement? {
+        val value = energy ?: return null
+        val useImperial = when (unitPreference) {
+            UnitPreference.IMPERIAL -> true
+            UnitPreference.METRIC -> false
+            UnitPreference.AUTO -> true
+        }
+        return MetricMeasurement(
+            timestamp = timestamp,
+            value = if (useImperial) value.inKilocalories else value.inKilojoules,
+            unitLabel = if (useImperial) "kilocalories" else "kilojoules",
+            sourceField = sourceField
+        )
+    }
+
+    private fun nutritionMassMeasurement(
+        timestamp: Instant,
+        mass: Mass?,
+        sourceField: String,
+        unitPreference: UnitPreference
+    ): MetricMeasurement? {
+        val value = mass ?: return null
+        val useImperial = unitPreference == UnitPreference.IMPERIAL
+        return MetricMeasurement(
+            timestamp = timestamp,
+            value = if (useImperial) value.inOunces else value.inGrams,
+            unitLabel = if (useImperial) "ounces" else "grams",
+            sourceField = sourceField
         )
     }
 
@@ -545,6 +718,13 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
 
     companion object {
         const val SLEEP_STAGE_METRIC_KEY = "sleep_stage"
+        const val BLOOD_PRESSURE_DIASTOLIC_METRIC_KEY = "blood_pressure_diastolic"
+        const val NUTRITION_ENERGY_FROM_FAT_METRIC_KEY = "nutrition_energy_from_fat"
+        const val NUTRITION_PROTEIN_METRIC_KEY = "nutrition_protein"
+        const val NUTRITION_TOTAL_CARBOHYDRATE_METRIC_KEY = "nutrition_total_carbohydrate"
+        const val NUTRITION_TOTAL_FAT_METRIC_KEY = "nutrition_total_fat"
+        const val NUTRITION_SUGAR_METRIC_KEY = "nutrition_sugar"
+        const val NUTRITION_DIETARY_FIBER_METRIC_KEY = "nutrition_dietary_fiber"
         private const val EXTRACTION_LOG_TAG = "HealthDisconnectExtract"
     }
 }

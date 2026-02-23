@@ -1,9 +1,14 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import androidx.health.connect.client.records.BloodPressureRecord
+import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.units.Energy
+import androidx.health.connect.client.units.Mass
+import androidx.health.connect.client.units.Pressure
 import androidx.test.core.app.ApplicationProvider
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataView
@@ -151,6 +156,105 @@ class HealthDataModelReflectiveExtractionTest {
         assertEquals("Sleep Stage", seriesList[1].label)
         assertEquals(5.0, seriesList[1].points.single().value, 0.001)
         assertEquals("stage", seriesList[1].unit)
+    }
+
+    @Test
+    fun `aggregation supports blood pressure metric variants`() {
+        val model = model()
+        val time = Instant.parse("2026-02-15T08:00:00Z")
+        val bloodPressureRecord = BloodPressureRecord(
+            time = time,
+            zoneOffset = ZoneOffset.UTC,
+            metadata = Metadata.manualEntry(),
+            systolic = Pressure.millimetersOfMercury(121.0),
+            diastolic = Pressure.millimetersOfMercury(79.0)
+        )
+        val bloodPressureFqn = requireNotNull(BloodPressureRecord::class.qualifiedName)
+        val view = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(
+                RecordSelection(
+                    fqn = bloodPressureFqn,
+                    metricSettings = MetricChartSettings(
+                        timeWindow = TimeWindow.ALL,
+                        unitPreference = UnitPreference.METRIC
+                    ),
+                    metricKey = null
+                ),
+                RecordSelection(
+                    fqn = bloodPressureFqn,
+                    metricSettings = MetricChartSettings(
+                        timeWindow = TimeWindow.ALL,
+                        unitPreference = UnitPreference.METRIC
+                    ),
+                    metricKey = DefaultHealthRecordMeasurementExtractor.BLOOD_PRESSURE_DIASTOLIC_METRIC_KEY
+                )
+            ),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.ALL)
+        )
+
+        val seriesList = model.aggregateMetricSeriesList(view, listOf(bloodPressureRecord))
+        assertEquals(2, seriesList.size)
+
+        assertEquals("Blood Pressure Systolic", seriesList[0].label)
+        assertEquals(121.0, seriesList[0].points.single().value, 0.001)
+        assertEquals("mmHg", seriesList[0].unit)
+
+        assertEquals("Blood Pressure Diastolic", seriesList[1].label)
+        assertEquals(79.0, seriesList[1].points.single().value, 0.001)
+        assertEquals("mmHg", seriesList[1].unit)
+    }
+
+    @Test
+    fun `aggregation supports nutrition metric variants`() {
+        val model = model()
+        val start = Instant.parse("2026-02-15T08:00:00Z")
+        val end = start.plusSeconds(20 * 60)
+        val nutritionRecord = NutritionRecord(
+            startTime = start,
+            startZoneOffset = ZoneOffset.UTC,
+            endTime = end,
+            endZoneOffset = ZoneOffset.UTC,
+            metadata = Metadata.manualEntry(),
+            energy = Energy.kilocalories(430.0),
+            protein = Mass.grams(28.0)
+        )
+        val nutritionFqn = requireNotNull(NutritionRecord::class.qualifiedName)
+        val view = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(
+                RecordSelection(
+                    fqn = nutritionFqn,
+                    metricSettings = MetricChartSettings(
+                        timeWindow = TimeWindow.ALL,
+                        unitPreference = UnitPreference.IMPERIAL
+                    ),
+                    metricKey = null
+                ),
+                RecordSelection(
+                    fqn = nutritionFqn,
+                    metricSettings = MetricChartSettings(
+                        timeWindow = TimeWindow.ALL,
+                        unitPreference = UnitPreference.METRIC
+                    ),
+                    metricKey = DefaultHealthRecordMeasurementExtractor.NUTRITION_PROTEIN_METRIC_KEY
+                )
+            ),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.ALL)
+        )
+
+        val seriesList = model.aggregateMetricSeriesList(view, listOf(nutritionRecord))
+        assertEquals(2, seriesList.size)
+
+        assertEquals("Nutrition Energy", seriesList[0].label)
+        assertEquals(430.0, seriesList[0].points.single().value, 0.001)
+        assertEquals("kilocalories", seriesList[0].unit)
+
+        assertEquals("Nutrition Protein", seriesList[1].label)
+        assertEquals(28.0, seriesList[1].points.single().value, 0.001)
+        assertEquals("grams", seriesList[1].unit)
     }
 
     private fun model(): HealthDataModel {
