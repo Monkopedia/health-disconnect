@@ -49,6 +49,38 @@ class HealthDataWidgetUpdaterTest {
     }
 
     @Test
+    fun buildWidgetSummaryRows_mirrorsConfiguredSeriesRows() {
+        val day = LocalDate.of(2026, 2, 22)
+        val series = listOf(
+            HealthDataModel.MetricSeries(
+                label = "Weight",
+                unit = "lb",
+                points = listOf(HealthDataModel.MetricPoint(day, 158.0)),
+                peakValueInWindow = 160.0,
+                minValueInWindow = 155.5,
+                showMaxLabel = true,
+                showMinLabel = false
+            ),
+            HealthDataModel.MetricSeries(
+                label = "Heart rate",
+                unit = "bpm",
+                points = listOf(HealthDataModel.MetricPoint(day, 70.0)),
+                peakValueInWindow = 81.0,
+                minValueInWindow = 60.0,
+                showMaxLabel = true,
+                showMinLabel = true
+            )
+        )
+
+        val rows = HealthDataWidgetUpdater.buildWidgetSummaryRows(app, series)
+
+        assertEquals(3, rows.size)
+        assertTrue(rows[0].startsWith("\u25A0 Weight max"))
+        assertTrue(rows[1].startsWith("\u25A0 Heart rate max"))
+        assertTrue(rows[2].startsWith("\u25A0 Heart rate min"))
+    }
+
+    @Test
     fun buildWidgetGraphLabels_singleSeriesIncludesValueLabelsWithoutWords() {
         val day = LocalDate.of(2026, 2, 22)
         val series = listOf(
@@ -146,6 +178,49 @@ class HealthDataWidgetUpdaterTest {
 
         assertTrue(profile.showSummary)
         assertEquals(3, profile.summaryMaxLines)
+    }
+
+    @Test
+    fun resolveSummaryLayoutProfile_expandsSummaryLinesToFitConfiguredRows() {
+        val metrics = app.resources.displayMetrics
+        val sizeInfo = HealthDataWidgetUpdater.WidgetSizeInfo(
+            widthDp = 250,
+            heightDp = 120,
+            widthPx = (250f * metrics.density).roundToInt(),
+            heightPx = (120f * metrics.density).roundToInt()
+        )
+        val baseProfile = HealthDataWidgetUpdater.widgetLayoutProfile(sizeInfo.widthDp, sizeInfo.heightDp)
+
+        val resolvedProfile = HealthDataWidgetUpdater.resolveSummaryLayoutProfile(
+            sizeInfo = sizeInfo,
+            layoutProfile = baseProfile,
+            summaryRowCount = 2,
+            displayMetrics = metrics
+        )
+
+        assertTrue(resolvedProfile.showSummary)
+        assertTrue(resolvedProfile.summaryMaxLines >= 2)
+    }
+
+    @Test
+    fun resolveSummaryMaxLines_clampsRequestedRowsWhenHeightIsLimited() {
+        val metrics = app.resources.displayMetrics
+        val sizeInfo = HealthDataWidgetUpdater.WidgetSizeInfo(
+            widthDp = 250,
+            heightDp = 120,
+            widthPx = (250f * metrics.density).roundToInt(),
+            heightPx = (120f * metrics.density).roundToInt()
+        )
+        val baseProfile = HealthDataWidgetUpdater.widgetLayoutProfile(sizeInfo.widthDp, sizeInfo.heightDp)
+
+        val resolvedLines = HealthDataWidgetUpdater.resolveSummaryMaxLines(
+            sizeInfo = sizeInfo,
+            layoutProfile = baseProfile,
+            requestedSummaryLines = 8,
+            displayMetrics = metrics
+        )
+
+        assertTrue(resolvedLines in 1..7)
     }
 
     @Test

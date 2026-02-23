@@ -14,6 +14,7 @@ import androidx.health.connect.client.HealthConnectClient
 import com.monkopedia.healthdisconnect.room.AppDatabase
 import com.monkopedia.healthdisconnect.model.DataView
 import java.time.format.DateTimeFormatter
+import kotlin.math.floor
 import kotlin.math.roundToInt
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -297,10 +298,17 @@ object HealthDataWidgetUpdater {
         logWidgetFlow(
             "HealthDataWidgetUpdater.updateWidget renderGraph appWidgetId=$appWidgetId viewId=${view.id} seriesCount=${seriesList.size}"
         )
+        val summaryRows = buildWidgetSummaryRows(context, seriesList)
+        val effectiveLayoutProfile = resolveSummaryLayoutProfile(
+            sizeInfo = sizeInfo,
+            layoutProfile = layoutProfile,
+            summaryRowCount = summaryRows.size,
+            displayMetrics = context.resources.displayMetrics
+        )
 
         val graphRenderSize = estimateGraphRenderSizePx(
             sizeInfo = sizeInfo,
-            layoutProfile = layoutProfile,
+            layoutProfile = effectiveLayoutProfile,
             displayMetrics = context.resources.displayMetrics
         )
         logWidgetFlow(
@@ -315,7 +323,7 @@ object HealthDataWidgetUpdater {
             height = graphRenderSize.heightPx,
             showCornerLabels = false
         )
-        val summaryText = buildWidgetSummaryText(context, seriesList)
+        val summaryText = summaryRows.joinToString(separator = "\n")
         val graphLabels = buildWidgetGraphLabels(seriesList)
         val hasTopLabels = !graphLabels.maxLabel.isNullOrBlank() || !graphLabels.minLabel.isNullOrBlank()
         val hasBottomLabels =
@@ -325,7 +333,7 @@ object HealthDataWidgetUpdater {
             setTextViewTextSize(
                 R.id.widget_title,
                 TypedValue.COMPLEX_UNIT_SP,
-                layoutProfile.titleTextSizeSp
+                effectiveLayoutProfile.titleTextSizeSp
             )
             setViewVisibility(R.id.widget_empty, View.GONE)
             setViewVisibility(R.id.widget_graph_content_row, View.VISIBLE)
@@ -359,12 +367,12 @@ object HealthDataWidgetUpdater {
             setTextViewTextSize(
                 R.id.widget_summary,
                 TypedValue.COMPLEX_UNIT_SP,
-                layoutProfile.summaryTextSizeSp
+                effectiveLayoutProfile.summaryTextSizeSp
             )
-            setInt(R.id.widget_summary, "setMaxLines", layoutProfile.summaryMaxLines)
+            setInt(R.id.widget_summary, "setMaxLines", effectiveLayoutProfile.summaryMaxLines)
             setViewVisibility(
                 R.id.widget_summary,
-                if (layoutProfile.showSummary) View.VISIBLE else View.GONE
+                if (effectiveLayoutProfile.showSummary) View.VISIBLE else View.GONE
             )
             setTextViewText(
                 R.id.widget_summary,
@@ -389,8 +397,16 @@ object HealthDataWidgetUpdater {
         context: Context,
         seriesList: List<HealthDataModel.MetricSeries>
     ): String {
+        return buildWidgetSummaryRows(context, seriesList).joinToString(separator = "\n")
+    }
+
+    internal fun buildWidgetSummaryRows(
+        context: Context,
+        seriesList: List<HealthDataModel.MetricSeries>
+    ): List<String> {
         return buildList {
             seriesList.forEach { series ->
+                val summaryLabel = "\u25A0 ${series.label}"
                 if (series.showMaxLabel) {
                     val formattedMax = formatValueWithUnit(
                         value = series.peakValueInWindow,
@@ -399,7 +415,7 @@ object HealthDataWidgetUpdater {
                     add(
                         context.getString(
                             R.string.widget_max_format,
-                            series.label,
+                            summaryLabel,
                             formattedMax,
                             ""
                         )
@@ -413,14 +429,73 @@ object HealthDataWidgetUpdater {
                     add(
                         context.getString(
                             R.string.widget_min_format,
-                            series.label,
+                            summaryLabel,
                             formattedMin,
                             ""
                         )
                     )
                 }
             }
-        }.joinToString(separator = "\n")
+        }
+    }
+
+    internal fun resolveSummaryLayoutProfile(
+        sizeInfo: WidgetSizeInfo,
+        layoutProfile: WidgetLayoutProfile,
+        summaryRowCount: Int,
+        displayMetrics: DisplayMetrics
+    ): WidgetLayoutProfile {
+        if (!layoutProfile.showSummary) return layoutProfile
+        val requestedSummaryLines = if (summaryRowCount > 0) {
+            summaryRowCount
+        } else {
+            layoutProfile.summaryMaxLines.coerceAtLeast(1)
+        }
+        val resolvedSummaryLines = resolveSummaryMaxLines(
+            sizeInfo = sizeInfo,
+            layoutProfile = layoutProfile,
+            requestedSummaryLines = requestedSummaryLines,
+            displayMetrics = displayMetrics
+        )
+        return layoutProfile.copy(summaryMaxLines = resolvedSummaryLines)
+    }
+
+    internal fun resolveSummaryMaxLines(
+        sizeInfo: WidgetSizeInfo,
+        layoutProfile: WidgetLayoutProfile,
+        requestedSummaryLines: Int,
+        displayMetrics: DisplayMetrics
+    ): Int {
+        if (!layoutProfile.showSummary) return 0
+        fun dp(dp: Float): Float = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            dp,
+            displayMetrics
+        )
+        fun sp(sp: Float): Float = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP,
+            sp,
+            displayMetrics
+        )
+        val requestedLines = requestedSummaryLines.coerceAtLeast(1)
+        val verticalPadding = dp(8f) * 2f
+        val graphTopMargin = dp(4f)
+        val titleLineHeight = sp(layoutProfile.titleTextSizeSp) * 1.18f
+        val summaryMarginTop = dp(4f)
+        val summaryLineHeight = sp(layoutProfile.summaryTextSizeSp) * 1.18f
+        val minGraphHeight = dp(42f)
+        val summarySpace = (
+            sizeInfo.heightPx -
+                verticalPadding -
+                graphTopMargin -
+                titleLineHeight -
+                summaryMarginTop -
+                minGraphHeight
+            ).coerceAtLeast(0f)
+        val maxLinesByHeight = floor(summarySpace / summaryLineHeight)
+            .toInt()
+            .coerceAtLeast(1)
+        return requestedLines.coerceAtMost(maxLinesByHeight)
     }
 
     internal fun buildWidgetGraphLabels(
