@@ -27,6 +27,9 @@ fun formatValueWithUnit(value: Double, unit: String?): String {
         return formatMinutesWithUnit(value)
     }
     val abbreviatedUnit = abbreviateUnit(normalizedUnit)
+    if (abbreviatedUnit == "%") {
+        return "${formatAxisValue(value)}%"
+    }
     return "${formatAxisValue(value)} $abbreviatedUnit"
 }
 
@@ -39,7 +42,7 @@ fun recordDetailsText(record: Record): String {
         .sortedBy { it.name }
         .mapNotNull { method ->
             val value = runCatching { method.invoke(record) }.getOrNull() ?: return@mapNotNull null
-            "${method.name.removePrefix("get")}: $value"
+            "${method.name.removePrefix("get")}: ${formatDetailValue(value)}"
         }
         .take(40)
         .toList()
@@ -130,11 +133,31 @@ fun recordPrimaryValueLabel(record: Record): String? {
 }
 
 fun parseMeasurementFromText(text: String): ParsedMeasurementText? {
-    val match = Regex("""^\s*([-+]?\d+(?:\.\d+)?)\s*([^\d].+)?\s*$""").find(text)
+    val match = Regex("""^\s*([-+]?\d+(?:\.\d+)?)\s*([^\d].*)?\s*$""").find(text)
         ?: return null
     val value = match.groupValues[1].toDoubleOrNull() ?: return null
     val unit = match.groupValues.getOrNull(2)?.trim().orEmpty().ifBlank { null }
+        ?.takeIf(::isLikelyMeasurementUnit)
     return ParsedMeasurementText(value, unit)
+}
+
+private fun formatDetailValue(value: Any): String {
+    return when (value) {
+        is Number -> formatAxisValue(value.toDouble())
+        else -> {
+            val text = value.toString()
+            val parsed = parseMeasurementFromText(text)
+            if (parsed != null) {
+                if (parsed.unit.isNullOrBlank()) {
+                    formatAxisValue(parsed.value)
+                } else {
+                    formatValueWithUnit(parsed.value, parsed.unit)
+                }
+            } else {
+                text
+            }
+        }
+    }
 }
 
 private fun roundToSignificantFigures(value: Double, significantFigures: Int): Double {
@@ -202,4 +225,9 @@ private fun abbreviateUnit(unit: String): String {
 
 private fun canonicalUnit(unit: String): String {
     return unit.trim().lowercase().replace(Regex("[^a-z0-9%]+"), "")
+}
+
+private fun isLikelyMeasurementUnit(unit: String): Boolean {
+    val first = unit.trim().firstOrNull() ?: return false
+    return first.isLetter() || first == '%' || first == '°'
 }

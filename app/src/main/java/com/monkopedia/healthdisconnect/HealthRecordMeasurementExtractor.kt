@@ -687,10 +687,16 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
     }
 
     private fun parseMeasurementFromString(text: String): ParsedMeasurement? {
-        val match = Regex("""^\s*([-+]?\d+(?:\.\d+)?)\s*([^\d].+)?\s*$""").find(text) ?: return null
+        val match = Regex("""^\s*([-+]?\d+(?:\.\d+)?)\s*([^\d].*)?\s*$""").find(text) ?: return null
         val value = match.groupValues[1].toDoubleOrNull() ?: return null
         val unit = match.groupValues.getOrNull(2)?.trim().orEmpty().ifBlank { null }
+            ?.takeIf(::isLikelyMeasurementUnit)
         return ParsedMeasurement(value = value, unitLabel = unit)
+    }
+
+    private fun isLikelyMeasurementUnit(unit: String): Boolean {
+        val first = unit.trim().firstOrNull() ?: return false
+        return first.isLetter() || first == '%' || first == '°'
     }
 
     private fun isNumericType(type: Class<*>): Boolean {
