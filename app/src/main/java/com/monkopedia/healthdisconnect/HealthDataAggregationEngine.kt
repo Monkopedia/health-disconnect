@@ -77,24 +77,33 @@ class DefaultHealthDataAggregationEngine(
         val zoneId = ZoneId.systemDefault()
         val viewWindowStart = windowStart(settings.timeWindow, Instant.now())
 
-        val selectedByType = view.records.mapNotNull { selection ->
+        val selectedMetrics = view.records.mapNotNull { selection ->
             val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
                 ?: return@mapNotNull null
-            val label = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: selection.fqn
-            cls to label
+            val baseLabel = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: selection.fqn
+            val label = measurementExtractor.metricLabel(cls, selection.metricKey) ?: baseLabel
+            AggregationMetricSelection(
+                recordClass = cls,
+                label = label,
+                metricKey = selection.metricKey,
+                metricSettings = selection.metricSettings ?: metricDefaultsFromView(view)
+            )
         }
 
-        if (selectedByType.isEmpty()) return emptyList()
+        if (selectedMetrics.isEmpty()) return emptyList()
 
-        return selectedByType
-            .mapNotNull { (cls, label) ->
-                val selection = view.records.firstOrNull { it.fqn == cls.qualifiedName }
-                    ?: return@mapNotNull null
-                val metricSettings = selection.metricSettings ?: metricDefaultsFromView(view)
+        return selectedMetrics
+            .mapNotNull { selection ->
                 val measurements = records
                     .asSequence()
-                    .filter { cls.isInstance(it) }
-                    .mapNotNull { extractMeasurement(it, metricSettings.unitPreference) }
+                    .filter { selection.recordClass.isInstance(it) }
+                    .mapNotNull {
+                        extractMeasurement(
+                            record = it,
+                            unitPreference = selection.metricSettings.unitPreference,
+                            metricKey = selection.metricKey
+                        )
+                    }
                     .filter { measurement ->
                         viewWindowStart == null || !measurement.timestamp.isBefore(viewWindowStart)
                     }
@@ -107,22 +116,25 @@ class DefaultHealthDataAggregationEngine(
                 val aggregated = grouped
                     .toSortedMap()
                     .map { (date, values) ->
-                        val value = aggregateValues(values.map { it.value }, metricSettings.aggregation)
+                        val value = aggregateValues(
+                            values = values.map { it.value },
+                            mode = selection.metricSettings.aggregation
+                        )
                         HealthDataModel.MetricPoint(date = date, value = value)
                     }
-                val points = when (metricSettings.smoothing) {
+                val points = when (selection.metricSettings.smoothing) {
                     com.monkopedia.healthdisconnect.model.SmoothingMode.OFF -> aggregated
                     com.monkopedia.healthdisconnect.model.SmoothingMode.MOVING_AVERAGE_3 -> smooth3(aggregated)
                 }
                 HealthDataModel.MetricSeries(
-                    label = label,
+                    label = selection.label,
                     unit = measurements.firstNotNullOfOrNull { it.unitLabel },
                     points = points,
                     peakValueInWindow = measurements.maxOf { it.value },
                     minValueInWindow = measurements.minOf { it.value },
-                    showMaxLabel = metricSettings.showMaxLabel,
-                    showMinLabel = metricSettings.showMinLabel,
-                    yAxisMode = metricSettings.yAxisMode
+                    showMaxLabel = selection.metricSettings.showMaxLabel,
+                    showMinLabel = selection.metricSettings.showMinLabel,
+                    yAxisMode = selection.metricSettings.yAxisMode
                 )
             }
             .take(HealthDataModel.MAX_CHART_SERIES)
@@ -148,12 +160,13 @@ class DefaultHealthDataAggregationEngine(
         val selectedByType = view.records.mapNotNull { selection ->
             val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
                 ?: return@mapNotNull null
-            val label = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: selection.fqn
-            val metricSettings = selection.metricSettings ?: metricDefaultsFromView(view)
+            val baseLabel = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: selection.fqn
+            val label = measurementExtractor.metricLabel(cls, selection.metricKey) ?: baseLabel
             StreamingMetricState(
                 recordClass = cls,
                 label = label,
-                metricSettings = metricSettings
+                metricSettings = selection.metricSettings ?: metricDefaultsFromView(view),
+                metricKey = selection.metricKey
             )
         }.take(maxSeries)
 
@@ -163,34 +176,37 @@ class DefaultHealthDataAggregationEngine(
         }
 
         val queryStart = viewWindowStart ?: Instant.EPOCH
-        selectedByType.forEach { metricState ->
+        selectedByType.groupBy { it.recordClass }.forEach { (recordClass, statesForClass) ->
             try {
-                pageReader(metricState.recordClass, queryStart, now) { pageRecords ->
+                pageReader(recordClass, queryStart, now) { pageRecords ->
                     pageRecords.forEach { record ->
-                        val measurement = extractMeasurement(
-                            record,
-                            metricState.metricSettings.unitPreference
-                        ) ?: return@forEach
-                        if (viewWindowStart != null && measurement.timestamp.isBefore(viewWindowStart)) {
-                            return@forEach
+                        statesForClass.forEach { metricState ->
+                            val measurement = extractMeasurement(
+                                record = record,
+                                unitPreference = metricState.metricSettings.unitPreference,
+                                metricKey = metricState.metricKey
+                            ) ?: return@forEach
+                            if (viewWindowStart != null && measurement.timestamp.isBefore(viewWindowStart)) {
+                                return@forEach
+                            }
+                            if (metricState.unit == null && !measurement.unitLabel.isNullOrBlank()) {
+                                metricState.unit = measurement.unitLabel
+                            }
+                            metricState.peakValue = when (val current = metricState.peakValue) {
+                                null -> measurement.value
+                                else -> kotlin.math.max(current, measurement.value)
+                            }
+                            metricState.minValue = when (val current = metricState.minValue) {
+                                null -> measurement.value
+                                else -> kotlin.math.min(current, measurement.value)
+                            }
+                            val bucketDate = toBucketDate(
+                                measurementTimestampDate(measurement.timestamp, zoneId),
+                                metricState.metricSettings.bucketSize
+                            )
+                            val bucket = metricState.buckets.getOrPut(bucketDate) { BucketAccumulator() }
+                            bucket.add(measurement.value)
                         }
-                        if (metricState.unit == null && !measurement.unitLabel.isNullOrBlank()) {
-                            metricState.unit = measurement.unitLabel
-                        }
-                        metricState.peakValue = when (val current = metricState.peakValue) {
-                            null -> measurement.value
-                            else -> kotlin.math.max(current, measurement.value)
-                        }
-                        metricState.minValue = when (val current = metricState.minValue) {
-                            null -> measurement.value
-                            else -> kotlin.math.min(current, measurement.value)
-                        }
-                        val bucketDate = toBucketDate(
-                            measurementTimestampDate(measurement.timestamp, zoneId),
-                            metricState.metricSettings.bucketSize
-                        )
-                        val bucket = metricState.buckets.getOrPut(bucketDate) { BucketAccumulator() }
-                        bucket.add(measurement.value)
                     }
                     trySend(buildStreamingSeries(selectedByType))
                 }
@@ -200,7 +216,7 @@ class DefaultHealthDataAggregationEngine(
                 }
                 Log.w(
                     LOG_TAG,
-                    "Failed to read aggregation data for ${metricState.recordClass.qualifiedName}",
+                    "Failed to read aggregation data for ${recordClass.qualifiedName}",
                     exception
                 )
             }
@@ -242,9 +258,10 @@ class DefaultHealthDataAggregationEngine(
 
     private fun extractMeasurement(
         record: Record,
-        unitPreference: UnitPreference
+        unitPreference: UnitPreference,
+        metricKey: String?
     ): MetricMeasurement? {
-        return measurementExtractor.extractMeasurement(record, unitPreference)
+        return measurementExtractor.extractMeasurement(record, unitPreference, metricKey)
     }
 
     private fun measurementTimestampDate(timestamp: Instant, zoneId: ZoneId): LocalDate {
@@ -306,9 +323,17 @@ class DefaultHealthDataAggregationEngine(
         val recordClass: KClass<out Record>,
         val label: String,
         val metricSettings: MetricChartSettings,
+        val metricKey: String?,
         var unit: String? = null,
         var peakValue: Double? = null,
         var minValue: Double? = null,
         val buckets: TreeMap<LocalDate, BucketAccumulator> = TreeMap()
+    )
+
+    private data class AggregationMetricSelection(
+        val recordClass: KClass<out Record>,
+        val label: String,
+        val metricKey: String?,
+        val metricSettings: MetricChartSettings
     )
 }

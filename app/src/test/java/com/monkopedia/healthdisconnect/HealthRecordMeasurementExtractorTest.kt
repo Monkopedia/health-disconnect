@@ -2,6 +2,7 @@ package com.monkopedia.healthdisconnect
 
 import androidx.health.connect.client.records.BloodGlucoseRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.BloodGlucose
@@ -10,6 +11,7 @@ import com.monkopedia.healthdisconnect.model.UnitPreference
 import io.mockk.every
 import io.mockk.mockk
 import java.time.Instant
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,6 +57,44 @@ class HealthRecordMeasurementExtractorTest {
         val record = DurationFallbackRecord(start, end)
 
         assertEquals(start, extractor.recordTimestamp(record))
+    }
+
+    @Test
+    fun `extractor supports sleep duration and sleep stage metrics`() {
+        val start = Instant.parse("2026-02-18T22:00:00Z")
+        val end = start.plusSeconds(90 * 60)
+        val sleepRecord = SleepSessionRecord(
+            startTime = start,
+            startZoneOffset = ZoneOffset.UTC,
+            endTime = end,
+            endZoneOffset = ZoneOffset.UTC,
+            metadata = Metadata.manualEntry(),
+            title = "Nightly",
+            notes = null,
+            stages = listOf(
+                SleepSessionRecord.Stage(
+                    startTime = start,
+                    endTime = end,
+                    stage = SleepSessionRecord.STAGE_TYPE_DEEP
+                )
+            )
+        )
+
+        val duration = requireNotNull(
+            extractor.extractMeasurement(sleepRecord, UnitPreference.METRIC)
+        )
+        assertEquals(90.0, duration.value, 0.001)
+        assertEquals("minutes", duration.unitLabel)
+
+        val stage = requireNotNull(
+            extractor.extractMeasurement(
+                sleepRecord,
+                UnitPreference.METRIC,
+                DefaultHealthRecordMeasurementExtractor.SLEEP_STAGE_METRIC_KEY
+            )
+        )
+        assertEquals(5.0, stage.value, 0.001)
+        assertEquals("stage", stage.unitLabel)
     }
 
     private class DurationFallbackRecord(

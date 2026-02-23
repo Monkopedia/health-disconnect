@@ -7,6 +7,7 @@ import androidx.health.connect.client.records.Record
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.monkopedia.healthdisconnect.model.DataView
+import com.monkopedia.healthdisconnect.model.MetricChartSettings
 import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
@@ -62,6 +63,11 @@ class HealthDataModel @JvmOverloads constructor(
         const val LOG_TAG = "HealthDataModel"
     }
 
+    data class RecordSelectionOption(
+        val selection: RecordSelection,
+        val label: String
+    )
+
     private val metricsLock = Any()
     private val metricsWithData: MutableStateFlow<List<KClass<out Record>>?> = MutableStateFlow(null)
     private var metricsLoading = false
@@ -93,6 +99,38 @@ class HealthDataModel @JvmOverloads constructor(
     fun collectMetricsWithData(refreshTick: Int = 0): Flow<List<KClass<out Record>>> {
         scheduleMetricsRefresh(refreshTick)
         return metricsWithData.filterNotNull()
+    }
+
+    fun recordSelectionLabel(selection: RecordSelection): String {
+        val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
+            ?: return selection.fqn
+        return measurementExtractor.metricLabel(cls, selection.metricKey)
+            ?: PermissionsViewModel.RECORD_NAMES[cls]
+            ?: cls.simpleName
+            ?: selection.fqn
+    }
+
+    fun recordSelectionOptions(
+        recordClass: KClass<out Record>,
+        metricSettings: MetricChartSettings
+    ): List<RecordSelectionOption> {
+        val fqn = recordClass.qualifiedName ?: return emptyList()
+        val baseLabel = PermissionsViewModel.RECORD_NAMES[recordClass]
+            ?: recordClass.simpleName
+            ?: fqn
+        val availableMetrics = measurementExtractor.availableMetrics(recordClass)
+            .ifEmpty { listOf(ExtractableMetric()) }
+        return availableMetrics.map { metric ->
+            val selection = RecordSelection(
+                fqn = fqn,
+                metricSettings = metricSettings,
+                metricKey = metric.key
+            )
+            RecordSelectionOption(
+                selection = selection,
+                label = metric.label ?: baseLabel
+            )
+        }.distinctBy { it.selection.selectionKey() }
     }
 
     suspend fun refreshMetricsWithData() {
@@ -201,7 +239,7 @@ class HealthDataModel @JvmOverloads constructor(
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
         val selections: List<KClass<out Record>> = view.records.mapNotNull { sel: RecordSelection ->
             typeMap[sel.fqn]
-        }
+        }.distinctBy { it.qualifiedName.orEmpty() }
         val now = timeProvider.now()
         val queryStart = windowStart(view.chartSettings.timeWindow) ?: Instant.EPOCH
         val all = mutableListOf<Record>()
@@ -273,7 +311,7 @@ class HealthDataModel @JvmOverloads constructor(
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
         val selections: List<KClass<out Record>> = view.records.mapNotNull { sel ->
             typeMap[sel.fqn]
-        }
+        }.distinctBy { it.qualifiedName.orEmpty() }
         if (selections.isEmpty()) {
             trySend(0)
             return@channelFlow

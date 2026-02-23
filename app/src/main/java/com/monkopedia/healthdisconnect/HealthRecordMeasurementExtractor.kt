@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.health.connect.client.records.BloodGlucoseRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
@@ -20,14 +21,47 @@ data class MetricMeasurement(
     val sourceField: String?
 )
 
+data class ExtractableMetric(
+    val key: String? = null,
+    val label: String? = null
+)
+
 interface HealthRecordMeasurementExtractor {
     fun extractMeasurement(record: Record, unitPreference: UnitPreference): MetricMeasurement?
+    fun extractMeasurement(
+        record: Record,
+        unitPreference: UnitPreference,
+        metricKey: String?
+    ): MetricMeasurement? {
+        return extractMeasurement(record, unitPreference)
+    }
+    fun availableMetrics(recordClass: KClass<out Record>): List<ExtractableMetric> {
+        return listOf(ExtractableMetric())
+    }
+    fun metricLabel(recordClass: KClass<out Record>, metricKey: String?): String? {
+        return availableMetrics(recordClass)
+            .firstOrNull { it.key == metricKey }
+            ?.label
+    }
     fun recordTimestamp(record: Record): Instant?
 }
 
 class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor {
     override fun extractMeasurement(record: Record, unitPreference: UnitPreference): MetricMeasurement? {
+        return extractMeasurement(record, unitPreference, metricKey = null)
+    }
+
+    override fun extractMeasurement(
+        record: Record,
+        unitPreference: UnitPreference,
+        metricKey: String?
+    ): MetricMeasurement? {
         val timestamp = recordTimestamp(record) ?: return null
+        extractSleepSessionMetric(
+            record = record,
+            timestamp = timestamp,
+            metricKey = metricKey
+        )?.let { return it }
         staticExtractors[record::class]?.let { extractor ->
             return extractor(record, unitPreference, timestamp)
         }
@@ -148,6 +182,23 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
         )
     }
 
+    override fun availableMetrics(recordClass: KClass<out Record>): List<ExtractableMetric> {
+        return if (recordClass == SleepSessionRecord::class) {
+            listOf(
+                ExtractableMetric(
+                    key = null,
+                    label = "Sleep Duration"
+                ),
+                ExtractableMetric(
+                    key = SLEEP_STAGE_METRIC_KEY,
+                    label = "Sleep Stage"
+                )
+            )
+        } else {
+            listOf(ExtractableMetric())
+        }
+    }
+
     override fun recordTimestamp(record: Record): Instant? {
         val getterNames = listOf("getTime", "getStartTime", "getEndTime")
         for (getterName in getterNames) {
@@ -169,6 +220,58 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
             }
             null
         }
+    }
+
+    private fun extractSleepSessionMetric(
+        record: Record,
+        timestamp: Instant,
+        metricKey: String?
+    ): MetricMeasurement? {
+        val sleepRecord = record as? SleepSessionRecord ?: return null
+        return when (metricKey) {
+            null -> sleepDurationMeasurement(sleepRecord, timestamp)
+            SLEEP_STAGE_METRIC_KEY -> sleepStageMeasurement(sleepRecord, timestamp)
+            else -> null
+        }
+    }
+
+    private fun sleepDurationMeasurement(
+        record: SleepSessionRecord,
+        timestamp: Instant
+    ): MetricMeasurement? {
+        if (record.endTime.isBefore(record.startTime)) return null
+        val minutes = ChronoUnit.SECONDS.between(record.startTime, record.endTime).toDouble() / 60.0
+        return MetricMeasurement(
+            timestamp = timestamp,
+            value = minutes,
+            unitLabel = "minutes",
+            sourceField = "Duration"
+        )
+    }
+
+    private fun sleepStageMeasurement(
+        record: SleepSessionRecord,
+        timestamp: Instant
+    ): MetricMeasurement? {
+        if (record.stages.isEmpty()) return null
+        val weightedDuration = record.stages.mapNotNull { stage ->
+            if (stage.endTime.isBefore(stage.startTime)) return@mapNotNull null
+            val seconds = ChronoUnit.SECONDS.between(stage.startTime, stage.endTime).coerceAtLeast(0)
+            seconds to stage.stage.toDouble()
+        }
+        if (weightedDuration.isEmpty()) return null
+        val totalSeconds = weightedDuration.sumOf { it.first }
+        val value = if (totalSeconds > 0L) {
+            weightedDuration.sumOf { (seconds, stageValue) -> seconds * stageValue } / totalSeconds
+        } else {
+            weightedDuration.map { it.second }.average()
+        }
+        return MetricMeasurement(
+            timestamp = timestamp,
+            value = value,
+            unitLabel = "stage",
+            sourceField = "Stages.Stage"
+        )
     }
 
     private fun safeGetTime(record: Record, method: String): Instant? {
@@ -441,6 +544,7 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
     }
 
     companion object {
+        const val SLEEP_STAGE_METRIC_KEY = "sleep_stage"
         private const val EXTRACTION_LOG_TAG = "HealthDisconnectExtract"
     }
 }

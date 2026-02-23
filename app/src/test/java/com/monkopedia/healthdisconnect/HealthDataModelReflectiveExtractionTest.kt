@@ -5,7 +5,13 @@ import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.test.core.app.ApplicationProvider
+import com.monkopedia.healthdisconnect.model.ChartSettings
+import com.monkopedia.healthdisconnect.model.DataView
+import com.monkopedia.healthdisconnect.model.MetricChartSettings
+import com.monkopedia.healthdisconnect.model.RecordSelection
+import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
+import com.monkopedia.healthdisconnect.model.ViewType
 import java.time.Instant
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
@@ -87,6 +93,64 @@ class HealthDataModelReflectiveExtractionTest {
         val measurement = extractMeasurement(model, record, UnitPreference.METRIC)
         assertEquals(75.0, measurement.value, 0.001)
         assertEquals("minutes", measurement.unitLabel)
+    }
+
+    @Test
+    fun `aggregation supports multiple extracted metrics from sleep session`() {
+        val model = model()
+        val start = Instant.parse("2026-02-15T08:00:00Z")
+        val end = start.plusSeconds(75 * 60)
+        val sleepRecord = SleepSessionRecord(
+            startTime = start,
+            startZoneOffset = ZoneOffset.UTC,
+            endTime = end,
+            endZoneOffset = ZoneOffset.UTC,
+            metadata = Metadata.manualEntry(),
+            title = "Nightly",
+            notes = "",
+            stages = listOf(
+                SleepSessionRecord.Stage(
+                    startTime = start,
+                    endTime = end,
+                    stage = SleepSessionRecord.STAGE_TYPE_DEEP
+                )
+            )
+        )
+        val sleepFqn = requireNotNull(SleepSessionRecord::class.qualifiedName)
+        val view = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(
+                RecordSelection(
+                    fqn = sleepFqn,
+                    metricSettings = MetricChartSettings(
+                        timeWindow = TimeWindow.ALL,
+                        unitPreference = UnitPreference.METRIC
+                    ),
+                    metricKey = null
+                ),
+                RecordSelection(
+                    fqn = sleepFqn,
+                    metricSettings = MetricChartSettings(
+                        timeWindow = TimeWindow.ALL,
+                        unitPreference = UnitPreference.METRIC
+                    ),
+                    metricKey = DefaultHealthRecordMeasurementExtractor.SLEEP_STAGE_METRIC_KEY
+                )
+            ),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.ALL)
+        )
+
+        val seriesList = model.aggregateMetricSeriesList(view, listOf(sleepRecord))
+        assertEquals(2, seriesList.size)
+
+        assertEquals("Sleep Duration", seriesList[0].label)
+        assertEquals(75.0, seriesList[0].points.single().value, 0.001)
+        assertEquals("minutes", seriesList[0].unit)
+
+        assertEquals("Sleep Stage", seriesList[1].label)
+        assertEquals(5.0, seriesList[1].points.single().value, 0.001)
+        assertEquals("stage", seriesList[1].unit)
     }
 
     private fun model(): HealthDataModel {

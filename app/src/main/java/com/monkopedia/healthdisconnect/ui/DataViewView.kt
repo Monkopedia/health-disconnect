@@ -209,7 +209,7 @@ fun DataViewView(
     var selectedEntryForDetails by remember(view!!.id) { mutableStateOf<Record?>(null) }
     var showAddMetricDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var showDeleteViewConfirmation by rememberSaveable(view!!.id) { mutableStateOf(false) }
-    var replaceMetricTargetFqn by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
+    var replaceMetricTargetKey by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
     var showGraphThemeDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var showGraphWarningDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var selectedGraphShareTheme by rememberSaveable(view!!.id) {
@@ -251,7 +251,7 @@ fun DataViewView(
         settings: ChartSettings
     ): List<RecordSelection> {
         return selections
-            .distinctBy { it.fqn }
+            .distinctBy { it.selectionKey() }
             .map { it.withDefaultSettings(settings) }
     }
     val hasUnsavedChanges = remember(
@@ -600,7 +600,7 @@ fun DataViewView(
                     onResetEditStateToSaved = { resetEditStateToSaved() },
                     onShowAddMetricDialog = { showAddMetricDialog = true },
                     onShowDeleteViewConfirmation = { showDeleteViewConfirmation = true },
-                    onReplaceMetric = { replaceMetricTargetFqn = it },
+                    onReplaceMetric = { replaceMetricTargetKey = it.selectionKey() },
                     showWidgetUpdateWindowControl = hasWidgetForCurrentView
                 )
             }
@@ -647,17 +647,22 @@ fun DataViewView(
         val allForDialog = (available ?: PermissionsViewModel.CLASSES).toList().sortedBy {
             PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: it.qualifiedName ?: "")
         }
-        val existingSelections = selectedSelections.map { it.fqn }.toSet()
-        val unselected = allForDialog.filter { cls ->
-            val fqn = cls.qualifiedName ?: return@filter false
-            !existingSelections.contains(fqn)
-        }
+        val existingSelectionKeys = selectedSelections.map { it.selectionKey() }.toSet()
+        val unselectedOptions = allForDialog
+            .flatMap { cls ->
+                healthDataModel.recordSelectionOptions(
+                    recordClass = cls,
+                    metricSettings = copiedMetricSettingsForNewSelection()
+                )
+            }
+            .filterNot { option -> existingSelectionKeys.contains(option.selection.selectionKey()) }
+            .sortedBy { option -> option.label }
         AlertDialog(
             onDismissRequest = { showAddMetricDialog = false },
             title = { Text(stringResource(R.string.data_view_select_metric_to_add)) },
             text = {
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
-                    if (unselected.isEmpty()) {
+                    if (unselectedOptions.isEmpty()) {
                         item {
                             Text(
                                 text = stringResource(R.string.data_view_no_more_metrics_to_add),
@@ -665,25 +670,19 @@ fun DataViewView(
                             )
                         }
                     } else {
-                        items(unselected.size) { index ->
-                            val cls = unselected[index]
-                            val fqn = cls.qualifiedName ?: return@items
-                            val label = PermissionsViewModel.RECORD_NAMES[cls] ?: (cls.simpleName ?: fqn)
+                        items(unselectedOptions.size) { index ->
+                            val option = unselectedOptions[index]
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        val newSelection = RecordSelection(
-                                            fqn = fqn,
-                                            metricSettings = copiedMetricSettingsForNewSelection()
-                                        )
-                                        selectedSelections = (selectedSelections + newSelection)
-                                            .distinctBy { it.fqn }
+                                        selectedSelections = (selectedSelections + option.selection)
+                                            .distinctBy { it.selectionKey() }
                                         showAddMetricDialog = false
                                     }
                                     .padding(vertical = 10.dp)
                             ) {
-                                Text(label)
+                                Text(option.label)
                             }
                             HorizontalDivider()
                         }
@@ -699,41 +698,56 @@ fun DataViewView(
         )
     }
 
-    val metricToReplace = replaceMetricTargetFqn
+    val metricToReplace = replaceMetricTargetKey
     if (metricToReplace != null) {
         val available = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
         val allForDialog = (available ?: PermissionsViewModel.CLASSES).toList().sortedBy {
             PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: it.qualifiedName ?: "")
         }
-        val unselected = allForDialog.filter { cls ->
-            val fqn = cls.qualifiedName ?: return@filter false
-            fqn == metricToReplace || selectedSelections.none { it.fqn == fqn }
+        val targetSelection = selectedSelections.firstOrNull { it.selectionKey() == metricToReplace }
+        val replacementOptions = if (targetSelection == null) {
+            emptyList()
+        } else {
+            allForDialog
+                .flatMap { cls ->
+                    healthDataModel.recordSelectionOptions(
+                        recordClass = cls,
+                        metricSettings = targetSelection.metricSettings ?: copiedMetricSettingsForNewSelection()
+                    )
+                }
+                .filter { option ->
+                    val optionKey = option.selection.selectionKey()
+                    optionKey == metricToReplace ||
+                        selectedSelections.none { it.selectionKey() == optionKey }
+                }
+                .sortedBy { it.label }
         }
         AlertDialog(
-            onDismissRequest = { replaceMetricTargetFqn = null },
+            onDismissRequest = { replaceMetricTargetKey = null },
             title = { Text(stringResource(R.string.data_view_select_replacement_metric)) },
             text = {
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
-                    items(unselected.size) { index ->
-                        val cls = unselected[index]
-                        val replacementFqn = cls.qualifiedName ?: return@items
-                        val label = PermissionsViewModel.RECORD_NAMES[cls] ?: (cls.simpleName ?: replacementFqn)
+                    items(replacementOptions.size) { index ->
+                        val option = replacementOptions[index]
                         Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
                                     selectedSelections = selectedSelections.map { selection ->
-                                        if (selection.fqn == metricToReplace) {
-                                            selection.copy(fqn = replacementFqn)
+                                        if (selection.selectionKey() == metricToReplace) {
+                                            selection.copy(
+                                                fqn = option.selection.fqn,
+                                                metricKey = option.selection.metricKey
+                                            )
                                         } else {
                                             selection
                                         }
                                     }
-                                    replaceMetricTargetFqn = null
+                                    replaceMetricTargetKey = null
                                 }
                                 .padding(vertical = 10.dp)
                         ) {
-                            Text(label)
+                            Text(option.label)
                         }
                         HorizontalDivider()
                     }
@@ -741,7 +755,7 @@ fun DataViewView(
             },
             confirmButton = {},
             dismissButton = {
-                TextButton(onClick = { replaceMetricTargetFqn = null }) {
+                TextButton(onClick = { replaceMetricTargetKey = null }) {
                     Text(stringResource(R.string.data_view_close))
                 }
             }

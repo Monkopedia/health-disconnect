@@ -83,7 +83,6 @@ import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
-import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
 import org.koin.androidx.compose.koinViewModel
 import com.monkopedia.healthdisconnect.model.AggregationMode
@@ -121,14 +120,11 @@ fun viewConfigurationSection(
     onResetEditStateToSaved: () -> Unit,
     onShowAddMetricDialog: () -> Unit,
     onShowDeleteViewConfirmation: () -> Unit,
-    onReplaceMetric: (String) -> Unit,
+    onReplaceMetric: (RecordSelection) -> Unit,
     showWidgetUpdateWindowControl: Boolean = false
 ) {
     val selectedDisplay = selectedSelections.map { selection ->
-        val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
-        val label = cls?.let { PermissionsViewModel.RECORD_NAMES[it] }
-            ?: cls?.simpleName
-            ?: selection.fqn
+        val label = healthDataModel.recordSelectionLabel(selection)
         selection to label
     }
     fun metricDefaults(): MetricChartSettings = chartSettings.toMetricChartSettings()
@@ -214,10 +210,21 @@ fun viewConfigurationSection(
         }
     }
 
-    scope.items(selectedDisplay.size, key = { selectedDisplay[it].first.fqn }) { index ->
+    scope.items(selectedDisplay.size, key = { selectedDisplay[it].first.selectionKey() }) { index ->
         val (selection, label) = selectedDisplay[index]
         val settings = selection.metricSettings ?: metricDefaults()
-        val fqn = selection.fqn
+        val selectionKey = selection.selectionKey()
+        fun updateSelectedSelection(transform: (RecordSelection) -> RecordSelection) {
+            onSelectedSelectionsChanged(
+                selectedSelections.map {
+                    if (it.selectionKey() == selectionKey) {
+                        transform(it)
+                    } else {
+                        it
+                    }
+                }
+            )
+        }
         if (index > 0) {
             Spacer(Modifier.height(10.dp))
         }
@@ -230,7 +237,7 @@ fun viewConfigurationSection(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onReplaceMetric(fqn) }
+                        .clickable { onReplaceMetric(selection) }
                         .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
@@ -247,7 +254,9 @@ fun viewConfigurationSection(
                                 onShowDeleteViewConfirmation()
                             } else {
                                 onSelectedSelectionsChanged(
-                                    selectedSelections.filterNot { it.fqn == fqn }
+                                    selectedSelections.filterNot {
+                                        it.selectionKey() == selectionKey
+                                    }
                                 )
                             }
                         }
@@ -263,78 +272,54 @@ fun viewConfigurationSection(
                     label = stringResource(R.string.data_view_label_aggregation),
                     value = settings.aggregation
                 ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(aggregation = newValue))
-                            } else it
-                        }
-                    )
+                    updateSelectedSelection {
+                        it.copy(metricSettings = settings.copy(aggregation = newValue))
+                    }
                 }
                 EnumCycleRow(
                     label = stringResource(R.string.data_view_label_bucket_size),
                     value = settings.bucketSize
                 ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(bucketSize = newValue))
-                            } else it
-                        }
-                    )
+                    updateSelectedSelection {
+                        it.copy(metricSettings = settings.copy(bucketSize = newValue))
+                    }
                 }
                 EnumCycleRow(
                     label = stringResource(R.string.data_view_label_y_axis),
                     value = settings.yAxisMode
                 ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(yAxisMode = newValue))
-                            } else it
-                        }
-                    )
+                    updateSelectedSelection {
+                        it.copy(metricSettings = settings.copy(yAxisMode = newValue))
+                    }
                 }
                 EnumCycleRow(
                     label = stringResource(R.string.data_view_label_smoothing),
                     value = settings.smoothing
                 ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(smoothing = newValue))
-                            } else it
-                        }
-                    )
+                    updateSelectedSelection {
+                        it.copy(metricSettings = settings.copy(smoothing = newValue))
+                    }
                 }
                 EnumCycleRow(
                     label = stringResource(R.string.data_view_label_units),
                     value = settings.unitPreference
                 ) { newValue ->
-                    onSelectedSelectionsChanged(
-                        selectedSelections.map {
-                            if (it.fqn == selection.fqn) {
-                                it.copy(metricSettings = settings.copy(unitPreference = newValue))
-                            } else it
-                        }
-                    )
+                    updateSelectedSelection {
+                        it.copy(metricSettings = settings.copy(unitPreference = newValue))
+                    }
                 }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            onSelectedSelectionsChanged(
-                                selectedSelections.map {
-                                    if (it.fqn == selection.fqn) {
-                                        val currentSettings = it.metricSettings ?: metricDefaults()
-                                        it.copy(
-                                            metricSettings = currentSettings.copy(
-                                                showMaxLabel = !settings.showMaxLabel
-                                            )
-                                        )
-                                    } else it
-                                }
-                            )
+                            updateSelectedSelection {
+                                val currentSettings = it.metricSettings ?: metricDefaults()
+                                it.copy(
+                                    metricSettings = currentSettings.copy(
+                                        showMaxLabel = !settings.showMaxLabel
+                                    )
+                                )
+                            }
                         }
                         .testTag("data_view_metric_show_max_row_$index"),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -345,14 +330,10 @@ fun viewConfigurationSection(
                         checked = settings.showMaxLabel,
                         modifier = Modifier.testTag("data_view_metric_show_max_checkbox_$index"),
                         onCheckedChange = { checked ->
-                            onSelectedSelectionsChanged(
-                                selectedSelections.map {
-                                    if (it.fqn == selection.fqn) {
-                                        val currentSettings = it.metricSettings ?: metricDefaults()
-                                        it.copy(metricSettings = currentSettings.copy(showMaxLabel = checked))
-                                    } else it
-                                }
-                            )
+                            updateSelectedSelection {
+                                val currentSettings = it.metricSettings ?: metricDefaults()
+                                it.copy(metricSettings = currentSettings.copy(showMaxLabel = checked))
+                            }
                         }
                     )
                 }
@@ -360,18 +341,14 @@ fun viewConfigurationSection(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            onSelectedSelectionsChanged(
-                                selectedSelections.map {
-                                    if (it.fqn == selection.fqn) {
-                                        val currentSettings = it.metricSettings ?: metricDefaults()
-                                        it.copy(
-                                            metricSettings = currentSettings.copy(
-                                                showMinLabel = !settings.showMinLabel
-                                            )
-                                        )
-                                    } else it
-                                }
-                            )
+                            updateSelectedSelection {
+                                val currentSettings = it.metricSettings ?: metricDefaults()
+                                it.copy(
+                                    metricSettings = currentSettings.copy(
+                                        showMinLabel = !settings.showMinLabel
+                                    )
+                                )
+                            }
                         }
                         .testTag("data_view_metric_show_min_row_$index"),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -382,14 +359,10 @@ fun viewConfigurationSection(
                         checked = settings.showMinLabel,
                         modifier = Modifier.testTag("data_view_metric_show_min_checkbox_$index"),
                         onCheckedChange = { checked ->
-                            onSelectedSelectionsChanged(
-                                selectedSelections.map {
-                                    if (it.fqn == selection.fqn) {
-                                        val currentSettings = it.metricSettings ?: metricDefaults()
-                                        it.copy(metricSettings = currentSettings.copy(showMinLabel = checked))
-                                    } else it
-                                }
-                            )
+                            updateSelectedSelection {
+                                val currentSettings = it.metricSettings ?: metricDefaults()
+                                it.copy(metricSettings = currentSettings.copy(showMinLabel = checked))
+                            }
                         }
                     )
                 }
