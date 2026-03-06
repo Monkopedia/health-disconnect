@@ -26,9 +26,29 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("RELEASE_KEYSTORE_PATH")
+                ?: "${System.getProperty("user.home")}/.android_keys/release.keystore"
+            storeFile = file(keystorePath)
+            storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                ?: file("${System.getProperty("user.home")}/.android_keys/store_password.txt")
+                    .takeIf { it.exists() }?.readText()?.trim()
+            keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: "health-disconnect"
+            keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+                ?: file("${System.getProperty("user.home")}/.android_keys/key_password.txt")
+                    .takeIf { it.exists() }?.readText()?.trim()
+        }
+    }
+
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

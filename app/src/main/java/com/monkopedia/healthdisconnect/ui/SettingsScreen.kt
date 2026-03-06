@@ -39,6 +39,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.Record
+import com.monkopedia.healthdisconnect.recordTimestamp
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.compose.material.icons.Icons
@@ -395,17 +396,3 @@ private suspend fun readOldestNewest(
     return oldest to newest
 }
 
-private fun recordTimestamp(record: Record): Instant? {
-    val candidates = listOf(
-        "getTime",
-        "getStartTime",
-        "getEndTime"
-    )
-    candidates.forEach { name ->
-        val instant = runCatching {
-            record.javaClass.getMethod(name).invoke(record) as? Instant
-        }.getOrNull()
-        if (instant != null) return instant
-    }
-    return null
-}

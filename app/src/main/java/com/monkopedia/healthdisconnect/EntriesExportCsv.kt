@@ -1,9 +1,41 @@
 package com.monkopedia.healthdisconnect
 
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.BasalBodyTemperatureRecord
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BloodGlucoseRecord
+import androidx.health.connect.client.records.BloodPressureRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyTemperatureRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
+import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
+import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ElevationGainedRecord
+import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.FloorsClimbedRecord
+import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.HydrationRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.MenstruationPeriodRecord
+import androidx.health.connect.client.records.NutritionRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.PowerRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RespiratoryRateRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.SpeedRecord
+import androidx.health.connect.client.records.StepsCadenceRecord
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
+import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.WheelchairPushesRecord
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.RecordSelection
-import java.time.Instant
 
 enum class EntriesExportMode {
     AGGREGATED,
@@ -147,24 +179,54 @@ private fun metricSettingsForExport(
 }
 
 private fun exportGetterValues(record: Record): Map<String, String> {
-    return record.javaClass.methods
-        .asSequence()
-        .filter { it.parameterCount == 0 && it.name.startsWith("get") && it.name != "getClass" }
-        .sortedBy { it.name }
-        .mapNotNull { method ->
-            val fieldName = method.name.removePrefix("get")
-            val value = runCatching { method.invoke(record) }.getOrNull() ?: return@mapNotNull null
-            fieldName to value.toString()
+    return when (record) {
+        is WeightRecord -> mapOf("Weight" to record.weight.toString())
+        is StepsRecord -> mapOf("Count" to record.count.toString())
+        is DistanceRecord -> mapOf("Distance" to record.distance.toString())
+        is BloodGlucoseRecord -> mapOf("Level" to record.level.toString(), "SpecimenSource" to record.specimenSource.toString(), "MealType" to record.mealType.toString(), "RelationToMeal" to record.relationToMeal.toString())
+        is BloodPressureRecord -> mapOf("Systolic" to record.systolic.toString(), "Diastolic" to record.diastolic.toString(), "BodyPosition" to record.bodyPosition.toString(), "MeasurementLocation" to record.measurementLocation.toString())
+        is TotalCaloriesBurnedRecord -> mapOf("Energy" to record.energy.toString())
+        is ActiveCaloriesBurnedRecord -> mapOf("Energy" to record.energy.toString())
+        is SleepSessionRecord -> mapOf("StartTime" to record.startTime.toString(), "EndTime" to record.endTime.toString(), "StagesCount" to record.stages.size.toString())
+        is NutritionRecord -> buildMap {
+            record.energy?.let { put("Energy", it.toString()) }
+            record.protein?.let { put("Protein", it.toString()) }
+            record.totalCarbohydrate?.let { put("TotalCarbohydrate", it.toString()) }
+            record.totalFat?.let { put("TotalFat", it.toString()) }
+            record.sugar?.let { put("Sugar", it.toString()) }
+            record.dietaryFiber?.let { put("DietaryFiber", it.toString()) }
+            record.name?.let { put("Name", it) }
         }
-        .toMap()
+        is HeartRateRecord -> mapOf("SamplesCount" to record.samples.size.toString(), "AvgBpm" to if (record.samples.isEmpty()) "" else record.samples.map { it.beatsPerMinute.toDouble() }.average().toString())
+        is BodyFatRecord -> mapOf("Percentage" to record.percentage.toString())
+        is BodyTemperatureRecord -> mapOf("Temperature" to record.temperature.toString(), "MeasurementLocation" to record.measurementLocation.toString())
+        is BasalBodyTemperatureRecord -> mapOf("Temperature" to record.temperature.toString(), "MeasurementLocation" to record.measurementLocation.toString())
+        is BasalMetabolicRateRecord -> mapOf("BasalMetabolicRate" to record.basalMetabolicRate.toString())
+        is HeightRecord -> mapOf("Height" to record.height.toString())
+        is BodyWaterMassRecord -> mapOf("Mass" to record.mass.toString())
+        is BoneMassRecord -> mapOf("Mass" to record.mass.toString())
+        is LeanBodyMassRecord -> mapOf("Mass" to record.mass.toString())
+        is OxygenSaturationRecord -> mapOf("Percentage" to record.percentage.toString())
+        is RespiratoryRateRecord -> mapOf("Rate" to record.rate.toString())
+        is RestingHeartRateRecord -> mapOf("BeatsPerMinute" to record.beatsPerMinute.toString())
+        is Vo2MaxRecord -> mapOf("Vo2MillilitersPerMinuteKilogram" to record.vo2MillilitersPerMinuteKilogram.toString())
+        is HeartRateVariabilityRmssdRecord -> mapOf("HeartRateVariabilityMillis" to record.heartRateVariabilityMillis.toString())
+        is FloorsClimbedRecord -> mapOf("Floors" to record.floors.toString())
+        is HydrationRecord -> mapOf("Volume" to record.volume.toString())
+        is ElevationGainedRecord -> mapOf("Elevation" to record.elevation.toString())
+        is ExerciseSessionRecord -> mapOf("ExerciseType" to record.exerciseType.toString())
+        is WheelchairPushesRecord -> mapOf("Count" to record.count.toString())
+        is SpeedRecord -> mapOf("SamplesCount" to record.samples.size.toString())
+        is PowerRecord -> mapOf("SamplesCount" to record.samples.size.toString())
+        is StepsCadenceRecord -> mapOf("SamplesCount" to record.samples.size.toString())
+        is CyclingPedalingCadenceRecord -> mapOf("SamplesCount" to record.samples.size.toString())
+        is MenstruationPeriodRecord -> mapOf("StartTime" to record.startTime.toString(), "EndTime" to record.endTime.toString())
+        else -> emptyMap()
+    }
 }
 
 private fun recordTimestampIso(record: Record): String? {
-    val getterNames = listOf("getTime", "getStartTime", "getEndTime")
-    val instant = getterNames.asSequence().mapNotNull { name ->
-        runCatching { record.javaClass.getMethod(name).invoke(record) as? Instant }.getOrNull()
-    }.firstOrNull() ?: runCatching { record.metadata.lastModifiedTime }.getOrNull()
-    return instant?.toString()
+    return recordTimestamp(record)?.toString()
 }
 
 private fun List<List<String>>.toCsvText(): String {

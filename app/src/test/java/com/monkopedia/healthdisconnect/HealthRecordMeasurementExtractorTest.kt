@@ -3,7 +3,6 @@ package com.monkopedia.healthdisconnect
 import androidx.health.connect.client.records.BloodGlucoseRecord
 import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.NutritionRecord
-import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
@@ -52,15 +51,6 @@ class HealthRecordMeasurementExtractorTest {
         val metric = requireNotNull(extractor.extractMeasurement(record, UnitPreference.METRIC))
         assertEquals(5.5, metric.value, 0.001)
         assertEquals("mmol/L", metric.unitLabel)
-    }
-
-    @Test
-    fun `extractor falls back to explicit start and end time`() {
-        val start = Instant.parse("2026-02-18T09:00:00Z")
-        val end = start.plusSeconds(45 * 60)
-        val record = DurationFallbackRecord(start, end)
-
-        assertEquals(start, extractor.recordTimestamp(record))
     }
 
     @Test
@@ -171,12 +161,4 @@ class HealthRecordMeasurementExtractorTest {
         assertEquals("ounces", sugar.unitLabel)
     }
 
-    private class DurationFallbackRecord(
-        private val start: Instant,
-        private val end: Instant
-    ) : Record {
-        override val metadata: Metadata = Metadata.manualEntry()
-        fun getStartTime(): Instant = start
-        fun getEndTime(): Instant = end
-    }
 }

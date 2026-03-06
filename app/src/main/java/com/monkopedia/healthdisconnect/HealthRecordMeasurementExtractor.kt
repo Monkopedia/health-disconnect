@@ -1,21 +1,44 @@
 package com.monkopedia.healthdisconnect
 
-import android.util.Log
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.BasalBodyTemperatureRecord
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
 import androidx.health.connect.client.records.BloodGlucoseRecord
 import androidx.health.connect.client.records.BloodPressureRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyTemperatureRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
+import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ElevationGainedRecord
+import androidx.health.connect.client.records.ExerciseSessionRecord
+import androidx.health.connect.client.records.FloorsClimbedRecord
+import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.HydrationRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
+import androidx.health.connect.client.records.MenstruationPeriodRecord
 import androidx.health.connect.client.records.NutritionRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.PowerRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RespiratoryRateRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.SpeedRecord
+import androidx.health.connect.client.records.StepsCadenceRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.WheelchairPushesRecord
 import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Mass
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.reflect.KClass
 
 data class MetricMeasurement(
@@ -61,140 +84,10 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
         metricKey: String?
     ): MetricMeasurement? {
         val timestamp = recordTimestamp(record) ?: return null
-        extractSleepSessionMetric(
-            record = record,
-            timestamp = timestamp,
-            metricKey = metricKey
-        )?.let { return it }
-        extractBloodPressureMetric(
-            record = record,
-            timestamp = timestamp,
-            metricKey = metricKey
-        )?.let { return it }
-        extractNutritionMetric(
-            record = record,
-            timestamp = timestamp,
-            metricKey = metricKey,
-            unitPreference = unitPreference
-        )?.let { return it }
-        staticExtractors[record::class]?.let { extractor ->
-            return extractor(record, unitPreference, timestamp)
-        }
-        val typePreference = reflectiveTypePreferencesByFqn[record::class.qualifiedName]
-
-        val methods = record.javaClass.methods
-            .filter { it.parameterCount == 0 && it.name.startsWith("get") }
-            .filterNot {
-                it.name in setOf(
-                    "getMetadata",
-                    "getZoneOffset",
-                    "getStartZoneOffset",
-                    "getEndZoneOffset",
-                    "getTime",
-                    "getStartTime",
-                    "getEndTime"
-                )
-            }
-
-        val candidates = mutableListOf<CandidateMeasurement>()
-        methods.forEach { method ->
-            val raw = runCatching { method.invoke(record) }.getOrNull() ?: return@forEach
-            val methodName = method.name.removePrefix("get")
-            var addedUnitCandidate = false
-
-            (raw as? Number)?.toDouble()?.let { value ->
-                candidates += CandidateMeasurement(
-                    value = value,
-                    unitLabel = null,
-                    score = fieldScore(methodName) + preferredFieldScore(methodName, typePreference),
-                    sourceField = methodName
-                )
-            }
-            val unitGetters = raw.javaClass.methods.filter { candidate ->
-                candidate.parameterCount == 0 &&
-                    (candidate.name.startsWith("getIn") || candidate.name.startsWith("in")) &&
-                    isNumericType(candidate.returnType)
-            }
-            unitGetters.forEach { unitGetter ->
-                val unitRaw = unitGetter.name
-                    .removePrefix("getIn")
-                    .removePrefix("in")
-                val value = runCatching { (unitGetter.invoke(raw) as? Number)?.toDouble() }.getOrNull()
-                    ?: return@forEach
-                candidates += CandidateMeasurement(
-                    value = value,
-                    unitLabel = normalizeUnitLabel(unitRaw),
-                    score = unitScore(unitRaw, unitPreference, value) + fieldScore(methodName) + preferredFieldScore(methodName, typePreference),
-                    sourceField = methodName
-                )
-                addedUnitCandidate = true
-            }
-            if (raw is Collection<*> && raw.isNotEmpty()) {
-                val samples = raw.filterNotNull().take(50)
-                if (samples.isNotEmpty()) {
-                    val sampleMethods = samples.first().javaClass.methods.filter { sampleMethod ->
-                        sampleMethod.parameterCount == 0 &&
-                            sampleMethod.name.startsWith("get") &&
-                            isNumericType(sampleMethod.returnType)
-                    }
-                    sampleMethods.forEach { sampleMethod ->
-                        val sampleName = sampleMethod.name.removePrefix("get")
-                        val values = samples.mapNotNull { sample ->
-                            runCatching { (sampleMethod.invoke(sample) as? Number)?.toDouble() }.getOrNull()
-                        }
-                        if (values.isNotEmpty()) {
-                            val mean = values.average()
-                            candidates += CandidateMeasurement(
-                                value = mean,
-                                unitLabel = null,
-                                score = fieldScore(methodName) + fieldScore(sampleName) +
-                                    preferredFieldScore(methodName, typePreference) + preferredFieldScore(sampleName, typePreference),
-                                sourceField = "$methodName.$sampleName"
-                            )
-                        }
-                    }
-                }
-            }
-            if (!addedUnitCandidate) {
-                parseMeasurementFromString(raw.toString())?.let { parsed ->
-                    candidates += CandidateMeasurement(
-                        value = parsed.value,
-                        unitLabel = parsed.unitLabel,
-                        score = unitScore(parsed.unitLabel ?: "", unitPreference, parsed.value) +
-                            fieldScore(methodName) + preferredFieldScore(methodName, typePreference) + 3,
-                        sourceField = methodName
-                    )
-                }
-            }
-        }
-
-        val prioritized = candidates
-            .let { list ->
-                val withUnits = list.filter { !it.unitLabel.isNullOrBlank() }
-                if (withUnits.isNotEmpty()) withUnits else list
-            }
-        val best = prioritized.maxByOrNull { it.score }
-        if (best == null && typePreference?.fallbackToDurationMinutes == true) {
-            val start = safeGetTime(record, "getStartTime")
-            val end = safeGetTime(record, "getEndTime")
-            if (start != null && end != null && !end.isBefore(start)) {
-                val minutes = ChronoUnit.SECONDS.between(start, end).toDouble() / 60.0
-                return MetricMeasurement(
-                    timestamp = timestamp,
-                    value = minutes,
-                    unitLabel = "minutes",
-                    sourceField = "Duration"
-                )
-            }
-        }
-        if (best == null) return null
-        logMeasurementChoice(record, unitPreference, best)
-        return MetricMeasurement(
-            timestamp = timestamp,
-            value = best.value,
-            unitLabel = best.unitLabel,
-            sourceField = best.sourceField
-        )
+        extractSleepSessionMetric(record, timestamp, metricKey)?.let { return it }
+        extractBloodPressureMetric(record, timestamp, metricKey)?.let { return it }
+        extractNutritionMetric(record, timestamp, metricKey, unitPreference)?.let { return it }
+        return staticExtractors[record::class]?.invoke(record, unitPreference, timestamp)
     }
 
     override fun availableMetrics(recordClass: KClass<out Record>): List<ExtractableMetric> {
@@ -260,26 +153,7 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
     }
 
     override fun recordTimestamp(record: Record): Instant? {
-        val getterNames = listOf("getTime", "getStartTime", "getEndTime")
-        for (getterName in getterNames) {
-            try {
-                val value = record.javaClass.getMethod(getterName).invoke(record)
-                if (value is Instant) return value
-            } catch (exception: Exception) {
-                if (exception is CancellationException) {
-                    throw exception
-                }
-                // Some record types don't expose this getter. Fall back below.
-            }
-        }
-        return try {
-            record.metadata.lastModifiedTime
-        } catch (exception: Exception) {
-            if (exception is CancellationException) {
-                throw exception
-            }
-            null
-        }
+        return com.monkopedia.healthdisconnect.recordTimestamp(record)
     }
 
     private fun extractSleepSessionMetric(
@@ -447,20 +321,28 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
         )
     }
 
-    private fun safeGetTime(record: Record, method: String): Instant? {
-        return try {
-            record.javaClass.getMethod(method).invoke(record) as? Instant
-        } catch (exception: Exception) {
-            if (exception is CancellationException) {
-                throw exception
-            }
-            Log.v(EXTRACTION_LOG_TAG, "Unable to read $method", exception)
-            null
+    private fun durationMinutes(record: Record, timestamp: Instant): MetricMeasurement? {
+        val start = recordTimestamp(record) ?: return null
+        val end = when (record) {
+            is ExerciseSessionRecord -> record.endTime
+            is MenstruationPeriodRecord -> record.endTime
+            is SleepSessionRecord -> record.endTime
+            else -> return null
         }
+        if (end.isBefore(start)) return null
+        val minutes = ChronoUnit.SECONDS.between(start, end).toDouble() / 60.0
+        return MetricMeasurement(
+            timestamp = timestamp,
+            value = minutes,
+            unitLabel = "minutes",
+            sourceField = "Duration"
+        )
     }
 
-    private val staticExtractors: Map<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement> =
+    @Suppress("UNCHECKED_CAST")
+    private val staticExtractors: Map<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement?> =
         mapOf(
+            // --- Unit-based mappings ---
             mappingLookup(
                 fieldName = "Weight",
                 recordClass = WeightRecord::class,
@@ -498,12 +380,216 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
                 metricUnit = "kilojoules",
                 autoPreference = UnitPreference.IMPERIAL
             ),
+            mappingLookup(
+                fieldName = "Energy",
+                recordClass = ActiveCaloriesBurnedRecord::class,
+                valueField = ActiveCaloriesBurnedRecord::energy,
+                imperialValue = { it.inKilocalories },
+                imperialUnit = "kilocalories",
+                metricValue = { it.inKilojoules },
+                metricUnit = "kilojoules",
+                autoPreference = UnitPreference.IMPERIAL
+            ),
+            mappingLookup(
+                fieldName = "Temperature",
+                recordClass = BasalBodyTemperatureRecord::class,
+                valueField = BasalBodyTemperatureRecord::temperature,
+                imperialValue = { it.inFahrenheit },
+                imperialUnit = "fahrenheit",
+                metricValue = { it.inCelsius },
+                metricUnit = "celsius"
+            ),
+            mappingLookup(
+                fieldName = "Temperature",
+                recordClass = BodyTemperatureRecord::class,
+                valueField = BodyTemperatureRecord::temperature,
+                imperialValue = { it.inFahrenheit },
+                imperialUnit = "fahrenheit",
+                metricValue = { it.inCelsius },
+                metricUnit = "celsius"
+            ),
+            mappingLookup(
+                fieldName = "BasalMetabolicRate",
+                recordClass = BasalMetabolicRateRecord::class,
+                valueField = BasalMetabolicRateRecord::basalMetabolicRate,
+                imperialValue = { it.inKilocaloriesPerDay },
+                imperialUnit = "kilocalories/day",
+                metricValue = { it.inWatts },
+                metricUnit = "watts"
+            ),
+            mappingLookup(
+                fieldName = "Mass",
+                recordClass = BodyWaterMassRecord::class,
+                valueField = BodyWaterMassRecord::mass,
+                imperialValue = { it.inPounds },
+                imperialUnit = "pounds",
+                metricValue = { it.inKilograms },
+                metricUnit = "kilograms"
+            ),
+            mappingLookup(
+                fieldName = "Mass",
+                recordClass = BoneMassRecord::class,
+                valueField = BoneMassRecord::mass,
+                imperialValue = { it.inPounds },
+                imperialUnit = "pounds",
+                metricValue = { it.inKilograms },
+                metricUnit = "kilograms"
+            ),
+            mappingLookup(
+                fieldName = "Mass",
+                recordClass = LeanBodyMassRecord::class,
+                valueField = LeanBodyMassRecord::mass,
+                imperialValue = { it.inPounds },
+                imperialUnit = "pounds",
+                metricValue = { it.inKilograms },
+                metricUnit = "kilograms"
+            ),
+            mappingLookup(
+                fieldName = "Height",
+                recordClass = HeightRecord::class,
+                valueField = HeightRecord::height,
+                imperialValue = { it.inInches },
+                imperialUnit = "inches",
+                metricValue = { it.inMeters * 100.0 },
+                metricUnit = "centimeters"
+            ),
+            mappingLookup(
+                fieldName = "Elevation",
+                recordClass = ElevationGainedRecord::class,
+                valueField = ElevationGainedRecord::elevation,
+                imperialValue = { it.inFeet },
+                imperialUnit = "feet",
+                metricValue = { it.inMeters },
+                metricUnit = "meters"
+            ),
+            mappingLookup(
+                fieldName = "Volume",
+                recordClass = HydrationRecord::class,
+                valueField = HydrationRecord::volume,
+                imperialValue = { it.inFluidOuncesUs },
+                imperialUnit = "fl oz",
+                metricValue = { it.inLiters },
+                metricUnit = "liters"
+            ),
+            // --- Scalar mappings ---
             scalarMappingLookup(
                 fieldName = "Count",
                 recordClass = StepsRecord::class,
                 valueField = { it.count.toDouble() },
                 unitLabel = "count"
-            )
+            ),
+            scalarMappingLookup(
+                fieldName = "Percentage",
+                recordClass = BodyFatRecord::class,
+                valueField = { it.percentage.value },
+                unitLabel = "%"
+            ),
+            scalarMappingLookup(
+                fieldName = "Percentage",
+                recordClass = OxygenSaturationRecord::class,
+                valueField = { it.percentage.value },
+                unitLabel = "%"
+            ),
+            scalarMappingLookup(
+                fieldName = "Floors",
+                recordClass = FloorsClimbedRecord::class,
+                valueField = { it.floors.toDouble() },
+                unitLabel = "floors"
+            ),
+            scalarMappingLookup(
+                fieldName = "BeatsPerMinute",
+                recordClass = RestingHeartRateRecord::class,
+                valueField = { it.beatsPerMinute.toDouble() },
+                unitLabel = "bpm"
+            ),
+            scalarMappingLookup(
+                fieldName = "Rate",
+                recordClass = RespiratoryRateRecord::class,
+                valueField = { it.rate },
+                unitLabel = "breaths/min"
+            ),
+            scalarMappingLookup(
+                fieldName = "Vo2",
+                recordClass = Vo2MaxRecord::class,
+                valueField = { it.vo2MillilitersPerMinuteKilogram },
+                unitLabel = "mL/min/kg"
+            ),
+            scalarMappingLookup(
+                fieldName = "HeartRateVariabilityMillis",
+                recordClass = HeartRateVariabilityRmssdRecord::class,
+                valueField = { it.heartRateVariabilityMillis },
+                unitLabel = "ms"
+            ),
+            scalarMappingLookup(
+                fieldName = "Count",
+                recordClass = WheelchairPushesRecord::class,
+                valueField = { it.count.toDouble() },
+                unitLabel = "count"
+            ),
+            // --- Sample-based records ---
+            HeartRateRecord::class to { record, _, timestamp ->
+                val hr = record as HeartRateRecord
+                if (hr.samples.isEmpty()) null
+                else MetricMeasurement(
+                    timestamp = timestamp,
+                    value = hr.samples.map { it.beatsPerMinute.toDouble() }.average(),
+                    unitLabel = "bpm",
+                    sourceField = "Samples.BeatsPerMinute"
+                )
+            },
+            SpeedRecord::class to { record, preference, timestamp ->
+                val speed = record as SpeedRecord
+                if (speed.samples.isEmpty()) null
+                else {
+                    val useImperial = preference == UnitPreference.IMPERIAL
+                    val avg = speed.samples.map {
+                        if (useImperial) it.speed.inMilesPerHour else it.speed.inKilometersPerHour
+                    }.average()
+                    MetricMeasurement(
+                        timestamp = timestamp,
+                        value = avg,
+                        unitLabel = if (useImperial) "mph" else "km/h",
+                        sourceField = "Samples.Speed"
+                    )
+                }
+            },
+            PowerRecord::class to { record, _, timestamp ->
+                val power = record as PowerRecord
+                if (power.samples.isEmpty()) null
+                else MetricMeasurement(
+                    timestamp = timestamp,
+                    value = power.samples.map { it.power.inWatts }.average(),
+                    unitLabel = "watts",
+                    sourceField = "Samples.Power"
+                )
+            },
+            StepsCadenceRecord::class to { record, _, timestamp ->
+                val cadence = record as StepsCadenceRecord
+                if (cadence.samples.isEmpty()) null
+                else MetricMeasurement(
+                    timestamp = timestamp,
+                    value = cadence.samples.map { it.rate }.average(),
+                    unitLabel = "steps/min",
+                    sourceField = "Samples.Rate"
+                )
+            },
+            CyclingPedalingCadenceRecord::class to { record, _, timestamp ->
+                val cadence = record as CyclingPedalingCadenceRecord
+                if (cadence.samples.isEmpty()) null
+                else MetricMeasurement(
+                    timestamp = timestamp,
+                    value = cadence.samples.map { it.revolutionsPerMinute }.average(),
+                    unitLabel = "rpm",
+                    sourceField = "Samples.RevolutionsPerMinute"
+                )
+            },
+            // --- Duration-based records ---
+            ExerciseSessionRecord::class to { record, _, timestamp ->
+                durationMinutes(record, timestamp)
+            },
+            MenstruationPeriodRecord::class to { record, _, timestamp ->
+                durationMinutes(record, timestamp)
+            }
         )
 
     private fun <T : Record, U> mappingLookup(
@@ -515,8 +601,9 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
         metricValue: (U) -> Double,
         metricUnit: String,
         autoPreference: UnitPreference = UnitPreference.METRIC
-    ): Pair<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement> {
+    ): Pair<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement?> {
         val extractor: (Record, UnitPreference, Instant) -> MetricMeasurement = { record, preference, timestamp ->
+            @Suppress("UNCHECKED_CAST")
             val typedRecord = record as T
             val value = valueField(typedRecord)
             val useImperial = when (preference) {
@@ -539,8 +626,9 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
         recordClass: KClass<T>,
         valueField: (T) -> Double,
         unitLabel: String? = null
-    ): Pair<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement> {
+    ): Pair<KClass<out Record>, (Record, UnitPreference, Instant) -> MetricMeasurement?> {
         val extractor: (Record, UnitPreference, Instant) -> MetricMeasurement = { record, _, timestamp ->
+            @Suppress("UNCHECKED_CAST")
             MetricMeasurement(
                 timestamp = timestamp,
                 value = valueField(record as T),
@@ -549,177 +637,6 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
             )
         }
         return recordClass to extractor
-    }
-
-    private val reflectiveTypePreferencesByFqn = mapOf(
-        "androidx.health.connect.client.records.ActiveCaloriesBurnedRecord" to ReflectiveTypePreference(listOf("Energy", "Calories")),
-        "androidx.health.connect.client.records.BasalBodyTemperatureRecord" to ReflectiveTypePreference(listOf("Temperature")),
-        "androidx.health.connect.client.records.BasalMetabolicRateRecord" to ReflectiveTypePreference(listOf("BasalMetabolicRate", "Power")),
-        "androidx.health.connect.client.records.BloodGlucoseRecord" to ReflectiveTypePreference(listOf("Level", "Glucose")),
-        "androidx.health.connect.client.records.BloodPressureRecord" to ReflectiveTypePreference(listOf("Systolic", "Diastolic", "Pressure")),
-        "androidx.health.connect.client.records.BodyFatRecord" to ReflectiveTypePreference(listOf("Percentage", "Percent")),
-        "androidx.health.connect.client.records.BodyTemperatureRecord" to ReflectiveTypePreference(listOf("Temperature")),
-        "androidx.health.connect.client.records.BodyWaterMassRecord" to ReflectiveTypePreference(listOf("Mass", "Weight")),
-        "androidx.health.connect.client.records.BoneMassRecord" to ReflectiveTypePreference(listOf("Mass", "Weight")),
-        "androidx.health.connect.client.records.CervicalMucusRecord" to ReflectiveTypePreference(listOf("Appearance", "Sensation", "Type")),
-        "androidx.health.connect.client.records.CyclingPedalingCadenceRecord" to ReflectiveTypePreference(listOf("RevolutionsPerMinute", "Cadence", "Rate", "Rpm", "Samples")),
-        "androidx.health.connect.client.records.DistanceRecord" to ReflectiveTypePreference(listOf("Distance")),
-        "androidx.health.connect.client.records.ElevationGainedRecord" to ReflectiveTypePreference(listOf("Elevation", "Height", "Gain")),
-        "androidx.health.connect.client.records.ExerciseSessionRecord" to ReflectiveTypePreference(listOf("Duration", "ActiveTime"), fallbackToDurationMinutes = true),
-        "androidx.health.connect.client.records.FloorsClimbedRecord" to ReflectiveTypePreference(listOf("Floors", "Count")),
-        "androidx.health.connect.client.records.HeartRateRecord" to ReflectiveTypePreference(listOf("BeatsPerMinute", "Bpm", "Rate", "Samples")),
-        "androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord" to ReflectiveTypePreference(listOf("Rmssd", "Millis", "Variability")),
-        "androidx.health.connect.client.records.HeightRecord" to ReflectiveTypePreference(listOf("Height")),
-        "androidx.health.connect.client.records.HydrationRecord" to ReflectiveTypePreference(listOf("Volume", "Hydration")),
-        "androidx.health.connect.client.records.IntermenstrualBleedingRecord" to ReflectiveTypePreference(listOf("Type", "Flow", "Amount")),
-        "androidx.health.connect.client.records.LeanBodyMassRecord" to ReflectiveTypePreference(listOf("Mass", "Weight")),
-        "androidx.health.connect.client.records.MenstruationFlowRecord" to ReflectiveTypePreference(listOf("Flow", "Type", "Severity")),
-        "androidx.health.connect.client.records.MenstruationPeriodRecord" to ReflectiveTypePreference(listOf("Duration", "Length"), fallbackToDurationMinutes = true),
-        "androidx.health.connect.client.records.NutritionRecord" to ReflectiveTypePreference(listOf("Energy", "Calories", "Protein", "Carbohydrate", "Fat", "Sugar")),
-        "androidx.health.connect.client.records.OvulationTestRecord" to ReflectiveTypePreference(listOf("Result", "Type")),
-        "androidx.health.connect.client.records.OxygenSaturationRecord" to ReflectiveTypePreference(listOf("Percentage", "Saturation", "Percent")),
-        "androidx.health.connect.client.records.PowerRecord" to ReflectiveTypePreference(listOf("Power", "Watts", "Samples")),
-        "androidx.health.connect.client.records.RespiratoryRateRecord" to ReflectiveTypePreference(listOf("Rate", "Respiratory", "Breaths")),
-        "androidx.health.connect.client.records.RestingHeartRateRecord" to ReflectiveTypePreference(listOf("BeatsPerMinute", "Bpm", "Rate")),
-        "androidx.health.connect.client.records.SexualActivityRecord" to ReflectiveTypePreference(listOf("ProtectionUsed", "Type", "Result")),
-        "androidx.health.connect.client.records.SleepSessionRecord" to ReflectiveTypePreference(listOf("Duration", "Sleep"), fallbackToDurationMinutes = true),
-        "androidx.health.connect.client.records.SpeedRecord" to ReflectiveTypePreference(listOf("Speed", "MetersPerSecond", "Samples")),
-        "androidx.health.connect.client.records.StepsCadenceRecord" to ReflectiveTypePreference(listOf("Rate", "Cadence", "StepsPerMinute", "Samples")),
-        "androidx.health.connect.client.records.StepsRecord" to ReflectiveTypePreference(listOf("Count", "Steps")),
-        "androidx.health.connect.client.records.TotalCaloriesBurnedRecord" to ReflectiveTypePreference(listOf("Energy", "Calories")),
-        "androidx.health.connect.client.records.Vo2MaxRecord" to ReflectiveTypePreference(listOf("Vo2", "MillilitersPerMinuteKilogram", "MlPerMinPerKg")),
-        "androidx.health.connect.client.records.WeightRecord" to ReflectiveTypePreference(listOf("Weight", "Mass")),
-        "androidx.health.connect.client.records.WheelchairPushesRecord" to ReflectiveTypePreference(listOf("Count", "Pushes"))
-    )
-
-    private data class CandidateMeasurement(
-        val value: Double,
-        val unitLabel: String?,
-        val score: Int,
-        val sourceField: String
-    )
-
-    private data class ParsedMeasurement(
-        val value: Double,
-        val unitLabel: String?
-    )
-
-    private data class ReflectiveTypePreference(
-        val preferredFields: List<String>,
-        val fallbackToDurationMinutes: Boolean = false
-    )
-
-    private fun unitScore(rawUnit: String, unitPreference: UnitPreference, value: Double): Int {
-        val unit = rawUnit.lowercase()
-        val imperial = listOf(
-            "mile", "foot", "feet", "inch", "yard",
-            "pound", "ounce", "fahrenheit", "fluidounce", "gallon", "cup", "calorie",
-            "deciliter"
-        )
-        val metric = listOf(
-            "meter", "metre", "kilometer", "centimeter", "millimeter",
-            "gram", "kilogram", "celsius", "joule", "liter", "litre", "milliliter",
-            "mole", "millimole"
-        )
-        val base = when {
-            imperial.any(unit::contains) -> 2
-            metric.any(unit::contains) -> 2
-            else -> 1
-        }
-        val preferenceBoost = when (unitPreference) {
-            UnitPreference.AUTO -> 0
-            UnitPreference.METRIC -> if (metric.any(unit::contains)) 8 else 0
-            UnitPreference.IMPERIAL -> if (imperial.any(unit::contains)) 8 else 0
-        }
-        val concentrationBoost = when {
-            unit.contains("millimolesperliter") -> when (unitPreference) {
-                UnitPreference.IMPERIAL -> 2
-                else -> 8
-            }
-            unit.contains("milligramsperdeciliter") -> when (unitPreference) {
-                UnitPreference.METRIC -> 2
-                else -> 8
-            }
-            unit.contains("molesperliter") -> -8
-            unit.contains("gramsperliter") -> -3
-            else -> 0
-        }
-        val magnitudePenalty = when {
-            value == 0.0 -> 0
-            kotlin.math.abs(value) < 0.01 -> -8
-            kotlin.math.abs(value) < 0.1 -> -4
-            kotlin.math.abs(value) > 1_000_000 -> -4
-            else -> 0
-        }
-        return base + preferenceBoost + concentrationBoost + magnitudePenalty
-    }
-
-    private fun fieldScore(rawField: String): Int {
-        val field = rawField.lowercase()
-        val highSignal = listOf(
-            "value", "count", "energy", "distance", "mass",
-            "temperature", "rate", "speed", "power", "vo2",
-            "systolic", "diastolic", "glucose", "saturation", "cadence", "level"
-        )
-        val lowSignal = listOf(
-            "meal", "relation", "source", "specimen", "type", "status"
-        )
-        return when {
-            highSignal.any(field::contains) -> 4
-            lowSignal.any(field::contains) -> -8
-            field in setOf("time", "starttime", "endtime", "metadata") -> -10
-            else -> 0
-        }
-    }
-
-    private fun preferredFieldScore(
-        rawField: String,
-        preference: ReflectiveTypePreference?
-    ): Int {
-        if (preference == null) return 0
-        val field = rawField.lowercase()
-        return if (preference.preferredFields.any { token -> field.contains(token.lowercase()) }) 18 else 0
-    }
-
-    private fun normalizeUnitLabel(rawUnit: String): String {
-        val spaced = rawUnit.replace(Regex("([a-z])([A-Z])"), "$1 $2")
-        return spaced.lowercase()
-    }
-
-    private fun parseMeasurementFromString(text: String): ParsedMeasurement? {
-        val match = Regex("""^\s*([-+]?\d+(?:\.\d+)?)\s*([^\d].*)?\s*$""").find(text) ?: return null
-        val value = match.groupValues[1].toDoubleOrNull() ?: return null
-        val unit = match.groupValues.getOrNull(2)?.trim().orEmpty().ifBlank { null }
-            ?.takeIf(::isLikelyMeasurementUnit)
-        return ParsedMeasurement(value = value, unitLabel = unit)
-    }
-
-    private fun isLikelyMeasurementUnit(unit: String): Boolean {
-        val first = unit.trim().firstOrNull() ?: return false
-        return first.isLetter() || first == '%' || first == '°'
-    }
-
-    private fun isNumericType(type: Class<*>): Boolean {
-        return Number::class.java.isAssignableFrom(type) ||
-            type == java.lang.Double.TYPE ||
-            type == java.lang.Float.TYPE ||
-            type == java.lang.Integer.TYPE ||
-            type == java.lang.Long.TYPE ||
-            type == java.lang.Short.TYPE ||
-            type == java.lang.Byte.TYPE
-    }
-
-    private fun logMeasurementChoice(
-        record: Record,
-        unitPreference: UnitPreference,
-        best: CandidateMeasurement
-    ) {
-        val cls = record::class.qualifiedName ?: record::class.simpleName ?: "Record"
-        if (!cls.contains("bloodglucose", ignoreCase = true)) return
-        Log.d(
-            EXTRACTION_LOG_TAG,
-            "record=$cls field=${best.sourceField} unit=${best.unitLabel ?: "none"} value=${best.value} pref=$unitPreference score=${best.score}"
-        )
     }
 
     companion object {
@@ -731,6 +648,5 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
         const val NUTRITION_TOTAL_FAT_METRIC_KEY = "nutrition_total_fat"
         const val NUTRITION_SUGAR_METRIC_KEY = "nutrition_sugar"
         const val NUTRITION_DIETARY_FIBER_METRIC_KEY = "nutrition_dietary_fiber"
-        private const val EXTRACTION_LOG_TAG = "HealthDisconnectExtract"
     }
 }

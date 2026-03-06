@@ -1,12 +1,17 @@
 package com.monkopedia.healthdisconnect
 
-import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.units.Percentage
 import java.time.Instant
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class RecordPresentationFormattingTest {
 
     @Test
@@ -33,13 +38,13 @@ class RecordPresentationFormattingTest {
 
     @Test
     fun recordDetailsText_formatsMeasurementLikeStrings() {
-        val details = recordDetailsText(BodyFatDetailsRecord())
-        assertTrue(details, details.contains("BodyFat: 23.5%"))
-    }
-
-    class BodyFatDetailsRecord : Record {
-        override val metadata: Metadata = Metadata.manualEntry()
-        fun getBodyFat(): String = "23.456789%"
-        fun getTime(): Instant = Instant.parse("2026-02-23T10:00:00Z")
+        val record = BodyFatRecord(
+            percentage = Percentage(23.456789),
+            time = Instant.parse("2026-02-23T10:00:00Z"),
+            zoneOffset = ZoneOffset.UTC,
+            metadata = Metadata.manualEntry()
+        )
+        val details = recordDetailsText(record)
+        assertTrue(details, details.contains("Percentage: 23.5%"))
     }
 }
