@@ -11,29 +11,24 @@ class ScreenRoborazziDashboardIntegrityTest {
         val screenshotDir = File("app/build/outputs/roborazzi/screens")
         if (!screenshotDir.exists()) return
 
-        val phoneScreens = screenshotDir.listFiles { file ->
-            file.name.endsWith("_phone.png")
-        }?.map { it.name.removeSuffix("_phone.png") } ?: emptyList()
+        val buckets = listOf("phone", "tablet", "tablet7")
+        val screensByBucket = buckets.associateWith { bucket ->
+            screenshotDir.listFiles { file ->
+                file.name.endsWith("_$bucket.png")
+            }?.map { it.name.removeSuffix("_$bucket.png") }?.toSet() ?: emptySet()
+        }
 
-        val tabletScreens = screenshotDir.listFiles { file ->
-            file.name.endsWith("_tablet.png")
-        }?.map { it.name.removeSuffix("_tablet.png") } ?: emptyList()
+        val nonEmpty = screensByBucket.filterValues { it.isNotEmpty() }
+        if (nonEmpty.size < 2) return
 
-        if (phoneScreens.isEmpty() || tabletScreens.isEmpty()) return
+        val allScreens = nonEmpty.values.reduce { acc, set -> acc union set }
 
-        val phoneSet = phoneScreens.toSet()
-        val tabletSet = tabletScreens.toSet()
-
-        val missingOnTablet = phoneSet - tabletSet
-        val missingOnPhone = tabletSet - phoneSet
-
-        assertTrue(
-            "Screens missing on tablet dashboard: ${missingOnTablet.joinToString()}",
-            missingOnTablet.isEmpty()
-        )
-        assertTrue(
-            "Screens missing on phone dashboard: ${missingOnPhone.joinToString()}",
-            missingOnPhone.isEmpty()
-        )
+        nonEmpty.forEach { (bucket, screens) ->
+            val missing = allScreens - screens
+            assertTrue(
+                "Screens missing on $bucket dashboard: ${missing.joinToString()}",
+                missing.isEmpty()
+            )
+        }
     }
 }

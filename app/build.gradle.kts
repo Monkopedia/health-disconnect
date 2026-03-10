@@ -61,6 +61,19 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+    flavorDimensions += "mode"
+    productFlavors {
+        create("prod") {
+            dimension = "mode"
+            buildConfigField("boolean", "DEMO_MODE", "false")
+        }
+        create("demo") {
+            dimension = "mode"
+            applicationIdSuffix = ".demo"
+            buildConfigField("boolean", "DEMO_MODE", "true")
+        }
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"
@@ -134,6 +147,7 @@ tasks.register("recordRoborazziTableDebug") {
         "Records Roborazzi screenshots and rewrites the dashboard as a side-by-side table by screen name."
     dependsOn(
         "recordRoborazziPhoneDebug",
+        "recordRoborazziTablet7Debug",
         "recordRoborazziTabletDebug",
         "recordRoborazziDashboardIntegrityDebug"
     )
@@ -233,7 +247,7 @@ fun registerRoborazziSubsetTask(name: String, filter: String) {
         group = "verification"
         description = "Records Roborazzi screenshots for $filter only."
 
-        val baseTask = tasks.named<Test>("testDebugUnitTest").get()
+        val baseTask = tasks.named<Test>("testProdDebugUnitTest").get()
         testClassesDirs = baseTask.testClassesDirs
         classpath = baseTask.classpath
         dependsOn("unitTestGate")
@@ -254,10 +268,11 @@ fun registerRoborazziSubsetTask(name: String, filter: String) {
 tasks.register("unitTestGate") {
     group = "verification"
     description = "Runs unit tests in a stable single-process configuration."
-    dependsOn("testDebugUnitTest")
+    dependsOn("testProdDebugUnitTest")
 }
 
 registerRoborazziSubsetTask("recordRoborazziPhoneDebug", "com.monkopedia.healthdisconnect.screenshot.PhoneScreenRoborazziTest")
+registerRoborazziSubsetTask("recordRoborazziTablet7Debug", "com.monkopedia.healthdisconnect.screenshot.Tablet7ScreenRoborazziTest")
 registerRoborazziSubsetTask("recordRoborazziTabletDebug", "com.monkopedia.healthdisconnect.screenshot.TabletScreenRoborazziTest")
 registerRoborazziSubsetTask(
     "recordRoborazziDashboardIntegrityDebug",
@@ -269,6 +284,7 @@ tasks.register("roborazziGate") {
     description = "Runs screenshot verification separately from unit tests."
     dependsOn(
         "recordRoborazziPhoneDebug",
+        "recordRoborazziTablet7Debug",
         "recordRoborazziTabletDebug",
         "recordRoborazziDashboardIntegrityDebug",
         "recordRoborazziTableDebug"
@@ -278,16 +294,16 @@ tasks.register("roborazziGate") {
 tasks.register("allTests") {
     group = "verification"
     description = "Runs unit tests, screenshot generation, lint, and androidTest compile checks."
-    setDependsOn(listOf("unitTestGate", "roborazziGate", "lintDebug", "compileDebugAndroidTestKotlin"))
+    setDependsOn(listOf("unitTestGate", "roborazziGate", "lintProdDebug", "compileProdDebugAndroidTestKotlin"))
 }
 
 tasks.register("releaseVerification") {
     group = "verification"
     description = "Runs all verification gates including connected instrumentation tests."
-    setDependsOn(listOf("allTests", "connectedDebugAndroidTest"))
+    setDependsOn(listOf("allTests", "connectedProdDebugAndroidTest"))
 }
 
-tasks.matching { it.name == "testDebugUnitTest" }.configureEach {
+tasks.matching { it.name == "testProdDebugUnitTest" }.configureEach {
     if (this is Test) {
         // Keep unit tests deterministic and reduce intermittent OOM behavior on CI/dev machines.
         maxHeapSize = "2g"
@@ -296,12 +312,12 @@ tasks.matching { it.name == "testDebugUnitTest" }.configureEach {
     }
 }
 
-tasks.matching { it.name == "recordRoborazziDebug" }.configureEach {
+tasks.matching { it.name == "recordRoborazziProdDebug" }.configureEach {
     // Prevent running screenshot tests concurrently with unit tests and keep memory usage stable.
     mustRunAfter("unitTestGate")
 }
 
-tasks.matching { it.name == "testReleaseUnitTest" }.configureEach {
+tasks.matching { it.name == "testProdReleaseUnitTest" }.configureEach {
     (this as? Test)?.exclude("**/DataViewHeaderInteractionTest.class")
 }
 

@@ -74,7 +74,11 @@ object HealthDataWidgetUpdater {
             app: Application,
             view: DataView
         ) -> List<HealthDataModel.MetricSeries> = { app, view ->
-            HealthDataModel(app, autoRefreshMetrics = false).loadAggregatedSeriesForWidget(view)
+            val gateway = if (BuildConfig.DEMO_MODE) {
+                org.koin.core.context.GlobalContext.get().get<HealthConnectGateway>()
+            } else null
+            HealthDataModel(app, autoRefreshMetrics = false, healthConnectGateway = gateway)
+                .loadAggregatedSeriesForWidget(view)
         }
     ) : WidgetSeriesLoader {
         override suspend fun loadSeries(
@@ -679,6 +683,9 @@ object HealthDataWidgetUpdater {
         context: Context,
         view: com.monkopedia.healthdisconnect.model.DataView
     ): Set<String> {
+        if (BuildConfig.DEMO_MODE) {
+            return emptySet()
+        }
         val sdkStatus = HealthConnectClient.getSdkStatus(context, "com.google.android.apps.healthdata")
         if (sdkStatus != HealthConnectClient.SDK_AVAILABLE) {
             return emptySet()

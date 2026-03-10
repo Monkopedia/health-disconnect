@@ -839,6 +839,7 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectAggregatedSeries(any(), any()) } returns flowOf(emptyList())
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
         every { healthDataModel.aggregateMetricSeries(any(), any()) } returns null
+        every { healthDataModel.recordSelectionLabel(any()) } returns "Metric"
         return healthDataModel
     }
 
@@ -872,6 +873,13 @@ abstract class BaseScreenRoborazziTest {
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
 class PhoneScreenRoborazziTest : BaseScreenRoborazziTest() {
     override val sizeBucket = "phone"
+}
+
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w600dp-h960dp-xhdpi")
+class Tablet7ScreenRoborazziTest : BaseScreenRoborazziTest() {
+    override val sizeBucket = "tablet7"
 }
 
 @RunWith(AndroidJUnit4::class)

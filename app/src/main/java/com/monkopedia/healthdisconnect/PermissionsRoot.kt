@@ -35,8 +35,19 @@ private const val PERMISSIONS_TAG = "HealthDisconnectPermissions"
 
 @Composable
 fun PermissionsRoot(
-    permissionsViewModel: PermissionsViewModel = koinViewModel(),
     permittedContent: @Composable () -> Unit
+) {
+    if (BuildConfig.DEMO_MODE) {
+        permittedContent()
+    } else {
+        PermissionsGatedRoot(permittedContent)
+    }
+}
+
+@Composable
+private fun PermissionsGatedRoot(
+    permittedContent: @Composable () -> Unit,
+    permissionsViewModel: PermissionsViewModel = koinViewModel()
 ) {
     val availabilityStatus = permissionsViewModel.availabilityStatus
     val needsPermissions by permissionsViewModel.needsPermissions.collectAsStateWithLifecycle(false)
