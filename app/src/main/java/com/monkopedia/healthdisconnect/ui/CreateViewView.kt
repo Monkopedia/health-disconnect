@@ -81,6 +81,15 @@ fun CreateViewView(
                 item {
                     LoadingScreen()
                 }
+            } else if (itemsWithData.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.create_view_no_data),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                }
             } else {
                 items(itemsWithData) { metricClass ->
                     TextButton(

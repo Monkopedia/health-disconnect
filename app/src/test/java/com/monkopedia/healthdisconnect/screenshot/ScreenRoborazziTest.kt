@@ -371,6 +371,16 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    fun createViewEmptyScreen() {
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        val healthDataModel = mockHealthDataModel()
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(emptyList())
+        captureScreen("create_view_empty") {
+            CreateViewView(viewModel = viewModel, healthDataModel = healthDataModel)
+        }
+    }
+
+    @Test
     fun createViewOptionsScreen() {
         val viewModel = mockk<DataViewAdapterViewModel>()
         val healthDataModel = mockHealthDataModel()
