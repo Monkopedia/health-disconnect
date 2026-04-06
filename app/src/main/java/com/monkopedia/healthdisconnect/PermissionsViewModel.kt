@@ -64,7 +64,7 @@ import kotlinx.coroutines.launch
 
 class PermissionsViewModel(
     context: Application,
-    val healthConnectClient: HealthConnectClient
+    val healthConnectClient: HealthConnectClient?
 ) : AndroidViewModel(context) {
 
     private val providerPackageName = "com.google.android.apps.healthdata"
@@ -94,7 +94,7 @@ class PermissionsViewModel(
             checkTrigger.onStart { emit(Unit) }.flatMapLatest {
                 flow {
                     while (true) {
-                        emit(healthConnectClient.permissionController.getGrantedPermissions())
+                        emit(healthConnectClient!!.permissionController.getGrantedPermissions())
                         delay(CHECK_RATE)
                     }
                 }

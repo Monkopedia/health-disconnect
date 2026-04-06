@@ -394,7 +394,7 @@ private suspend fun readOldestNewest(
     var oldest: Instant? = null
     var newest: Instant? = null
     do {
-        val response = permissionsViewModel.healthConnectClient.readRecords(
+        val response = permissionsViewModel.healthConnectClient!!.readRecords(
             ReadRecordsRequest(
                 recordType = cls,
                 timeRangeFilter = TimeRangeFilter.between(Instant.EPOCH, now),

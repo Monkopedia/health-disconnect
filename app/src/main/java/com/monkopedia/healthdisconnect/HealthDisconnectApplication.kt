@@ -10,9 +10,14 @@ import org.koin.androidx.viewmodel.dsl.viewModel
 import org.koin.core.context.startKoin
 import org.koin.dsl.module
 
+fun healthConnectModule(context: Application) = module {
+    if (HealthConnectClient.getSdkStatus(context) == HealthConnectClient.SDK_AVAILABLE) {
+        single { HealthConnectClient.getOrCreate(androidContext()) }
+        single<HealthConnectGateway> { DefaultHealthConnectGateway(get()) }
+    }
+}
+
 val appModule = module {
-    single { HealthConnectClient.getOrCreate(androidContext()) }
-    single<HealthConnectGateway> { DefaultHealthConnectGateway(get()) }
     single<HealthRecordMeasurementExtractor> { DefaultHealthRecordMeasurementExtractor() }
     single<HealthDataAggregationEngine> { DefaultHealthDataAggregationEngine(get()) }
     single<HealthDataRecordCachePolicy> { DefaultHealthDataRecordCachePolicy() }
@@ -37,12 +42,12 @@ val appModule = module {
             dataViewInfoDao = get()
         )
     }
-    viewModel { PermissionsViewModel(get(), get()) }
+    viewModel { PermissionsViewModel(get(), getOrNull()) }
     viewModel {
         HealthDataModel(
             app = get(),
             autoRefreshMetrics = true,
-            healthConnectGateway = get(),
+            healthConnectGateway = getOrNull(),
             measurementExtractor = get(),
             aggregationEngine = get(),
             cachePolicy = get(),
@@ -60,7 +65,7 @@ class HealthDisconnectApplication : Application() {
         }
         startKoin {
             androidContext(this@HealthDisconnectApplication)
-            modules(appModule)
+            modules(healthConnectModule(this@HealthDisconnectApplication), appModule)
         }
     }
 }
