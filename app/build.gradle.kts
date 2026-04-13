@@ -53,6 +53,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            vcsInfo.include = false
         }
     }
     compileOptions {
@@ -147,6 +148,7 @@ tasks.register("recordRoborazziTableDebug") {
         "Records Roborazzi screenshots and rewrites the dashboard as a side-by-side table by screen name."
     dependsOn(
         "recordRoborazziPhoneDebug",
+        "recordRoborazziSmallPhoneDebug",
         "recordRoborazziTablet7Debug",
         "recordRoborazziTabletDebug",
         "recordRoborazziDashboardIntegrityDebug"
@@ -272,6 +274,7 @@ tasks.register("unitTestGate") {
 }
 
 registerRoborazziSubsetTask("recordRoborazziPhoneDebug", "com.monkopedia.healthdisconnect.screenshot.PhoneScreenRoborazziTest")
+registerRoborazziSubsetTask("recordRoborazziSmallPhoneDebug", "com.monkopedia.healthdisconnect.screenshot.SmallPhoneScreenRoborazziTest")
 registerRoborazziSubsetTask("recordRoborazziTablet7Debug", "com.monkopedia.healthdisconnect.screenshot.Tablet7ScreenRoborazziTest")
 registerRoborazziSubsetTask("recordRoborazziTabletDebug", "com.monkopedia.healthdisconnect.screenshot.TabletScreenRoborazziTest")
 registerRoborazziSubsetTask(
@@ -284,6 +287,7 @@ tasks.register("roborazziGate") {
     description = "Runs screenshot verification separately from unit tests."
     dependsOn(
         "recordRoborazziPhoneDebug",
+        "recordRoborazziSmallPhoneDebug",
         "recordRoborazziTablet7Debug",
         "recordRoborazziTabletDebug",
         "recordRoborazziDashboardIntegrityDebug",
@@ -325,4 +329,11 @@ kapt {
     arguments {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
+}
+
+// Disable baseline profile ArtProfile tasks. Compose pulls in profileinstaller
+// transitively, which adds non-deterministic baseline.prof generation that
+// breaks F-Droid reproducible builds.
+tasks.matching { it.name.contains("ArtProfile") }.configureEach {
+    enabled = false
 }

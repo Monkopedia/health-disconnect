@@ -887,6 +887,13 @@ class PhoneScreenRoborazziTest : BaseScreenRoborazziTest() {
 
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(qualifiers = "w320dp-h480dp-hdpi")
+class SmallPhoneScreenRoborazziTest : BaseScreenRoborazziTest() {
+    override val sizeBucket = "smallphone"
+}
+
+@RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(qualifiers = "w600dp-h960dp-xhdpi")
 class Tablet7ScreenRoborazziTest : BaseScreenRoborazziTest() {
     override val sizeBucket = "tablet7"
