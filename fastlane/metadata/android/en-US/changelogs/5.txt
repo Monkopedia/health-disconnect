@@ -1,3 +1,0 @@
-• Refresh health metrics after permissions are granted on first launch
-• Add Send feedback link in Settings
-• Guard HealthConnectClient creation behind SDK availability check
