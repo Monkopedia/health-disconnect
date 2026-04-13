@@ -1,0 +1,1 @@
+• Drop AGP dependency-metadata signing block from release APK for F-Droid inclusion

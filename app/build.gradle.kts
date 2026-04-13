@@ -17,13 +17,21 @@ android {
         applicationId = "com.monkopedia.healthdisconnect"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 7
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+    }
+
+    // AGP 8.1+ embeds a "Dependency metadata" block in the APK signing scheme by
+    // default. F-Droid's check rejects APKs containing it, so drop it from both
+    // APK and AAB outputs.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     signingConfigs {

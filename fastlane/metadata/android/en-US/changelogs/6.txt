@@ -1,2 +1,0 @@
-• Fix intro screen on small/large-font phones so the "Let's Go!" button is always reachable
-• Prepare build for F-Droid reproducible builds
