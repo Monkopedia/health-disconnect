@@ -53,6 +53,74 @@ data class ExtractableMetric(
     val label: String? = null
 )
 
+enum class NutrientUnit(val label: String, val valueOf: (Mass) -> Double) {
+    GRAMS("grams", Mass::inGrams),
+    MILLIGRAMS("milligrams", Mass::inMilligrams),
+    MICROGRAMS("micrograms", Mass::inMicrograms)
+}
+
+/**
+ * Single source of truth for the Mass-typed nutrients carried by [NutritionRecord].
+ * Drives the chart-metric list, the chart extractor, and the Entry Details popup so the
+ * three surfaces never drift. Energy / EnergyFromFat are handled separately (Energy-typed).
+ *
+ * [metricKey] values are persisted in saved views, so they must remain stable.
+ */
+data class NutritionNutrient(
+    val metricKey: String,
+    val sourceField: String,
+    val displayName: String,
+    val unit: NutrientUnit,
+    val select: (NutritionRecord) -> Mass?
+)
+
+val NUTRITION_NUTRIENTS: List<NutritionNutrient> = listOf(
+    // Macronutrients (grams) — order preserves the original metric list.
+    NutritionNutrient("nutrition_protein", "Protein", "Protein", NutrientUnit.GRAMS) { it.protein },
+    NutritionNutrient("nutrition_total_carbohydrate", "TotalCarbohydrate", "Total Carbohydrate", NutrientUnit.GRAMS) { it.totalCarbohydrate },
+    NutritionNutrient("nutrition_total_fat", "TotalFat", "Total Fat", NutrientUnit.GRAMS) { it.totalFat },
+    NutritionNutrient("nutrition_sugar", "Sugar", "Sugar", NutrientUnit.GRAMS) { it.sugar },
+    NutritionNutrient("nutrition_dietary_fiber", "DietaryFiber", "Dietary Fiber", NutrientUnit.GRAMS) { it.dietaryFiber },
+    NutritionNutrient("nutrition_saturated_fat", "SaturatedFat", "Saturated Fat", NutrientUnit.GRAMS) { it.saturatedFat },
+    NutritionNutrient("nutrition_monounsaturated_fat", "MonounsaturatedFat", "Monounsaturated Fat", NutrientUnit.GRAMS) { it.monounsaturatedFat },
+    NutritionNutrient("nutrition_polyunsaturated_fat", "PolyunsaturatedFat", "Polyunsaturated Fat", NutrientUnit.GRAMS) { it.polyunsaturatedFat },
+    NutritionNutrient("nutrition_trans_fat", "TransFat", "Trans Fat", NutrientUnit.GRAMS) { it.transFat },
+    NutritionNutrient("nutrition_unsaturated_fat", "UnsaturatedFat", "Unsaturated Fat", NutrientUnit.GRAMS) { it.unsaturatedFat },
+    // Stimulants / sterols / minerals (milligrams).
+    NutritionNutrient("nutrition_caffeine", "Caffeine", "Caffeine", NutrientUnit.MILLIGRAMS) { it.caffeine },
+    NutritionNutrient("nutrition_cholesterol", "Cholesterol", "Cholesterol", NutrientUnit.MILLIGRAMS) { it.cholesterol },
+    NutritionNutrient("nutrition_sodium", "Sodium", "Sodium", NutrientUnit.MILLIGRAMS) { it.sodium },
+    NutritionNutrient("nutrition_potassium", "Potassium", "Potassium", NutrientUnit.MILLIGRAMS) { it.potassium },
+    NutritionNutrient("nutrition_calcium", "Calcium", "Calcium", NutrientUnit.MILLIGRAMS) { it.calcium },
+    NutritionNutrient("nutrition_chloride", "Chloride", "Chloride", NutrientUnit.MILLIGRAMS) { it.chloride },
+    NutritionNutrient("nutrition_iron", "Iron", "Iron", NutrientUnit.MILLIGRAMS) { it.iron },
+    NutritionNutrient("nutrition_magnesium", "Magnesium", "Magnesium", NutrientUnit.MILLIGRAMS) { it.magnesium },
+    NutritionNutrient("nutrition_phosphorus", "Phosphorus", "Phosphorus", NutrientUnit.MILLIGRAMS) { it.phosphorus },
+    NutritionNutrient("nutrition_zinc", "Zinc", "Zinc", NutrientUnit.MILLIGRAMS) { it.zinc },
+    NutritionNutrient("nutrition_copper", "Copper", "Copper", NutrientUnit.MILLIGRAMS) { it.copper },
+    NutritionNutrient("nutrition_manganese", "Manganese", "Manganese", NutrientUnit.MILLIGRAMS) { it.manganese },
+    // Water-soluble vitamins commonly reported in milligrams.
+    NutritionNutrient("nutrition_vitamin_c", "VitaminC", "Vitamin C", NutrientUnit.MILLIGRAMS) { it.vitaminC },
+    NutritionNutrient("nutrition_vitamin_e", "VitaminE", "Vitamin E", NutrientUnit.MILLIGRAMS) { it.vitaminE },
+    NutritionNutrient("nutrition_thiamin", "Thiamin", "Thiamin", NutrientUnit.MILLIGRAMS) { it.thiamin },
+    NutritionNutrient("nutrition_riboflavin", "Riboflavin", "Riboflavin", NutrientUnit.MILLIGRAMS) { it.riboflavin },
+    NutritionNutrient("nutrition_niacin", "Niacin", "Niacin", NutrientUnit.MILLIGRAMS) { it.niacin },
+    NutritionNutrient("nutrition_pantothenic_acid", "PantothenicAcid", "Pantothenic Acid", NutrientUnit.MILLIGRAMS) { it.pantothenicAcid },
+    NutritionNutrient("nutrition_vitamin_b6", "VitaminB6", "Vitamin B6", NutrientUnit.MILLIGRAMS) { it.vitaminB6 },
+    // Trace elements / fat-soluble vitamins reported in micrograms.
+    NutritionNutrient("nutrition_selenium", "Selenium", "Selenium", NutrientUnit.MICROGRAMS) { it.selenium },
+    NutritionNutrient("nutrition_chromium", "Chromium", "Chromium", NutrientUnit.MICROGRAMS) { it.chromium },
+    NutritionNutrient("nutrition_molybdenum", "Molybdenum", "Molybdenum", NutrientUnit.MICROGRAMS) { it.molybdenum },
+    NutritionNutrient("nutrition_iodine", "Iodine", "Iodine", NutrientUnit.MICROGRAMS) { it.iodine },
+    NutritionNutrient("nutrition_vitamin_a", "VitaminA", "Vitamin A", NutrientUnit.MICROGRAMS) { it.vitaminA },
+    NutritionNutrient("nutrition_vitamin_d", "VitaminD", "Vitamin D", NutrientUnit.MICROGRAMS) { it.vitaminD },
+    NutritionNutrient("nutrition_vitamin_k", "VitaminK", "Vitamin K", NutrientUnit.MICROGRAMS) { it.vitaminK },
+    NutritionNutrient("nutrition_vitamin_b12", "VitaminB12", "Vitamin B12", NutrientUnit.MICROGRAMS) { it.vitaminB12 },
+    NutritionNutrient("nutrition_folate", "Folate", "Folate", NutrientUnit.MICROGRAMS) { it.folate },
+    NutritionNutrient("nutrition_folic_acid", "FolicAcid", "Folic Acid", NutrientUnit.MICROGRAMS) { it.folicAcid },
+    NutritionNutrient("nutrition_biotin", "Biotin", "Biotin", NutrientUnit.MICROGRAMS) { it.biotin }
+)
+
 interface HealthRecordMeasurementExtractor {
     fun extractMeasurement(record: Record, unitPreference: UnitPreference): MetricMeasurement?
     fun extractMeasurement(
@@ -116,37 +184,22 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
                     )
                 )
             }
-            NutritionRecord::class -> {
-                listOf(
-                    ExtractableMetric(
-                        key = null,
-                        label = "Nutrition Energy"
-                    ),
+            NutritionRecord::class -> buildList {
+                add(ExtractableMetric(key = null, label = "Nutrition Energy"))
+                add(
                     ExtractableMetric(
                         key = NUTRITION_ENERGY_FROM_FAT_METRIC_KEY,
                         label = "Nutrition Energy From Fat"
-                    ),
-                    ExtractableMetric(
-                        key = NUTRITION_PROTEIN_METRIC_KEY,
-                        label = "Nutrition Protein"
-                    ),
-                    ExtractableMetric(
-                        key = NUTRITION_TOTAL_CARBOHYDRATE_METRIC_KEY,
-                        label = "Nutrition Total Carbohydrate"
-                    ),
-                    ExtractableMetric(
-                        key = NUTRITION_TOTAL_FAT_METRIC_KEY,
-                        label = "Nutrition Total Fat"
-                    ),
-                    ExtractableMetric(
-                        key = NUTRITION_SUGAR_METRIC_KEY,
-                        label = "Nutrition Sugar"
-                    ),
-                    ExtractableMetric(
-                        key = NUTRITION_DIETARY_FIBER_METRIC_KEY,
-                        label = "Nutrition Dietary Fiber"
                     )
                 )
+                NUTRITION_NUTRIENTS.forEach { nutrient ->
+                    add(
+                        ExtractableMetric(
+                            key = nutrient.metricKey,
+                            label = "Nutrition ${nutrient.displayName}"
+                        )
+                    )
+                }
             }
             else -> listOf(ExtractableMetric())
         }
@@ -251,37 +304,15 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
                 sourceField = "EnergyFromFat",
                 unitPreference = unitPreference
             )
-            NUTRITION_PROTEIN_METRIC_KEY -> nutritionMassMeasurement(
-                timestamp = timestamp,
-                mass = nutritionRecord.protein,
-                sourceField = "Protein",
-                unitPreference = unitPreference
-            )
-            NUTRITION_TOTAL_CARBOHYDRATE_METRIC_KEY -> nutritionMassMeasurement(
-                timestamp = timestamp,
-                mass = nutritionRecord.totalCarbohydrate,
-                sourceField = "TotalCarbohydrate",
-                unitPreference = unitPreference
-            )
-            NUTRITION_TOTAL_FAT_METRIC_KEY -> nutritionMassMeasurement(
-                timestamp = timestamp,
-                mass = nutritionRecord.totalFat,
-                sourceField = "TotalFat",
-                unitPreference = unitPreference
-            )
-            NUTRITION_SUGAR_METRIC_KEY -> nutritionMassMeasurement(
-                timestamp = timestamp,
-                mass = nutritionRecord.sugar,
-                sourceField = "Sugar",
-                unitPreference = unitPreference
-            )
-            NUTRITION_DIETARY_FIBER_METRIC_KEY -> nutritionMassMeasurement(
-                timestamp = timestamp,
-                mass = nutritionRecord.dietaryFiber,
-                sourceField = "DietaryFiber",
-                unitPreference = unitPreference
-            )
-            else -> null
+            else -> NUTRITION_NUTRIENTS.firstOrNull { it.metricKey == metricKey }?.let { nutrient ->
+                nutritionMassMeasurement(
+                    timestamp = timestamp,
+                    mass = nutrient.select(nutritionRecord),
+                    sourceField = nutrient.sourceField,
+                    unit = nutrient.unit,
+                    unitPreference = unitPreference
+                )
+            }
         }
     }
 
@@ -309,14 +340,24 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
         timestamp: Instant,
         mass: Mass?,
         sourceField: String,
+        unit: NutrientUnit,
         unitPreference: UnitPreference
     ): MetricMeasurement? {
         val value = mass ?: return null
-        val useImperial = unitPreference == UnitPreference.IMPERIAL
+        // Macronutrients (grams) honor the imperial preference (ounces); micronutrients
+        // stay in their natural mg/mcg unit — nobody charts caffeine in ounces.
+        if (unit == NutrientUnit.GRAMS && unitPreference == UnitPreference.IMPERIAL) {
+            return MetricMeasurement(
+                timestamp = timestamp,
+                value = value.inOunces,
+                unitLabel = "ounces",
+                sourceField = sourceField
+            )
+        }
         return MetricMeasurement(
             timestamp = timestamp,
-            value = if (useImperial) value.inOunces else value.inGrams,
-            unitLabel = if (useImperial) "ounces" else "grams",
+            value = unit.valueOf(value),
+            unitLabel = unit.label,
             sourceField = sourceField
         )
     }

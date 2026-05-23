@@ -196,11 +196,12 @@ private fun recordDetailFields(record: Record): List<Pair<String, Any>> {
             add("StartTime" to record.startTime as Any)
             add("EndTime" to record.endTime as Any)
             record.energy?.let { add("Energy" to it) }
-            record.protein?.let { add("Protein" to it) }
-            record.totalCarbohydrate?.let { add("TotalCarbohydrate" to it) }
-            record.totalFat?.let { add("TotalFat" to it) }
-            record.sugar?.let { add("Sugar" to it) }
-            record.dietaryFiber?.let { add("DietaryFiber" to it) }
+            record.energyFromFat?.let { add("EnergyFromFat" to it) }
+            NUTRITION_NUTRIENTS.forEach { nutrient ->
+                nutrient.select(record)?.let { mass ->
+                    add(nutrient.sourceField to formatValueWithUnit(nutrient.unit.valueOf(mass), nutrient.unit.label))
+                }
+            }
             record.name?.let { add("Name" to it) }
         }
         is HeartRateRecord -> listOf("StartTime" to record.startTime, "EndTime" to record.endTime, "Samples" to "${record.samples.size} samples")

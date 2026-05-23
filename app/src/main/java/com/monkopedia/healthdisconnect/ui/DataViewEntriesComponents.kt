@@ -73,6 +73,7 @@ import com.monkopedia.healthdisconnect.recordTimestampLabel
 import com.monkopedia.healthdisconnect.shareEntriesCsv
 import com.monkopedia.healthdisconnect.writeEntriesCsvToCache
 import com.monkopedia.healthdisconnect.model.DataView
+import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
@@ -447,8 +448,9 @@ private fun formatRecordValuePreview(
     record: Record,
     measurementExtractor: HealthRecordMeasurementExtractor
 ): String? {
-    val unitPreference = unitPreferenceForRecord(view, record)
-    val measurement = measurementExtractor.extractMeasurement(record, unitPreference)
+    val selection = matchingSelectionForRecord(view, record)
+    val unitPreference = selection?.metricSettings?.unitPreference ?: view.chartSettings.unitPreference
+    val measurement = measurementExtractor.extractMeasurement(record, unitPreference, selection?.metricKey)
     return if (measurement != null) {
         formatValueWithUnit(measurement.value, measurement.unitLabel)
     } else {
@@ -456,12 +458,11 @@ private fun formatRecordValuePreview(
     }
 }
 
-private fun unitPreferenceForRecord(view: DataView, record: Record): UnitPreference {
-    val matchingSelection = view.records.firstOrNull { selection ->
+private fun matchingSelectionForRecord(view: DataView, record: Record): RecordSelection? {
+    return view.records.firstOrNull { selection ->
         val selectedClass = PermissionsViewModel.CLASSES.firstOrNull {
             it.qualifiedName == selection.fqn
         }
         selectedClass?.java?.isAssignableFrom(record.javaClass) == true
     }
-    return matchingSelection?.metricSettings?.unitPreference ?: view.chartSettings.unitPreference
 }
