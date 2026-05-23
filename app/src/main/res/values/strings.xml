@@ -52,6 +52,9 @@
     <string name="data_view_select_metric_to_add">Select a metric to add</string>
     <string name="data_view_select_replacement_metric">Select replacement metric</string>
     <string name="data_view_no_more_metrics_to_add">All available metrics are already added.</string>
+    <string name="data_view_no_recent_data_title">No recent data</string>
+    <string name="data_view_metric_no_recent_data">You don\'t appear to have any recent %1$s data. Add it anyway?</string>
+    <string name="data_view_add_anyway">Add anyway</string>
     <string name="data_view_delete_view_title">Delete View?</string>
     <string name="data_view_delete_view_body">Removing the last metric will delete this view. Do you want to continue?</string>
     <string name="data_view_delete">Delete</string>

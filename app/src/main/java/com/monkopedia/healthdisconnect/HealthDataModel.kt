@@ -14,6 +14,7 @@ import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.YAxisMode
 import java.time.Instant
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 import kotlin.reflect.KClass
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.async
@@ -61,6 +62,7 @@ class HealthDataModel @JvmOverloads constructor(
     companion object {
         const val MAX_CHART_SERIES = 3
         const val LOG_TAG = "HealthDataModel"
+        const val RECENT_METRIC_LOOKBACK_DAYS = 90L
     }
 
     data class RecordSelectionOption(
@@ -131,6 +133,24 @@ class HealthDataModel @JvmOverloads constructor(
                 label = metric.label ?: baseLabel
             )
         }.distinctBy { it.selection.selectionKey() }
+    }
+
+    /**
+     * Whether [recordClass]'s [metricKey] metric has any value within the last
+     * [lookbackDays]. Probes most-recent-first and short-circuits, so a recently-logged
+     * value returns quickly. Used to warn (without blocking) when a user adds a metric
+     * they have no recent data for.
+     */
+    suspend fun hasRecentMetricData(
+        recordClass: KClass<out Record>,
+        metricKey: String?,
+        lookbackDays: Long = RECENT_METRIC_LOOKBACK_DAYS
+    ): Boolean = withContext(ioDispatcher) {
+        val now = timeProvider.now()
+        val start = now.minus(lookbackDays, ChronoUnit.DAYS)
+        gateway.anyRecordInRange(recordClass, start, now) { record ->
+            measurementExtractor.extractMeasurement(record, UnitPreference.METRIC, metricKey) != null
+        }
     }
 
     suspend fun refreshMetricsWithData() {
