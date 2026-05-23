@@ -109,11 +109,13 @@ class PermissionsStateIntegrationTest {
         permissionsViewModel: PermissionsViewModel,
         permittedContentText: String = "Permitted content"
     ) {
+        val healthDataModel = mockk<HealthDataModel>(relaxed = true)
         composeRule.setContent {
             HealthDisconnectTheme(dynamicColor = false) {
-                PermissionsRoot(
+                PermissionsGatedRoot(
+                    permittedContent = { PermittedContent(permittedContentText) },
                     permissionsViewModel = permissionsViewModel,
-                    permittedContent = { PermittedContent(permittedContentText) }
+                    healthDataModel = healthDataModel
                 )
             }
         }

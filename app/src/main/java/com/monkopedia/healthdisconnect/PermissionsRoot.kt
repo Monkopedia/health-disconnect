@@ -46,7 +46,7 @@ fun PermissionsRoot(
 }
 
 @Composable
-private fun PermissionsGatedRoot(
+internal fun PermissionsGatedRoot(
     permittedContent: @Composable () -> Unit,
     permissionsViewModel: PermissionsViewModel = koinViewModel(),
     healthDataModel: HealthDataModel = koinViewModel()
