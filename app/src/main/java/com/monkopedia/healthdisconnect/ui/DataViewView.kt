@@ -140,6 +140,8 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 
 internal const val ENTRY_DETAILS_LOG_TAG = "HealthDisconnectEntry"
 
+private class PendingMetricChoice(val label: String, val commit: () -> Unit)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataViewView(
@@ -212,6 +214,7 @@ fun DataViewView(
     var showAddMetricDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var showDeleteViewConfirmation by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var replaceMetricTargetKey by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
+    var pendingMetricChoice by remember(view!!.id) { mutableStateOf<PendingMetricChoice?>(null) }
     var showGraphThemeDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var showGraphWarningDialog by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var selectedGraphShareTheme by rememberSaveable(view!!.id) {
@@ -238,6 +241,21 @@ fun DataViewView(
     val headerTravel = ((if (headerWidthPx > 0f) headerWidthPx else fallbackHeaderWidthPx) * 0.9f) + (screenWidthPx * 0.35f)
     val headerOffsetAbs = abs(headerPageOffset).coerceIn(0f, 1f)
     val hasWidgetForCurrentView = widgetBindings.values.any { it == view!!.id }
+    fun chooseMetric(fqn: String, metricKey: String?, label: String, commit: () -> Unit) {
+        val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == fqn }
+        if (cls == null) {
+            commit()
+            return
+        }
+        actionScope.launch {
+            if (healthDataModel.hasRecentMetricData(cls, metricKey)) {
+                commit()
+            } else {
+                pendingMetricChoice = PendingMetricChoice(label, commit)
+            }
+        }
+    }
+
     fun resetEditStateToSaved() {
         chartSettings = view!!.chartSettings
         selectedSelections = view!!.records.map { selection ->
@@ -689,9 +707,15 @@ fun DataViewView(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        selectedSelections = (selectedSelections + option.selection)
-                                            .distinctBy { it.selectionKey() }
                                         showAddMetricDialog = false
+                                        chooseMetric(
+                                            fqn = option.selection.fqn,
+                                            metricKey = option.selection.metricKey,
+                                            label = option.label
+                                        ) {
+                                            selectedSelections = (selectedSelections + option.selection)
+                                                .distinctBy { it.selectionKey() }
+                                        }
                                     }
                                     .padding(vertical = 10.dp)
                             ) {
@@ -746,17 +770,24 @@ fun DataViewView(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                    selectedSelections = selectedSelections.map { selection ->
-                                        if (selection.selectionKey() == metricToReplace) {
-                                            selection.copy(
-                                                fqn = option.selection.fqn,
-                                                metricKey = option.selection.metricKey
-                                            )
-                                        } else {
-                                            selection
+                                    val target = metricToReplace
+                                    replaceMetricTargetKey = null
+                                    chooseMetric(
+                                        fqn = option.selection.fqn,
+                                        metricKey = option.selection.metricKey,
+                                        label = option.label
+                                    ) {
+                                        selectedSelections = selectedSelections.map { selection ->
+                                            if (selection.selectionKey() == target) {
+                                                selection.copy(
+                                                    fqn = option.selection.fqn,
+                                                    metricKey = option.selection.metricKey
+                                                )
+                                            } else {
+                                                selection
+                                            }
                                         }
                                     }
-                                    replaceMetricTargetKey = null
                                 }
                                 .padding(vertical = 10.dp)
                         ) {
@@ -770,6 +801,31 @@ fun DataViewView(
             dismissButton = {
                 TextButton(onClick = { replaceMetricTargetKey = null }) {
                     Text(stringResource(R.string.data_view_close))
+                }
+            }
+        )
+    }
+
+    pendingMetricChoice?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingMetricChoice = null },
+            title = { Text(stringResource(R.string.data_view_no_recent_data_title)) },
+            text = {
+                Text(stringResource(R.string.data_view_metric_no_recent_data, pending.label))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pending.commit()
+                        pendingMetricChoice = null
+                    }
+                ) {
+                    Text(stringResource(R.string.data_view_add_anyway))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingMetricChoice = null }) {
+                    Text(stringResource(R.string.data_view_cancel))
                 }
             }
         )
