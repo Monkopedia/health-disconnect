@@ -1,7 +1,9 @@
 package com.monkopedia.healthdisconnect
 
 import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.units.Mass
 import androidx.health.connect.client.units.Percentage
 import java.time.Instant
 import java.time.ZoneOffset
@@ -46,5 +48,32 @@ class RecordPresentationFormattingTest {
         )
         val details = recordDetailsText(record)
         assertTrue(details, details.contains("Percentage: 23.5%"))
+    }
+
+    @Test
+    fun recordDetailsText_rendersCaffeineOnlyNutritionRecord() {
+        val record = NutritionRecord(
+            startTime = Instant.parse("2026-02-23T10:00:00Z"),
+            startZoneOffset = ZoneOffset.UTC,
+            endTime = Instant.parse("2026-02-23T10:05:00Z"),
+            endZoneOffset = ZoneOffset.UTC,
+            caffeine = Mass.grams(0.154),
+            metadata = Metadata.manualEntry()
+        )
+        val details = recordDetailsText(record)
+        assertTrue(details, details.contains("Caffeine: 0.154 g"))
+    }
+
+    @Test
+    fun recordPrimaryValueLabel_fallsBackToCaffeineWhenEnergyAbsent() {
+        val record = NutritionRecord(
+            startTime = Instant.parse("2026-02-23T10:00:00Z"),
+            startZoneOffset = ZoneOffset.UTC,
+            endTime = Instant.parse("2026-02-23T10:05:00Z"),
+            endZoneOffset = ZoneOffset.UTC,
+            caffeine = Mass.grams(0.154),
+            metadata = Metadata.manualEntry()
+        )
+        assertEquals("0.154 g", recordPrimaryValueLabel(record))
     }
 }

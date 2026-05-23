@@ -148,6 +148,7 @@ fun recordPrimaryValueLabel(record: Record): String? {
             else formatValueWithUnit(ChronoUnit.SECONDS.between(record.startTime, record.endTime).toDouble() / 60.0, "minutes")
         }
         is NutritionRecord -> record.energy?.let { formatValueWithUnit(it.inKilocalories, "kcal") }
+            ?: record.caffeine?.let { formatValueWithUnit(it.inGrams, "g") }
         is HeartRateRecord -> if (record.samples.isEmpty()) null else formatValueWithUnit(record.samples.map { it.beatsPerMinute.toDouble() }.average(), "bpm")
         is BodyFatRecord -> formatValueWithUnit(record.percentage.value, "%")
         is BodyTemperatureRecord -> formatValueWithUnit(record.temperature.inCelsius, "celsius")
@@ -201,6 +202,7 @@ private fun recordDetailFields(record: Record): List<Pair<String, Any>> {
             record.totalFat?.let { add("TotalFat" to it) }
             record.sugar?.let { add("Sugar" to it) }
             record.dietaryFiber?.let { add("DietaryFiber" to it) }
+            record.caffeine?.let { add("Caffeine" to it) }
             record.name?.let { add("Name" to it) }
         }
         is HeartRateRecord -> listOf("StartTime" to record.startTime, "EndTime" to record.endTime, "Samples" to "${record.samples.size} samples")
