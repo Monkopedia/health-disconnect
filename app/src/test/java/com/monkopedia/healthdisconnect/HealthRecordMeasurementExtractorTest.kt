@@ -16,6 +16,7 @@ import io.mockk.mockk
 import java.time.Instant
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -159,6 +160,52 @@ class HealthRecordMeasurementExtractorTest {
         )
         assertEquals(0.6349, sugar.value, 0.001)
         assertEquals("ounces", sugar.unitLabel)
+    }
+
+    @Test
+    fun `extractor supports micronutrient metrics in natural units`() {
+        val start = Instant.parse("2026-02-18T08:00:00Z")
+        val record = NutritionRecord(
+            startTime = start,
+            startZoneOffset = ZoneOffset.UTC,
+            endTime = start.plusSeconds(60),
+            endZoneOffset = ZoneOffset.UTC,
+            metadata = Metadata.manualEntry(),
+            caffeine = Mass.grams(0.154),
+            sodium = Mass.grams(1.5),
+            vitaminA = Mass.micrograms(700.0)
+        )
+
+        // Caffeine reports in mg and ignores the imperial preference (no ounces).
+        val caffeine = requireNotNull(
+            extractor.extractMeasurement(record, UnitPreference.IMPERIAL, "nutrition_caffeine")
+        )
+        assertEquals(154.0, caffeine.value, 0.001)
+        assertEquals("milligrams", caffeine.unitLabel)
+
+        val sodium = requireNotNull(
+            extractor.extractMeasurement(record, UnitPreference.METRIC, "nutrition_sodium")
+        )
+        assertEquals(1500.0, sodium.value, 0.001)
+        assertEquals("milligrams", sodium.unitLabel)
+
+        val vitaminA = requireNotNull(
+            extractor.extractMeasurement(record, UnitPreference.METRIC, "nutrition_vitamin_a")
+        )
+        assertEquals(700.0, vitaminA.value, 0.001)
+        assertEquals("micrograms", vitaminA.unitLabel)
+    }
+
+    @Test
+    fun `nutrition available metrics expose every nutrient`() {
+        val metrics = extractor.availableMetrics(NutritionRecord::class)
+        // 2 energy metrics (energy + energy-from-fat) plus every Mass nutrient.
+        assertEquals(2 + NUTRITION_NUTRIENTS.size, metrics.size)
+        assertTrue(metrics.any { it.key == "nutrition_caffeine" && it.label == "Nutrition Caffeine" })
+        assertEquals(
+            "Nutrition Vitamin B12",
+            extractor.metricLabel(NutritionRecord::class, "nutrition_vitamin_b12")
+        )
     }
 
 }

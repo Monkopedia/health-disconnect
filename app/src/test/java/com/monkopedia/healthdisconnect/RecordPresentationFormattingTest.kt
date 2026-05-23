@@ -51,7 +51,7 @@ class RecordPresentationFormattingTest {
     }
 
     @Test
-    fun recordDetailsText_rendersCaffeineOnlyNutritionRecord() {
+    fun recordDetailsText_rendersCaffeineOnlyNutritionRecordInMilligrams() {
         val record = NutritionRecord(
             startTime = Instant.parse("2026-02-23T10:00:00Z"),
             startZoneOffset = ZoneOffset.UTC,
@@ -61,19 +61,24 @@ class RecordPresentationFormattingTest {
             metadata = Metadata.manualEntry()
         )
         val details = recordDetailsText(record)
-        assertTrue(details, details.contains("Caffeine: 0.154 g"))
+        assertTrue(details, details.contains("Caffeine: 154 mg"))
     }
 
     @Test
-    fun recordPrimaryValueLabel_fallsBackToCaffeineWhenEnergyAbsent() {
+    fun recordDetailsText_rendersMicronutrientsInNaturalUnits() {
         val record = NutritionRecord(
             startTime = Instant.parse("2026-02-23T10:00:00Z"),
             startZoneOffset = ZoneOffset.UTC,
             endTime = Instant.parse("2026-02-23T10:05:00Z"),
             endZoneOffset = ZoneOffset.UTC,
-            caffeine = Mass.grams(0.154),
+            sodium = Mass.grams(1.5),
+            vitaminD = Mass.micrograms(20.0),
+            protein = Mass.grams(12.0),
             metadata = Metadata.manualEntry()
         )
-        assertEquals("0.154 g", recordPrimaryValueLabel(record))
+        val details = recordDetailsText(record)
+        assertTrue(details, details.contains("Sodium: 1500 mg"))
+        assertTrue(details, details.contains("VitaminD: 20 mcg"))
+        assertTrue(details, details.contains("Protein: 12 g"))
     }
 }
