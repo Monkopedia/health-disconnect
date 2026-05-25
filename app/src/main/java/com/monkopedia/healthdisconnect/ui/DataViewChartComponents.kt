@@ -270,9 +270,16 @@ internal fun MetricOverTimeChart(
                 strokeWidth = 1.dp.toPx()
             )
 
+            // A lone point is centered horizontally (and the symmetric value range centers
+            // it vertically) so it sits in the middle of the chart instead of at an edge.
+            val singlePoint = allPoints.size == 1
             fun pointToOffset(point: HealthDataModel.MetricPoint, seriesIndex: Int): Offset {
-                val dayOffset = ChronoUnit.DAYS.between(axisStart, point.date).toFloat()
-                val fraction = (dayOffset / axisSpanDays.toFloat()).coerceIn(0f, 1f)
+                val fraction = if (singlePoint) {
+                    0.5f
+                } else {
+                    (ChronoUnit.DAYS.between(axisStart, point.date).toFloat() / axisSpanDays.toFloat())
+                        .coerceIn(0f, 1f)
+                }
                 val x = leftPad + (chartWidth * fraction)
                 val yNorm = normalized(point.value, rangeFor(seriesIndex))
                 val y = topPad + chartHeight - (yNorm * chartHeight)
@@ -451,6 +458,12 @@ internal fun seriesRangeFromPoints(
 ): ValueRange {
     val rawMin = points.minOfOrNull { it.value } ?: 0.0
     val rawMax = points.maxOfOrNull { it.value } ?: 1.0
+    if (rawMin == rawMax) {
+        // A single distinct value: center it with a symmetric band so a lone point sits
+        // in the middle of the chart vertically rather than pinned to the top or bottom.
+        val pad = max(1.0, kotlin.math.abs(rawMin) * 0.1)
+        return ValueRange(min = rawMin - pad, max = rawMin + pad)
+    }
     val min = if (yAxisMode == YAxisMode.START_AT_ZERO) 0.0 else rawMin
     val max = max(min + 1.0, rawMax)
     return ValueRange(min = min, max = max)
