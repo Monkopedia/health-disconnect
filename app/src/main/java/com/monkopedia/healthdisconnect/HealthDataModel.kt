@@ -326,6 +326,15 @@ class HealthDataModel @JvmOverloads constructor(
         )
     }
 
+    /** True when [record] yields a value for at least one of the view's selected metrics. */
+    private fun recordHasSelectedMetric(view: DataView, record: Record): Boolean {
+        return view.records.any { sel ->
+            val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == sel.fqn }
+            cls?.java?.isAssignableFrom(record.javaClass) == true &&
+                measurementExtractor.extractMeasurement(record, UnitPreference.METRIC, sel.metricKey) != null
+        }
+    }
+
     fun collectRecordCount(view: DataView, refreshTick: Int = 0): Flow<Int> = channelFlow {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
@@ -342,7 +351,7 @@ class HealthDataModel @JvmOverloads constructor(
         selections.forEach { cls ->
             try {
                 pageReader(cls, queryStart, now) { pageRecords ->
-                    count += pageRecords.size
+                    count += pageRecords.count { recordHasSelectedMetric(view, it) }
                     trySend(count)
                 }
             } catch (exception: Exception) {

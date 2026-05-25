@@ -5,12 +5,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -28,8 +24,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.HealthDataModel
+import com.monkopedia.healthdisconnect.HealthDataModel.RecordSelectionOption
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.model.MetricChartSettings
 import org.koin.androidx.compose.koinViewModel
 import kotlin.math.abs
 import kotlinx.coroutines.launch
@@ -43,12 +41,33 @@ fun CreateViewView(
 ) {
     val itemsWithData = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
     val scope = rememberCoroutineScope()
+    var pendingMetricChoice by remember { mutableStateOf<PendingMetricChoice?>(null) }
     var headerWidthPx by remember { mutableStateOf(0f) }
     val density = LocalDensity.current
     val screenWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
     val fallbackHeaderWidthPx = with(density) { 160.dp.toPx() }
     val headerTravel = ((if (headerWidthPx > 0f) headerWidthPx else fallbackHeaderWidthPx) * 0.9f) + (screenWidthPx * 0.35f)
     val headerOffsetAbs = abs(headerPageOffset).coerceIn(0f, 1f)
+
+    fun startCreate(option: RecordSelectionOption) {
+        scope.launch { viewModel.createView(option.selection, option.label) }
+    }
+
+    fun chooseForCreate(option: RecordSelectionOption) {
+        val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == option.selection.fqn }
+        if (cls == null) {
+            startCreate(option)
+            return
+        }
+        scope.launch {
+            if (healthDataModel.hasRecentMetricData(cls, option.selection.metricKey)) {
+                viewModel.createView(option.selection, option.label)
+            } else {
+                pendingMetricChoice = PendingMetricChoice(option.label) { startCreate(option) }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -69,20 +88,25 @@ fun CreateViewView(
                 }
         )
         Spacer(Modifier.height(11.dp))
-        LazyColumn(Modifier.fillMaxWidth()) {
-            item {
-                Text(
-                    stringResource(R.string.create_view_select_base_metric),
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-            }
-            if (itemsWithData == null) {
-                item {
-                    LoadingScreen()
-                }
-            } else if (itemsWithData.isEmpty()) {
-                item {
+        Text(
+            stringResource(R.string.create_view_select_base_metric),
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        if (itemsWithData == null) {
+            LoadingScreen()
+        } else {
+            TwoLevelMetricPicker(
+                typesWithData = itemsWithData,
+                optionsFor = { cls ->
+                    healthDataModel.recordSelectionOptions(
+                        recordClass = cls,
+                        metricSettings = MetricChartSettings()
+                    )
+                },
+                onPick = { option -> chooseForCreate(option) },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                emptyContent = {
                     Text(
                         text = stringResource(R.string.create_view_no_data),
                         style = MaterialTheme.typography.bodyMedium,
@@ -90,32 +114,18 @@ fun CreateViewView(
                         modifier = Modifier.padding(vertical = 16.dp)
                     )
                 }
-            } else {
-                items(itemsWithData) { metricClass ->
-                    TextButton(
-                        onClick = {
-                        scope.launch {
-                            // TODO: Dialog or loading state
-                            viewModel.createView(metricClass)
-                        }
-                    },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp)
-                    ) {
-                        Text(
-                            PermissionsViewModel.RECORD_NAMES[metricClass]
-                                ?: error("Missing name mapping"),
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Start
-                        )
-                    }
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                    )
-                }
-            }
+            )
         }
+    }
+
+    pendingMetricChoice?.let { pending ->
+        MetricNoDataWarningDialog(
+            pending = pending,
+            onConfirm = {
+                pending.commit()
+                pendingMetricChoice = null
+            },
+            onDismiss = { pendingMetricChoice = null }
+        )
     }
 }

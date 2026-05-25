@@ -155,10 +155,13 @@ fun EntriesRouteScreen(
     var isExporting by rememberSaveable(viewId) { mutableStateOf(false) }
     var exportErrorMessage by rememberSaveable(viewId) { mutableStateOf<String?>(null) }
     val measurementExtractor = remember { DefaultHealthRecordMeasurementExtractor() }
+    val filteredData = remember(data, view) {
+        data?.filter { recordHasSelectedMetricValue(view!!, it, measurementExtractor) }
+    }
 
     EntriesScreen(
         infoName = info?.name ?: "",
-        data = data,
+        data = filteredData,
         onBack = onBack,
         onShareRequested = { showExportModeDialog = true },
         isExporting = isExporting,
@@ -464,5 +467,28 @@ private fun matchingSelectionForRecord(view: DataView, record: Record): RecordSe
             it.qualifiedName == selection.fqn
         }
         selectedClass?.java?.isAssignableFrom(record.javaClass) == true
+    }
+}
+
+/**
+ * True when [record] yields a value for at least one of the view's selected metrics.
+ * Used to keep the entries list specific to what the view actually charts — e.g. a
+ * "Nutrition Caffeine" view should not list sodium-only records.
+ */
+private fun recordHasSelectedMetricValue(
+    view: DataView,
+    record: Record,
+    measurementExtractor: HealthRecordMeasurementExtractor
+): Boolean {
+    return view.records.any { selection ->
+        val selectedClass = PermissionsViewModel.CLASSES.firstOrNull {
+            it.qualifiedName == selection.fqn
+        }
+        selectedClass?.java?.isAssignableFrom(record.javaClass) == true &&
+            measurementExtractor.extractMeasurement(
+                record,
+                UnitPreference.METRIC,
+                selection.metricKey
+            ) != null
     }
 }

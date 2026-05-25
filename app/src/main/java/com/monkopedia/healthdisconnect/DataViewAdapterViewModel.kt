@@ -143,11 +143,18 @@ class DataViewAdapterViewModel(
     }
 
     suspend fun createView(cls: KClass<out Record>) {
+        val name = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: "Record"
+        createView(com.monkopedia.healthdisconnect.model.RecordSelection(cls), name)
+    }
+
+    suspend fun createView(
+        selection: com.monkopedia.healthdisconnect.model.RecordSelection,
+        name: String
+    ) {
         val maxOrdering = dataViewInfoDao.maxOrdering() ?: 0
         val nextOrder = maxOrdering + 1
         val newId = nextOrder
-        val name = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: "Record"
-        val recordsJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(com.monkopedia.healthdisconnect.model.RecordSelection(cls)))
+        val recordsJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(selection))
         val settingsJson = Json.encodeToString(ChartSettings.serializer(), ChartSettings())
         appDatabase.withTransaction {
             dataViewDao.insert(
