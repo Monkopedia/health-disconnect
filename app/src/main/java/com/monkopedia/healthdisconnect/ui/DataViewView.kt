@@ -140,8 +140,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 
 internal const val ENTRY_DETAILS_LOG_TAG = "HealthDisconnectEntry"
 
-private class PendingMetricChoice(val label: String, val commit: () -> Unit)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataViewView(
@@ -675,56 +673,42 @@ fun DataViewView(
 
     if (showAddMetricDialog) {
         val available = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
-        val allForDialog = (available ?: PermissionsViewModel.CLASSES).toList().sortedBy {
-            PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: it.qualifiedName ?: "")
-        }
+        val typesWithData = (available ?: PermissionsViewModel.CLASSES).toList()
         val existingSelectionKeys = selectedSelections.map { it.selectionKey() }.toSet()
-        val unselectedOptions = allForDialog
-            .flatMap { cls ->
-                healthDataModel.recordSelectionOptions(
-                    recordClass = cls,
-                    metricSettings = copiedMetricSettingsForNewSelection()
-                )
-            }
-            .filterNot { option -> existingSelectionKeys.contains(option.selection.selectionKey()) }
-            .sortedBy { option -> option.label }
         AlertDialog(
             onDismissRequest = { showAddMetricDialog = false },
             title = { Text(stringResource(R.string.data_view_select_metric_to_add)) },
             text = {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
-                    if (unselectedOptions.isEmpty()) {
-                        item {
-                            Text(
-                                text = stringResource(R.string.data_view_no_more_metrics_to_add),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                TwoLevelMetricPicker(
+                    typesWithData = typesWithData,
+                    optionsFor = { cls ->
+                        healthDataModel.recordSelectionOptions(
+                            recordClass = cls,
+                            metricSettings = copiedMetricSettingsForNewSelection()
+                        )
+                    },
+                    isSelectable = { option ->
+                        option.selection.selectionKey() !in existingSelectionKeys
+                    },
+                    onPick = { option ->
+                        showAddMetricDialog = false
+                        chooseMetric(
+                            fqn = option.selection.fqn,
+                            metricKey = option.selection.metricKey,
+                            label = option.label
+                        ) {
+                            selectedSelections = (selectedSelections + option.selection)
+                                .distinctBy { it.selectionKey() }
                         }
-                    } else {
-                        items(unselectedOptions.size) { index ->
-                            val option = unselectedOptions[index]
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        showAddMetricDialog = false
-                                        chooseMetric(
-                                            fqn = option.selection.fqn,
-                                            metricKey = option.selection.metricKey,
-                                            label = option.label
-                                        ) {
-                                            selectedSelections = (selectedSelections + option.selection)
-                                                .distinctBy { it.selectionKey() }
-                                        }
-                                    }
-                                    .padding(vertical = 10.dp)
-                            ) {
-                                Text(option.label)
-                            }
-                            HorizontalDivider()
-                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+                    emptyContent = {
+                        Text(
+                            text = stringResource(R.string.data_view_no_more_metrics_to_add),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                }
+                )
             },
             confirmButton = {},
             dismissButton = {
@@ -738,64 +722,47 @@ fun DataViewView(
     val metricToReplace = replaceMetricTargetKey
     if (metricToReplace != null) {
         val available = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
-        val allForDialog = (available ?: PermissionsViewModel.CLASSES).toList().sortedBy {
-            PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: it.qualifiedName ?: "")
-        }
+        val typesWithData = (available ?: PermissionsViewModel.CLASSES).toList()
         val targetSelection = selectedSelections.firstOrNull { it.selectionKey() == metricToReplace }
-        val replacementOptions = if (targetSelection == null) {
-            emptyList()
-        } else {
-            allForDialog
-                .flatMap { cls ->
-                    healthDataModel.recordSelectionOptions(
-                        recordClass = cls,
-                        metricSettings = targetSelection.metricSettings ?: copiedMetricSettingsForNewSelection()
-                    )
-                }
-                .filter { option ->
-                    val optionKey = option.selection.selectionKey()
-                    optionKey == metricToReplace ||
-                        selectedSelections.none { it.selectionKey() == optionKey }
-                }
-                .sortedBy { it.label }
-        }
         AlertDialog(
             onDismissRequest = { replaceMetricTargetKey = null },
             title = { Text(stringResource(R.string.data_view_select_replacement_metric)) },
             text = {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
-                    items(replacementOptions.size) { index ->
-                        val option = replacementOptions[index]
-                        Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                    val target = metricToReplace
-                                    replaceMetricTargetKey = null
-                                    chooseMetric(
-                                        fqn = option.selection.fqn,
-                                        metricKey = option.selection.metricKey,
-                                        label = option.label
-                                    ) {
-                                        selectedSelections = selectedSelections.map { selection ->
-                                            if (selection.selectionKey() == target) {
-                                                selection.copy(
-                                                    fqn = option.selection.fqn,
-                                                    metricKey = option.selection.metricKey
-                                                )
-                                            } else {
-                                                selection
-                                            }
-                                        }
-                                    }
-                                }
-                                .padding(vertical = 10.dp)
+                TwoLevelMetricPicker(
+                    typesWithData = typesWithData,
+                    optionsFor = { cls ->
+                        healthDataModel.recordSelectionOptions(
+                            recordClass = cls,
+                            metricSettings = targetSelection?.metricSettings
+                                ?: copiedMetricSettingsForNewSelection()
+                        )
+                    },
+                    isSelectable = { option ->
+                        val optionKey = option.selection.selectionKey()
+                        optionKey == metricToReplace ||
+                            selectedSelections.none { it.selectionKey() == optionKey }
+                    },
+                    onPick = { option ->
+                        replaceMetricTargetKey = null
+                        chooseMetric(
+                            fqn = option.selection.fqn,
+                            metricKey = option.selection.metricKey,
+                            label = option.label
                         ) {
-                            Text(option.label)
+                            selectedSelections = selectedSelections.map { selection ->
+                                if (selection.selectionKey() == metricToReplace) {
+                                    selection.copy(
+                                        fqn = option.selection.fqn,
+                                        metricKey = option.selection.metricKey
+                                    )
+                                } else {
+                                    selection
+                                }
+                            }
                         }
-                        HorizontalDivider()
-                    }
-                }
+                    },
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp)
+                )
             },
             confirmButton = {},
             dismissButton = {
@@ -807,27 +774,13 @@ fun DataViewView(
     }
 
     pendingMetricChoice?.let { pending ->
-        AlertDialog(
-            onDismissRequest = { pendingMetricChoice = null },
-            title = { Text(stringResource(R.string.data_view_no_recent_data_title)) },
-            text = {
-                Text(stringResource(R.string.data_view_metric_no_recent_data, pending.label))
+        MetricNoDataWarningDialog(
+            pending = pending,
+            onConfirm = {
+                pending.commit()
+                pendingMetricChoice = null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pending.commit()
-                        pendingMetricChoice = null
-                    }
-                ) {
-                    Text(stringResource(R.string.data_view_add_anyway))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingMetricChoice = null }) {
-                    Text(stringResource(R.string.data_view_cancel))
-                }
-            }
+            onDismiss = { pendingMetricChoice = null }
         )
     }
 
