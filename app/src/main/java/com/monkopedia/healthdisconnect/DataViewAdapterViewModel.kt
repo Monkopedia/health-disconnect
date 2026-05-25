@@ -65,12 +65,61 @@ class DataViewAdapterViewModel(
         if (runLegacyMigrationOnInit) {
             viewModelScope.launch {
                 migrateLegacyDataStoreIfNeeded()
+                migrateLegacyViewNamesIfNeeded()
             }
         }
     }
 
     internal suspend fun migrateLegacyDataStoreIfNeededForTest() {
         migrateLegacyDataStoreIfNeeded()
+    }
+
+    internal suspend fun migrateLegacyViewNamesIfNeededForTest() {
+        migrateLegacyViewNamesIfNeeded()
+    }
+
+    /**
+     * One-time rename of legacy auto-named views to their metric label. Pre-picker, a view
+     * was named after its record type (e.g. "Nutrition") while targeting the default metric;
+     * new views are named after the metric (e.g. "Nutrition Energy"). Rename only views that
+     * still carry the auto-generated type name and have a single selection — never a view the
+     * user renamed. Name-only; selections are untouched. Idempotent via a completion flag.
+     */
+    private suspend fun migrateLegacyViewNamesIfNeeded() {
+        val done = context.migrationStateDataStore.data.first()[legacyViewNameMigrationKey] ?: false
+        if (done) {
+            return
+        }
+        try {
+            val extractor = DefaultHealthRecordMeasurementExtractor()
+            dataViewInfoDao.allOrderedSnapshot().forEach { info ->
+                val entity = dataViewDao.getById(info.id) ?: return@forEach
+                val selection = decodeDataViewEntity(entity, json).records.singleOrNull()
+                    ?: return@forEach
+                val cls = PermissionsViewModel.CLASSES.firstOrNull {
+                    it.qualifiedName == selection.fqn
+                } ?: return@forEach
+                val typeName = PermissionsViewModel.RECORD_NAMES[cls] ?: return@forEach
+                // Only views that still carry the auto-generated type name.
+                if (info.name != typeName) return@forEach
+                val metricLabel = extractor.metricLabel(cls, selection.metricKey) ?: return@forEach
+                if (metricLabel != info.name) {
+                    dataViewInfoDao.updateName(info.id, metricLabel)
+                }
+            }
+            context.migrationStateDataStore.edit { prefs ->
+                prefs[legacyViewNameMigrationKey] = true
+            }
+        } catch (exception: Exception) {
+            if (exception is CancellationException) {
+                throw exception
+            }
+            Log.w(
+                TAG,
+                "Legacy view-name migration failed; will retry on next launch",
+                exception
+            )
+        }
     }
 
     private suspend fun migrateLegacyDataStoreIfNeeded() {
@@ -217,6 +266,7 @@ class DataViewAdapterViewModel(
         val Context.dataViewDataStore by dataStore("dataStore", DataViewSerializer)
         val Context.migrationStateDataStore by preferencesDataStore("migration_state")
         internal val legacyMigrationCompleteKey = booleanPreferencesKey("legacy_migration_complete")
+        internal val legacyViewNameMigrationKey = booleanPreferencesKey("legacy_view_name_migration_complete")
         private const val TAG = "DataViewAdapterViewModel"
     }
 }

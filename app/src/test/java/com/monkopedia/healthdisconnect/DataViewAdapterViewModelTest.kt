@@ -5,6 +5,7 @@ import android.app.job.JobScheduler
 import android.content.Context
 import android.os.Looper
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.lifecycle.SavedStateHandle
 import androidx.room.Room
@@ -327,6 +328,64 @@ class DataViewAdapterViewModelTest {
         assertEquals(DistanceRecord::class.qualifiedName, repairedView.records.single().fqn)
         assertEquals(TimeWindow.DAYS_90, repairedView.chartSettings.timeWindow)
         assertTrue(isLegacyMigrationComplete())
+    }
+
+    @Test
+    fun `view-name migration renames auto-named multi-metric view to metric label`() = runBlocking {
+        val id = 31
+        seedView(id, name = "Nutrition", selection = RecordSelection(NutritionRecord::class))
+        app.migrationStateDataStore.edit { it.clear() }
+
+        val viewModel = dataViewAdapterViewModel(runLegacyMigrationOnInit = false)
+        viewModel.migrateLegacyViewNamesIfNeededForTest()
+
+        assertEquals("Nutrition Energy", infoDao.getById(id)?.name)
+        assertTrue(isViewNameMigrationComplete())
+    }
+
+    @Test
+    fun `view-name migration leaves user-renamed views untouched`() = runBlocking {
+        val id = 32
+        seedView(id, name = "Coffee intake", selection = RecordSelection(NutritionRecord::class))
+        app.migrationStateDataStore.edit { it.clear() }
+
+        val viewModel = dataViewAdapterViewModel(runLegacyMigrationOnInit = false)
+        viewModel.migrateLegacyViewNamesIfNeededForTest()
+
+        assertEquals("Coffee intake", infoDao.getById(id)?.name)
+    }
+
+    @Test
+    fun `view-name migration leaves single-metric views untouched`() = runBlocking {
+        val id = 33
+        seedView(id, name = "Weight", selection = RecordSelection(WeightRecord::class))
+        app.migrationStateDataStore.edit { it.clear() }
+
+        val viewModel = dataViewAdapterViewModel(runLegacyMigrationOnInit = false)
+        viewModel.migrateLegacyViewNamesIfNeededForTest()
+
+        assertEquals("Weight", infoDao.getById(id)?.name)
+    }
+
+    private suspend fun seedView(id: Int, name: String, selection: RecordSelection) {
+        val recordsJson = Json.encodeToString(
+            ListSerializer(RecordSelection.serializer()),
+            listOf(selection)
+        )
+        infoDao.insert(DataViewInfoEntity(id, name, id))
+        viewDao.insert(
+            DataViewEntity(
+                id = id,
+                type = ViewType.CHART.name,
+                recordsJson = recordsJson,
+                settingsJson = Json.encodeToString(ChartSettings.serializer(), ChartSettings())
+            )
+        )
+    }
+
+    private suspend fun isViewNameMigrationComplete(): Boolean {
+        return app.migrationStateDataStore.data.first()[DataViewAdapterViewModel.legacyViewNameMigrationKey]
+            ?: false
     }
 
     private suspend fun awaitViews(
