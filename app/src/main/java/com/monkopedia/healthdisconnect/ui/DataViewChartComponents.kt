@@ -42,8 +42,11 @@ import com.monkopedia.healthdisconnect.formatValueWithUnit
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
+import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.YAxisMode
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlin.math.max
 
 @Composable
@@ -159,13 +162,37 @@ internal fun MetricOverTimeChart(
         primaryColor = MaterialTheme.colorScheme.primary.toArgb(),
         secondaryColor = MaterialTheme.colorScheme.secondary.toArgb()
     ).map { Color(it) }
-    val spansMultipleYears = allDates.map { it.year }.distinct().size > 1
+    // Line charts plot on a continuous date axis spanning the view's time window, so a
+    // single day's data still sits within a real range (different dates on each end) and a
+    // lone point is positioned correctly. Bar charts keep their discrete per-date slots.
+    val today = LocalDate.now()
+    val windowDays = when (settings.timeWindow) {
+        TimeWindow.DAYS_7 -> 7L
+        TimeWindow.DAYS_30 -> 30L
+        TimeWindow.DAYS_90 -> 90L
+        TimeWindow.YEAR_1 -> 365L
+        TimeWindow.ALL -> null
+    }
+    val dataMin = allDates.first()
+    val dataMax = allDates.last()
+    var axisStart = if (windowDays != null) minOf(today.minusDays(windowDays), dataMin) else dataMin
+    var axisEnd = maxOf(today, dataMax)
+    if (!axisStart.isBefore(axisEnd)) {
+        // Degenerate (single day, no window) — pad so the point sits between distinct ends.
+        axisStart = dataMin.minusDays(1)
+        axisEnd = dataMax.plusDays(1)
+    }
+    val axisSpanDays = ChronoUnit.DAYS.between(axisStart, axisEnd).coerceAtLeast(1L)
+
+    val labelStart = if (settings.chartType == ChartType.LINE) axisStart else dataMin
+    val labelEnd = if (settings.chartType == ChartType.LINE) axisEnd else dataMax
+    val spansMultipleYears = (allDates.map { it.year } + labelStart.year + labelEnd.year)
+        .distinct().size > 1
     val labelFormatter = if (spansMultipleYears) {
         DateTimeFormatter.ofPattern("MMM d, yyyy")
     } else {
         DateTimeFormatter.ofPattern("MMM d")
     }
-    val dateIndex = allDates.withIndex().associate { it.value to it.index }
     val useSeparateNormalization = seriesList.size > 1
     val globalRange = seriesRangeFromPoints(
         allPoints,
@@ -243,10 +270,10 @@ internal fun MetricOverTimeChart(
                 strokeWidth = 1.dp.toPx()
             )
 
-            val xStep = if (allDates.size > 1) chartWidth / (allDates.size - 1) else 0f
             fun pointToOffset(point: HealthDataModel.MetricPoint, seriesIndex: Int): Offset {
-                val index = dateIndex[point.date] ?: 0
-                val x = leftPad + (xStep * index)
+                val dayOffset = ChronoUnit.DAYS.between(axisStart, point.date).toFloat()
+                val fraction = (dayOffset / axisSpanDays.toFloat()).coerceIn(0f, 1f)
+                val x = leftPad + (chartWidth * fraction)
                 val yNorm = normalized(point.value, rangeFor(seriesIndex))
                 val y = topPad + chartHeight - (yNorm * chartHeight)
                 return Offset(x, y)
@@ -264,7 +291,9 @@ internal fun MetricOverTimeChart(
                             strokeWidth = 2.dp.toPx()
                         )
                     }
-                    if (settings.showDataPoints) {
+                    // A lone point has no segment to draw, so always render it as a dot;
+                    // otherwise honor the "show data points" setting.
+                    if (settings.showDataPoints || coordinates.size == 1) {
                         coordinates.forEach { point ->
                             drawCircle(
                                 color = lineColor,
@@ -341,8 +370,8 @@ internal fun MetricOverTimeChart(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        Text(allDates.first().format(labelFormatter), style = MaterialTheme.typography.labelSmall)
-        Text(allDates.last().format(labelFormatter), style = MaterialTheme.typography.labelSmall)
+        Text(labelStart.format(labelFormatter), style = MaterialTheme.typography.labelSmall)
+        Text(labelEnd.format(labelFormatter), style = MaterialTheme.typography.labelSmall)
     }
     HorizontalDivider(
         modifier = Modifier.padding(top = 6.dp),
