@@ -92,17 +92,16 @@ class PermissionsViewModelTest {
         }
 
         permissionsViewModel.onResult(emptySet())
-        withTimeout(1_000) {
-            while (permissionCalls.get() < 2) {
-                delay(20)
-            }
-        }
+        // Wait for the collector to actually receive both emissions (take(2) completes
+        // once the second arrives) before asserting. Polling the call counter alone
+        // only proves getGrantedPermissions was invoked, not that the resulting value
+        // was collected — which races the emission into the list.
+        withTimeout(1_000) { collector.await() }
 
         assertEquals(
             listOf(emptySet<String>(), PermissionsViewModel.PERMISSIONS),
             emissions
         )
-        collector.await()
     }
 
     @Test
