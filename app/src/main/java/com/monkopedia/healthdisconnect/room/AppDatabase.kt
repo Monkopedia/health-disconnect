@@ -17,7 +17,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dataViewInfoDao(): DataViewInfoDao
 
     companion object {
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE data_views ADD COLUMN settingsJson TEXT NOT NULL DEFAULT '{}'"

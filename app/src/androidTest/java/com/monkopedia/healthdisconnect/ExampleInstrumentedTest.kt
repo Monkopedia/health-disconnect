@@ -19,6 +19,7 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.monkopedia.healthdisconnect", appContext.packageName)
+        // Debug/demo builds append an applicationId suffix (e.g. .debug), so match the base.
+        assertTrue(appContext.packageName.startsWith("com.monkopedia.healthdisconnect"))
     }
 }
