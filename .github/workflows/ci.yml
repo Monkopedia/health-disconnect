@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Backstop so a hung run fails fast and frees the runner instead of wedging for hours.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -17,6 +19,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
 
       - uses: android-actions/setup-android@v3
 
