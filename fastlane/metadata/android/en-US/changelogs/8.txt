@@ -1,0 +1,6 @@
+• Nutrition views now surface every nutrient (caffeine, sodium, and more), so caffeine-only entries no longer render blank
+• New two-level picker for choosing which metric to chart
+• Warning when a selected metric has no recent data
+• Entries list now filters to the metric you selected
+• Charts with a single data point now display correctly, with dates along the axis
+• Older generic "Nutrition" views are renamed automatically on upgrade
