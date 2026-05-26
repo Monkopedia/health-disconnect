@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.time.Duration
 
 plugins {
     alias(libs.plugins.android.application)
@@ -322,6 +323,9 @@ tasks.matching { it.name == "testProdDebugUnitTest" }.configureEach {
         maxHeapSize = "2g"
         maxParallelForks = 1
         forkEvery = 1
+        // Fail fast instead of wedging CI for hours if a test hangs; the failure uploads the
+        // partial test report (which test didn't complete) instead of a silent timeout.
+        timeout.set(Duration.ofMinutes(10))
     }
 }
 
