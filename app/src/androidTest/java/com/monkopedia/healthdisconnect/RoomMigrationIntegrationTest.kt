@@ -5,8 +5,10 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.health.connect.client.records.WeightRecord
+import androidx.datastore.preferences.core.edit
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.dataViewDataStore
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.dataViewInfoDataStore
+import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.migrationStateDataStore
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.DataViewInfo
@@ -99,6 +101,9 @@ class RoomMigrationIntegrationTest {
         File(datastoreDir, legacyInfoFile).delete()
         File(datastoreDir, legacyDataFile).delete()
         runBlocking {
+            // Reset the one-time migration flags so the VM actually runs the migration —
+            // an earlier test in the suite may have completed (and flagged) it already.
+            app.migrationStateDataStore.edit { it.clear() }
             AppDatabase.getInstance(app).clearAllTables()
         }
     }

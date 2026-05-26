@@ -20,7 +20,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.NavController
 import androidx.navigation.navArgument
+import androidx.health.connect.client.records.StepsRecord
 import androidx.test.core.app.ApplicationProvider
+import com.monkopedia.healthdisconnect.model.RecordSelection
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -101,7 +105,9 @@ class NavigationIntegrationTest {
 
         composeRule.onNodeWithTag("entries_row").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("current_route").assertTextContains("entries/$TEST_VIEW_ID")
+        // NavController reports the route pattern, not the arg-filled path; the entries
+        // title below confirms the specific view (id 99) actually loaded.
+        composeRule.onNodeWithTag("current_route").assertTextContains("entries/{viewId}")
         composeRule.onNodeWithText("Entries - $TEST_VIEW_NAME").assertIsDisplayed()
         composeRule.onNodeWithTag("entries_back_button").assertIsDisplayed()
         composeRule.onNodeWithTag("entries_back_button").performClick()
@@ -183,11 +189,15 @@ class NavigationIntegrationTest {
                     ordering = 1
                 )
             )
+            val recordsJson = Json.encodeToString(
+                ListSerializer(RecordSelection.serializer()),
+                listOf(RecordSelection(StepsRecord::class))
+            )
             viewDao.insert(
                 DataViewEntity(
                     id = TEST_VIEW_ID,
                     type = com.monkopedia.healthdisconnect.model.ViewType.CHART.name,
-                    recordsJson = "[]",
+                    recordsJson = recordsJson,
                     settingsJson = "{}"
                 )
             )

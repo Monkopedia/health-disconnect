@@ -66,11 +66,7 @@ class RoomMigration12Test {
     }
 
     private fun migrationFromAppDatabase(): Migration {
-        val companionField = AppDatabase::class.java.getDeclaredField("Companion")
-        val companion = companionField.get(null)
-        val migrationField = companion.javaClass.getDeclaredField("MIGRATION_1_2")
-        migrationField.isAccessible = true
-        return migrationField.get(companion) as Migration
+        return AppDatabase.MIGRATION_1_2
     }
 
     private class SchemaV1DatabaseOpenHelperCallback :

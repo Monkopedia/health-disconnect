@@ -15,6 +15,8 @@ import org.junit.runner.RunWith
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performClick
@@ -53,7 +55,10 @@ class SettingsIntegrationTest {
 
         composeRule.onNodeWithTag("settings_theme_row").performClick()
         composeRule.onNodeWithText(app.getString(R.string.settings_theme_system)).assertIsDisplayed()
-        composeRule.onNodeWithText(app.getString(R.string.settings_theme_dark)).assertIsDisplayed()
+        // The current theme (Dark) shows both in the collapsed row label and as a dropdown
+        // item, so match the first of the two.
+        composeRule.onAllNodesWithText(app.getString(R.string.settings_theme_dark)).onFirst()
+            .assertIsDisplayed()
         composeRule.onNodeWithText(app.getString(R.string.settings_theme_light)).performClick()
         verify {
             appThemeViewModel.setThemeMode(AppThemeMode.LIGHT)
