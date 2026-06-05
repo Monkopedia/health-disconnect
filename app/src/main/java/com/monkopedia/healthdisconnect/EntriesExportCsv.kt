@@ -34,6 +34,7 @@ import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.WheelchairPushesRecord
+import androidx.health.connect.client.records.metadata.Device
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.RecordSelection
 
@@ -127,6 +128,8 @@ fun buildRawEntriesCsv(records: List<Record>): String {
         ExportRow(
             record = record,
             timestamp = recordTimestampIso(record),
+            dataOrigin = record.metadata.dataOrigin.packageName,
+            device = formatDevice(record.metadata.device),
             values = values
         )
     }
@@ -134,7 +137,16 @@ fun buildRawEntriesCsv(records: List<Record>): String {
         .flatMap { it.values.keys }
         .distinct()
         .sorted()
-    val header = listOf("record_type", "record_fqn", "timestamp") + dynamicHeaders
+    // Only surface a provenance column when it actually distinguishes rows; a single
+    // static source (or none) adds noise without information.
+    val includeDataOrigin = rowMaps.map { it.dataOrigin }.distinct().size > 1
+    val includeDevice = rowMaps.map { it.device }.distinct().size > 1
+    val provenanceHeaders = buildList {
+        if (includeDataOrigin) add("data_origin")
+        if (includeDevice) add("device")
+    }
+    val header = listOf("record_type", "record_fqn", "timestamp") +
+        provenanceHeaders + dynamicHeaders
     val rows = mutableListOf<List<String>>()
     rows.add(header)
     rowMaps.forEach { row ->
@@ -142,6 +154,8 @@ fun buildRawEntriesCsv(records: List<Record>): String {
             add(row.record::class.simpleName ?: "Record")
             add(row.record::class.qualifiedName.orEmpty())
             add(row.timestamp.orEmpty())
+            if (includeDataOrigin) add(row.dataOrigin)
+            if (includeDevice) add(row.device)
             dynamicHeaders.forEach { key ->
                 add(row.values[key].orEmpty())
             }
@@ -153,8 +167,32 @@ fun buildRawEntriesCsv(records: List<Record>): String {
 private data class ExportRow(
     val record: Record,
     val timestamp: String?,
+    val dataOrigin: String,
+    val device: String,
     val values: Map<String, String>
 )
+
+private fun formatDevice(device: Device?): String {
+    if (device == null) return ""
+    val typeName = deviceTypeName(device.type)
+    return listOfNotNull(
+        device.manufacturer?.takeIf { it.isNotBlank() },
+        device.model?.takeIf { it.isNotBlank() },
+        typeName
+    ).joinToString(" ")
+}
+
+private fun deviceTypeName(type: Int): String? = when (type) {
+    Device.TYPE_WATCH -> "watch"
+    Device.TYPE_PHONE -> "phone"
+    Device.TYPE_SCALE -> "scale"
+    Device.TYPE_RING -> "ring"
+    Device.TYPE_HEAD_MOUNTED -> "head_mounted"
+    Device.TYPE_FITNESS_BAND -> "fitness_band"
+    Device.TYPE_CHEST_STRAP -> "chest_strap"
+    Device.TYPE_SMART_DISPLAY -> "smart_display"
+    else -> null
+}
 
 private data class MetricExportSettings(
     val aggregation: String,
