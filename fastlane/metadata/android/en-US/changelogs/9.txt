@@ -1,0 +1,1 @@
+• Raw data export can now include the source app and device for each entry, so you can tell apart data from multiple sources (e.g. two heart-rate monitors). A column only appears when your data actually comes from more than one source.
