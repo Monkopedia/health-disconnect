@@ -306,10 +306,6 @@ class HealthDataModel @JvmOverloads constructor(
         cachePolicy.clear()
     }
 
-    private fun cacheKey(view: DataView): String {
-        return cachePolicy.cacheKey(view)
-    }
-
     private suspend fun readRecordsInRange(
         cls: KClass<out Record>,
         start: Instant,
@@ -419,24 +415,8 @@ class HealthDataModel @JvmOverloads constructor(
         return aggregationEngine.aggregateMetricSeries(view, records)
     }
 
-    private fun extractMeasurement(record: Record, unitPreference: UnitPreference): MetricMeasurement? {
-        return measurementExtractor.extractMeasurement(record, unitPreference)
-    }
-
     private fun windowStart(timeWindow: TimeWindow): Instant? {
         return aggregationEngine.windowStart(timeWindow, timeProvider.now())
-    }
-
-    fun toBucketDate(date: LocalDate, bucketSize: com.monkopedia.healthdisconnect.model.BucketSize): LocalDate {
-        return aggregationEngine.toBucketDate(date, bucketSize)
-    }
-
-    fun aggregateValues(values: List<Double>, mode: com.monkopedia.healthdisconnect.model.AggregationMode): Double {
-        return aggregationEngine.aggregateValues(values, mode)
-    }
-
-    fun smooth3(points: List<MetricPoint>): List<MetricPoint> {
-        return aggregationEngine.smooth3(points)
     }
 
     private fun recordTimestamp(record: Record): Instant? {
