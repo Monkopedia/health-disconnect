@@ -39,14 +39,25 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestRule
+import org.junit.runner.Description
 import org.junit.runner.RunWith
+import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows
 import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
 class DataViewAdapterViewModelTest {
+
+    // Watchdog for the intermittent, CI-only #18 hang (an updateView test deadlocks under
+    // the GitHub runner but never locally). If any test runs far past normal (sub-second),
+    // dump every thread's stack to stdout so the CI log captures *where* it's stuck before
+    // the Gradle task timeout kills the worker with no report.
+    @get:Rule
+    val stuckThreadDump = StuckThreadDumpRule(thresholdMs = 90_000)
 
     private lateinit var app: Application
     private lateinit var appDb: AppDatabase
@@ -450,5 +461,38 @@ class DataViewAdapterViewModelTest {
     private suspend fun isLegacyMigrationComplete(): Boolean {
         return app.migrationStateDataStore.data.first()[DataViewAdapterViewModel.legacyMigrationCompleteKey]
             ?: false
+    }
+}
+
+/**
+ * Dumps every thread's stack to stdout if a wrapped test runs longer than [thresholdMs],
+ * then lets it keep running (the Gradle task timeout still kills a true hang). The test
+ * body itself runs on the calling (Robolectric main) thread, so Robolectric semantics are
+ * unchanged; only an observer daemon thread is added. Diagnostic for the #18 CI hang.
+ */
+class StuckThreadDumpRule(private val thresholdMs: Long) : TestRule {
+    override fun apply(base: Statement, description: Description): Statement = object : Statement() {
+        override fun evaluate() {
+            val watchdog = Thread({
+                try {
+                    Thread.sleep(thresholdMs)
+                } catch (interrupted: InterruptedException) {
+                    return@Thread
+                }
+                System.out.println(
+                    "=== STUCK-TEST THREAD DUMP: ${description.displayName} exceeded ${thresholdMs}ms (likely #18 hang) ==="
+                )
+                Thread.getAllStackTraces().forEach { (thread, stack) ->
+                    System.out.println("--- \"${thread.name}\" state=${thread.state} ---")
+                    stack.forEach { frame -> System.out.println("\tat $frame") }
+                }
+                System.out.flush()
+            }, "stuck-test-watchdog").apply { isDaemon = true; start() }
+            try {
+                base.evaluate()
+            } finally {
+                watchdog.interrupt()
+            }
+        }
     }
 }
