@@ -323,9 +323,16 @@ tasks.matching { it.name == "testProdDebugUnitTest" }.configureEach {
         maxHeapSize = "2g"
         maxParallelForks = 1
         forkEvery = 1
-        // Fail fast instead of wedging CI for hours if a test hangs; the failure uploads the
-        // partial test report (which test didn't complete) instead of a silent timeout.
+        // Fail fast instead of wedging CI for hours if a test hangs.
         timeout.set(Duration.ofMinutes(10))
+        // Identify the intermittent CI hang (issue #18). The task-level timeout above
+        // hard-kills the worker without writing an HTML report, so a hang otherwise leaves
+        // no trace of which test stalled. Logging start/finish events keeps that trace in
+        // the (always-captured) CI console: with the sequential forks above, the last test
+        // logged "STARTED" without a matching result is the one that hung.
+        testLogging {
+            events("started", "passed", "skipped", "failed")
+        }
     }
 }
 
