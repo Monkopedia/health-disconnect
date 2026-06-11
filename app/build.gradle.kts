@@ -332,10 +332,6 @@ tasks.matching { it.name == "testProdDebugUnitTest" }.configureEach {
         // logged "STARTED" without a matching result is the one that hung.
         testLogging {
             events("started", "passed", "skipped", "failed")
-            // Stream test stdout/stderr live so a watchdog thread-dump from a hung test
-            // (StuckThreadDumpRule) reaches the CI log before the timeout above kills the
-            // worker — a hung test never "completes", so buffered output would be lost (#18).
-            showStandardStreams = true
         }
     }
 }
