@@ -30,11 +30,6 @@ class HealthDataModelCacheTest {
 
     @Test
     fun `cache key changes with records and time window`() {
-        val model = HealthDataModel(
-            app = ApplicationProvider.getApplicationContext<Application>(),
-            autoRefreshMetrics = false
-        )
-
         val primary = DataView(
             id = 1,
             type = ViewType.CHART,
@@ -53,16 +48,16 @@ class HealthDataModelCacheTest {
 
         assertEquals(
             "record order should not affect cache key",
-            cacheKey(model, primary),
-            cacheKey(model, reordered)
+            cacheKey(primary),
+            cacheKey(reordered)
         )
         assertNotEquals(
-            cacheKey(model, primary),
-            cacheKey(model, differentTimeWindow)
+            cacheKey(primary),
+            cacheKey(differentTimeWindow)
         )
         assertNotEquals(
-            cacheKey(model, primary),
-            cacheKey(model, differentRecordSet)
+            cacheKey(primary),
+            cacheKey(differentRecordSet)
         )
     }
 
@@ -192,11 +187,11 @@ class HealthDataModelCacheTest {
         }
     }
 
-    private fun cacheKey(model: HealthDataModel, view: DataView): String {
-        val method = HealthDataModel::class.java.getDeclaredMethod("cacheKey", DataView::class.java)
-        method.isAccessible = true
-        return method.invoke(model, view) as String
-    }
+    // Cache-key derivation lives in the cache policy; exercise it directly rather than
+    // through the model.
+    private val cachePolicy = DefaultHealthDataRecordCachePolicy()
+
+    private fun cacheKey(view: DataView): String = cachePolicy.cacheKey(view)
 
     private fun cacheEntryCount(model: HealthDataModel): Int {
         val field = HealthDataModel::class.java.getDeclaredField("recordCache")

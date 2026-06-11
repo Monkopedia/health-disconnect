@@ -28,8 +28,7 @@ import org.robolectric.RobolectricTestRunner
 class HealthDataModelReflectiveExtractionTest {
 
     @Test
-    fun `reflective extraction falls back to duration for session-like records`() {
-        val model = model()
+    fun `extraction falls back to duration for session-like records`() {
         val start = Instant.parse("2026-02-15T08:00:00Z")
         val end = start.plusSeconds(75 * 60)
         val record = SleepSessionRecord(
@@ -42,7 +41,7 @@ class HealthDataModelReflectiveExtractionTest {
             "",
             emptyList<SleepSessionRecord.Stage>()
         )
-        val measurement = extractMeasurement(model, record, UnitPreference.METRIC)
+        val measurement = extractMeasurement(record, UnitPreference.METRIC)
         assertEquals(75.0, measurement.value, 0.001)
         assertEquals("minutes", measurement.unitLabel)
     }
@@ -211,30 +210,16 @@ class HealthDataModelReflectiveExtractionTest {
         )
     }
 
+    // Single-metric extraction lives in the measurement extractor; call it directly.
+    private val measurementExtractor = DefaultHealthRecordMeasurementExtractor()
+
     private fun extractMeasurement(
-        model: HealthDataModel,
         record: Record,
         unitPreference: UnitPreference
-    ): ExtractedMeasurement {
-        val method = HealthDataModel::class.java.getDeclaredMethod(
-            "extractMeasurement",
-            Record::class.java,
-            UnitPreference::class.java
-        )
-        method.isAccessible = true
-        val value = requireNotNull(method.invoke(model, record, unitPreference)) {
-            "Expected a measurement from reflective extraction"
+    ): MetricMeasurement {
+        return requireNotNull(measurementExtractor.extractMeasurement(record, unitPreference)) {
+            "Expected a measurement from extraction"
         }
-        val valueField = value::class.java.getDeclaredField("value")
-        val unitField = value::class.java.getDeclaredField("unitLabel")
-        valueField.isAccessible = true
-        unitField.isAccessible = true
-        return ExtractedMeasurement(
-            value = valueField.getDouble(value),
-            unitLabel = unitField.get(value) as String?
-        )
     }
-
-    private data class ExtractedMeasurement(val value: Double, val unitLabel: String?)
 
 }

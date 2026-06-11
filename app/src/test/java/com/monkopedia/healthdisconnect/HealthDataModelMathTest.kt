@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.TimeWindow
+import io.mockk.mockk
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -32,30 +33,15 @@ class HealthDataModelMathTest {
             .invoke(model, timeWindow) as Instant?
     }
 
-    private fun invokeToBucketDate(date: LocalDate, bucketSize: BucketSize): LocalDate {
-        return HealthDataModel::class.java
-            .getDeclaredMethod("toBucketDate", LocalDate::class.java, BucketSize::class.java)
-            .also { it.isAccessible = true }
-            .invoke(model, date, bucketSize) as LocalDate
-    }
+    // The bucket/aggregate/smooth math lives in the aggregation engine; exercise it directly.
+    // The engine's pure math doesn't touch the measurement extractor, so a relaxed mock suffices.
+    private val engine = DefaultHealthDataAggregationEngine(mockk(relaxed = true))
 
-    private fun invokeAggregateValues(values: List<Double>, mode: AggregationMode): Double {
-        return HealthDataModel::class.java
-            .getDeclaredMethod("aggregateValues", List::class.java, AggregationMode::class.java)
-            .also { it.isAccessible = true }
-            .invoke(model, values, mode) as Double
-    }
-
-    private fun invokeSmooth3(values: List<Double>): List<Double> {
+    private fun smooth3(values: List<Double>): List<Double> {
         val points = values.mapIndexed { index, value ->
             HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 10 + index), value)
         }
-        val smoothed = HealthDataModel::class.java
-            .getDeclaredMethod("smooth3", List::class.java)
-            .also { it.isAccessible = true }
-            .invoke(model, points) as List<*>
-        return smoothed.filterIsInstance<HealthDataModel.MetricPoint>()
-            .map { it.value }
+        return engine.smooth3(points).map { it.value }
     }
 
     @Test
@@ -78,30 +64,30 @@ class HealthDataModelMathTest {
         val date = LocalDate.parse("2026-02-18")
         assertEquals(
             LocalDate.parse("2026-02-18"),
-            invokeToBucketDate(date, BucketSize.DAY)
+            engine.toBucketDate(date, BucketSize.DAY)
         )
         assertEquals(
             LocalDate.parse("2026-02-16"),
-            invokeToBucketDate(date, BucketSize.WEEK)
+            engine.toBucketDate(date, BucketSize.WEEK)
         )
         assertEquals(
             LocalDate.parse("2026-02-01"),
-            invokeToBucketDate(date, BucketSize.MONTH)
+            engine.toBucketDate(date, BucketSize.MONTH)
         )
     }
 
     @Test
     fun `aggregate values uses expected mode semantics`() {
         val values = listOf(1.0, 2.0, 3.0)
-        assertEquals(2.0, invokeAggregateValues(values, AggregationMode.AVERAGE), 0.0001)
-        assertEquals(6.0, invokeAggregateValues(values, AggregationMode.SUM), 0.0001)
-        assertEquals(1.0, invokeAggregateValues(values, AggregationMode.MIN), 0.0001)
-        assertEquals(3.0, invokeAggregateValues(values, AggregationMode.MAX), 0.0001)
+        assertEquals(2.0, engine.aggregateValues(values, AggregationMode.AVERAGE), 0.0001)
+        assertEquals(6.0, engine.aggregateValues(values, AggregationMode.SUM), 0.0001)
+        assertEquals(1.0, engine.aggregateValues(values, AggregationMode.MIN), 0.0001)
+        assertEquals(3.0, engine.aggregateValues(values, AggregationMode.MAX), 0.0001)
     }
 
     @Test
     fun `smooth3 produces moving average with edge fallback`() {
-        val smoothed = invokeSmooth3(listOf(10.0, 20.0, 30.0))
+        val smoothed = smooth3(listOf(10.0, 20.0, 30.0))
         assertEquals(listOf(15.0, 20.0, 25.0), smoothed)
     }
 }
