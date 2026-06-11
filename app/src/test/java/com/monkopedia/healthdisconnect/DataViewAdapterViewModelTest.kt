@@ -420,13 +420,13 @@ class DataViewAdapterViewModelTest {
     }
 
     private fun dataViewAdapterViewModel(): DataViewAdapterViewModel {
-        return DataViewAdapterViewModel(
-            app = app,
-            savedStateHandle = SavedStateHandle(),
-            appDatabase = appDb,
-            dataViewDao = viewDao,
-            dataViewInfoDao = infoDao
-        )
+        // runLegacyMigrationOnInit = false: the legacy migration is exercised by its own
+        // dedicated tests via migrate*ForTest(). Running it on init here only launches a
+        // viewModelScope (Dispatchers.Main) coroutine that touches migrationStateDataStore and
+        // leaks across tests (the ViewModel is never cleared) — under Robolectric that
+        // intermittently deadlocks setUp/tearDown's main-thread runBlocking DataStore cleanup
+        // (issue #18). Non-migration tests don't need it.
+        return dataViewAdapterViewModel(runLegacyMigrationOnInit = false)
     }
 
     private fun dataViewAdapterViewModel(runLegacyMigrationOnInit: Boolean): DataViewAdapterViewModel {
