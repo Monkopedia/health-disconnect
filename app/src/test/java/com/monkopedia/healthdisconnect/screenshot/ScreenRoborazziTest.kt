@@ -532,7 +532,7 @@ abstract class BaseScreenRoborazziTest {
         val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
         every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
-        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
+        every { healthDataModel.collectAggregatedSeries(dataView) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Steps",
@@ -546,7 +546,7 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(4)
+        every { healthDataModel.collectRecordCount(dataView) } returns flowOf(4)
         every { healthDataModel.aggregateMetricSeries(dataView, records) } returns
             HealthDataModel.MetricSeries(
                 label = "Steps",
@@ -592,7 +592,7 @@ abstract class BaseScreenRoborazziTest {
         val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
         every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
-        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
+        every { healthDataModel.collectAggregatedSeries(dataView) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Distance",
@@ -606,7 +606,7 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(4)
+        every { healthDataModel.collectRecordCount(dataView) } returns flowOf(4)
         every { healthDataModel.aggregateMetricSeries(dataView, records) } returns
             HealthDataModel.MetricSeries(
                 label = "Distance",
@@ -646,7 +646,7 @@ abstract class BaseScreenRoborazziTest {
             fakeWeightRecord(71.8, "2026-02-04T08:30:00Z")
         )
         every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
-        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
+        every { healthDataModel.collectAggregatedSeries(dataView) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Steps",
@@ -660,7 +660,7 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(records.size)
+        every { healthDataModel.collectRecordCount(dataView) } returns flowOf(records.size)
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_with_entries") {
             DataViewView(
@@ -692,7 +692,7 @@ abstract class BaseScreenRoborazziTest {
         val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
         every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
-        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
+        every { healthDataModel.collectAggregatedSeries(dataView) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Steps",
@@ -716,7 +716,7 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(8)
+        every { healthDataModel.collectRecordCount(dataView) } returns flowOf(8)
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_multi_series") {
             DataViewView(
@@ -753,7 +753,7 @@ abstract class BaseScreenRoborazziTest {
         val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
         every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
-        every { healthDataModel.collectAggregatedSeries(dataView, any()) } returns flowOf(
+        every { healthDataModel.collectAggregatedSeries(dataView) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(
                     label = "Steps",
@@ -777,7 +777,7 @@ abstract class BaseScreenRoborazziTest {
                 )
             )
         )
-        every { healthDataModel.collectRecordCount(dataView, any()) } returns flowOf(8)
+        every { healthDataModel.collectRecordCount(dataView) } returns flowOf(8)
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph_bars_multi_series") {
             DataViewView(
@@ -845,8 +845,8 @@ abstract class BaseScreenRoborazziTest {
         val healthDataModel = mockk<HealthDataModel>()
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
-        every { healthDataModel.collectRecordCount(any(), any()) } returns flowOf(0)
-        every { healthDataModel.collectAggregatedSeries(any(), any()) } returns flowOf(emptyList())
+        every { healthDataModel.collectRecordCount(any()) } returns flowOf(0)
+        every { healthDataModel.collectAggregatedSeries(any()) } returns flowOf(emptyList())
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
         every { healthDataModel.aggregateMetricSeries(any(), any()) } returns null
         every { healthDataModel.recordSelectionLabel(any()) } returns "Metric"

@@ -331,7 +331,7 @@ class HealthDataModel @JvmOverloads constructor(
         }
     }
 
-    fun collectRecordCount(view: DataView, refreshTick: Int = 0): Flow<Int> = channelFlow {
+    fun collectRecordCount(view: DataView): Flow<Int> = channelFlow {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
         val selections: List<KClass<out Record>> = view.records.mapNotNull { sel ->
@@ -364,8 +364,8 @@ class HealthDataModel @JvmOverloads constructor(
         if (count == 0) trySend(0)
     }.flowOn(ioDispatcher)
 
-    fun collectAggregatedSeries(view: DataView, refreshTick: Int = 0): Flow<List<MetricSeries>> =
-        collectAggregatedSeries(view, refreshTick) { cls, start, end, onPage ->
+    fun collectAggregatedSeries(view: DataView): Flow<List<MetricSeries>> =
+        collectAggregatedSeries(view) { cls, start, end, onPage ->
             readRecordsInRange(
                 cls = cls,
                 start = start,
@@ -376,7 +376,6 @@ class HealthDataModel @JvmOverloads constructor(
 
     internal fun collectAggregatedSeries(
         view: DataView,
-        refreshTick: Int = 0,
         pageReader: suspend (
             cls: KClass<out Record>,
             start: Instant,
@@ -384,8 +383,6 @@ class HealthDataModel @JvmOverloads constructor(
             onPage: (List<Record>) -> Unit
         ) -> Unit
     ): Flow<List<MetricSeries>> {
-        @Suppress("UNUSED_PARAMETER")
-        val ignoredRefreshTick = refreshTick
         return aggregationEngine.collectAggregatedSeries(
             view = view,
             now = timeProvider.now(),
