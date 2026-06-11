@@ -200,6 +200,13 @@ class DataViewAdapterViewModelTest {
             distanceView
         )
 
+        // Drain the main looper so the queued updateView work (persist + flow update) runs
+        // before we wait on it — same as awaitViews() does after every other action. Without
+        // this, the dataView(1) flow never emits the update and the withTimeout below (backed
+        // by Robolectric's virtual main-looper clock, which only advances when the looper is
+        // pumped) never elapses, hanging the suite until the CI task guard kills it (issue #18).
+        Shadows.shadowOf(Looper.getMainLooper()).idle()
+        ShadowLooper.shadowMainLooper().runUntilEmpty()
         val updated = withTimeout(5_000) {
             viewModel.dataView(1).first { it.records.first().fqn == DistanceRecord::class.qualifiedName }
         }
