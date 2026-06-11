@@ -96,9 +96,7 @@ class DataViewAdapterViewModel(
                 val entity = dataViewDao.getById(info.id) ?: return@forEach
                 val selection = decodeDataViewEntity(entity, json).records.singleOrNull()
                     ?: return@forEach
-                val cls = PermissionsViewModel.CLASSES.firstOrNull {
-                    it.qualifiedName == selection.fqn
-                } ?: return@forEach
+                val cls = PermissionsViewModel.classForFqn(selection.fqn) ?: return@forEach
                 val typeName = PermissionsViewModel.RECORD_NAMES[cls] ?: return@forEach
                 // Only views that still carry the auto-generated type name.
                 if (info.name != typeName) return@forEach
@@ -183,16 +181,14 @@ class DataViewAdapterViewModel(
 
     private fun fallbackViewName(view: DataView, fallbackId: Int): String {
         val firstFqn = view.records.firstOrNull()?.fqn
-        val firstClass = PermissionsViewModel.CLASSES.firstOrNull { cls ->
-            cls.qualifiedName == firstFqn
-        }
+        val firstClass = PermissionsViewModel.classForFqn(firstFqn)
         return PermissionsViewModel.RECORD_NAMES[firstClass]
             ?: firstClass?.simpleName
             ?: "View $fallbackId"
     }
 
     suspend fun createView(cls: KClass<out Record>) {
-        val name = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: "Record"
+        val name = PermissionsViewModel.recordLabel(cls)
         createView(com.monkopedia.healthdisconnect.model.RecordSelection(cls), name)
     }
 

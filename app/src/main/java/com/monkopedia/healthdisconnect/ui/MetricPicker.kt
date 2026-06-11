@@ -36,7 +36,7 @@ import kotlin.reflect.KClass
 class PendingMetricChoice(val label: String, val commit: () -> Unit)
 
 private fun recordTypeName(cls: KClass<out Record>): String =
-    PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: cls.qualifiedName ?: "Record"
+    PermissionsViewModel.recordLabel(cls)
 
 /**
  * Two-level metric picker shared by Create View and the add/replace-metric dialogs.

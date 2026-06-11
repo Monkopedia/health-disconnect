@@ -45,9 +45,11 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.WheelchairPushesRecord
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlin.reflect.KClass
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -220,5 +222,20 @@ class PermissionsViewModel(
             WeightRecord::class to "Weight",
             WheelchairPushesRecord::class to "Wheelchair pushes"
         )
+
+        private val CLASSES_BY_FQN: Map<String, KClass<out Record>> =
+            CLASSES.associateBy { it.qualifiedName.orEmpty() }
+
+        /** The supported record class whose qualified name is [fqn], or null if unrecognized. */
+        fun classForFqn(fqn: String?): KClass<out Record>? =
+            if (fqn.isNullOrEmpty()) null else CLASSES_BY_FQN[fqn]
+
+        /**
+         * Human-readable label for [recordClass]: its registered display name, falling back to
+         * the simple then qualified class name, then a generic placeholder. Single source of
+         * truth for the record-type label so call sites don't drift in their fallback ordering.
+         */
+        fun recordLabel(recordClass: KClass<out Record>): String =
+            RECORD_NAMES[recordClass] ?: recordClass.simpleName ?: recordClass.qualifiedName ?: "Record"
     }
 }

@@ -104,12 +104,10 @@ class HealthDataModel @JvmOverloads constructor(
     }
 
     fun recordSelectionLabel(selection: RecordSelection): String {
-        val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
+        val cls = PermissionsViewModel.classForFqn(selection.fqn)
             ?: return selection.fqn
         return measurementExtractor.metricLabel(cls, selection.metricKey)
-            ?: PermissionsViewModel.RECORD_NAMES[cls]
-            ?: cls.simpleName
-            ?: selection.fqn
+            ?: PermissionsViewModel.recordLabel(cls)
     }
 
     fun recordSelectionOptions(
@@ -117,9 +115,7 @@ class HealthDataModel @JvmOverloads constructor(
         metricSettings: MetricChartSettings
     ): List<RecordSelectionOption> {
         val fqn = recordClass.qualifiedName ?: return emptyList()
-        val baseLabel = PermissionsViewModel.RECORD_NAMES[recordClass]
-            ?: recordClass.simpleName
-            ?: fqn
+        val baseLabel = PermissionsViewModel.recordLabel(recordClass)
         val availableMetrics = measurementExtractor.availableMetrics(recordClass)
             .ifEmpty { listOf(ExtractableMetric()) }
         return availableMetrics.map { metric ->
@@ -325,7 +321,7 @@ class HealthDataModel @JvmOverloads constructor(
     /** True when [record] yields a value for at least one of the view's selected metrics. */
     private fun recordHasSelectedMetric(view: DataView, record: Record): Boolean {
         return view.records.any { sel ->
-            val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == sel.fqn }
+            val cls = PermissionsViewModel.classForFqn(sel.fqn)
             cls?.java?.isAssignableFrom(record.javaClass) == true &&
                 measurementExtractor.extractMeasurement(record, UnitPreference.METRIC, sel.metricKey) != null
         }

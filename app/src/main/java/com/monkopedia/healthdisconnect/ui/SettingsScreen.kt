@@ -360,9 +360,9 @@ private suspend fun loadMetricDebugRanges(
 ): List<MetricDebugRange> {
     val now = Instant.now()
     return PermissionsViewModel.CLASSES
-        .sortedBy { PermissionsViewModel.RECORD_NAMES[it] ?: (it.simpleName ?: "") }
+        .sortedBy { PermissionsViewModel.recordLabel(it) }
         .map { cls ->
-            val label = PermissionsViewModel.RECORD_NAMES[cls] ?: (cls.simpleName ?: cls.qualifiedName ?: "Record")
+            val label = PermissionsViewModel.recordLabel(cls)
             val readPermission = PermissionsViewModel.READ_PERMISSIONS_BY_CLASS[cls]
             val hasPermission = readPermission != null && grantedPermissions.contains(readPermission)
             if (!hasPermission) {

@@ -78,9 +78,9 @@ class DefaultHealthDataAggregationEngine(
         val viewWindowStart = windowStart(settings.timeWindow, Instant.now())
 
         val selectedMetrics = view.records.mapNotNull { selection ->
-            val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
+            val cls = PermissionsViewModel.classForFqn(selection.fqn)
                 ?: return@mapNotNull null
-            val baseLabel = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: selection.fqn
+            val baseLabel = PermissionsViewModel.recordLabel(cls)
             val label = measurementExtractor.metricLabel(cls, selection.metricKey) ?: baseLabel
             AggregationMetricSelection(
                 recordClass = cls,
@@ -158,9 +158,9 @@ class DefaultHealthDataAggregationEngine(
         val zoneId = ZoneId.systemDefault()
         val viewWindowStart = windowStart(view.chartSettings.timeWindow, now)
         val selectedByType = view.records.mapNotNull { selection ->
-            val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == selection.fqn }
+            val cls = PermissionsViewModel.classForFqn(selection.fqn)
                 ?: return@mapNotNull null
-            val baseLabel = PermissionsViewModel.RECORD_NAMES[cls] ?: cls.simpleName ?: selection.fqn
+            val baseLabel = PermissionsViewModel.recordLabel(cls)
             val label = measurementExtractor.metricLabel(cls, selection.metricKey) ?: baseLabel
             StreamingMetricState(
                 recordClass = cls,
