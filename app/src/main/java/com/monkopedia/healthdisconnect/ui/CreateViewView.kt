@@ -54,7 +54,7 @@ fun CreateViewView(
     }
 
     fun chooseForCreate(option: RecordSelectionOption) {
-        val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == option.selection.fqn }
+        val cls = PermissionsViewModel.classForFqn(option.selection.fqn)
         if (cls == null) {
             startCreate(option)
             return

@@ -240,7 +240,7 @@ fun DataViewView(
     val headerOffsetAbs = abs(headerPageOffset).coerceIn(0f, 1f)
     val hasWidgetForCurrentView = widgetBindings.values.any { it == view!!.id }
     fun chooseMetric(fqn: String, metricKey: String?, label: String, commit: () -> Unit) {
-        val cls = PermissionsViewModel.CLASSES.firstOrNull { it.qualifiedName == fqn }
+        val cls = PermissionsViewModel.classForFqn(fqn)
         if (cls == null) {
             commit()
             return

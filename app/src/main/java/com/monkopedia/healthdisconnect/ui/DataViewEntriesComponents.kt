@@ -463,9 +463,7 @@ private fun formatRecordValuePreview(
 
 private fun matchingSelectionForRecord(view: DataView, record: Record): RecordSelection? {
     return view.records.firstOrNull { selection ->
-        val selectedClass = PermissionsViewModel.CLASSES.firstOrNull {
-            it.qualifiedName == selection.fqn
-        }
+        val selectedClass = PermissionsViewModel.classForFqn(selection.fqn)
         selectedClass?.java?.isAssignableFrom(record.javaClass) == true
     }
 }
@@ -481,9 +479,7 @@ private fun recordHasSelectedMetricValue(
     measurementExtractor: HealthRecordMeasurementExtractor
 ): Boolean {
     return view.records.any { selection ->
-        val selectedClass = PermissionsViewModel.CLASSES.firstOrNull {
-            it.qualifiedName == selection.fqn
-        }
+        val selectedClass = PermissionsViewModel.classForFqn(selection.fqn)
         selectedClass?.java?.isAssignableFrom(record.javaClass) == true &&
             measurementExtractor.extractMeasurement(
                 record,
