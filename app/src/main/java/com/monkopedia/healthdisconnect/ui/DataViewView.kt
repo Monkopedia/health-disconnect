@@ -196,13 +196,13 @@ fun DataViewView(
         view!!.chartSettings,
         view!!.records,
         refreshTick
-    ) { healthDataModel.collectRecordCount(view!!, refreshTick) }
+    ) { healthDataModel.collectRecordCount(view!!) }
     val metricSeriesFlow = remember(
         view!!.id,
         view!!.chartSettings,
         view!!.records,
         refreshTick
-    ) { healthDataModel.collectAggregatedSeries(view!!, refreshTick) }
+    ) { healthDataModel.collectAggregatedSeries(view!!) }
     val recordCount by recordCountFlow.collectAsState(initial = null)
     val metricSeriesList by metricSeriesFlow.collectAsState(initial = null)
     val isShowingChart = rememberSaveable(view!!.id) { mutableStateOf(true) }
