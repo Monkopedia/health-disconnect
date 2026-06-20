@@ -6,7 +6,7 @@ import com.monkopedia.healthdisconnect.room.AppDatabase
 import androidx.lifecycle.SavedStateHandle
 import org.koin.core.context.GlobalContext
 import org.koin.android.ext.koin.androidContext
-import org.koin.androidx.viewmodel.dsl.viewModel
+import org.koin.core.module.dsl.viewModel
 import org.koin.core.context.startKoin
 import org.koin.dsl.module
 
