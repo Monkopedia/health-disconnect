@@ -5,7 +5,9 @@ import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.YAxisMode
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -13,7 +15,12 @@ import org.junit.Test
 
 class ChartGeometryTest {
 
+    private val zone: ZoneId = ZoneId.systemDefault()
     private val today = LocalDate.of(2026, 2, 22)
+    private val nowInstant: Instant = today.atStartOfDay(zone).toInstant()
+
+    /** The start-of-day instant a day-granular [MetricPoint] carries, for axis/xFraction asserts. */
+    private fun LocalDate.startOfDay(): Instant = atStartOfDay(zone).toInstant()
 
     private fun point(date: LocalDate, value: Double) = HealthDataModel.MetricPoint(date, value)
 
@@ -28,7 +35,7 @@ class ChartGeometryTest {
         seriesList: List<HealthDataModel.MetricSeries>,
         xAxis: ChartGeometry.XAxisMode = ChartGeometry.XAxisMode.DISCRETE_INDEX,
         settings: ChartSettings = ChartSettings()
-    ) = ChartGeometry.create(seriesList, settings, xAxis, today)
+    ) = ChartGeometry.create(seriesList, settings, xAxis, nowInstant, zone)
 
     @Test(expected = IllegalArgumentException::class)
     fun create_throws_forEmptySeries() {
@@ -121,10 +128,10 @@ class ChartGeometryTest {
             listOf(series("Steps", "count", dates.map { point(it, 1.0) })),
             xAxis = ChartGeometry.XAxisMode.DISCRETE_INDEX
         )
-        assertEquals(0f, g.xFraction(dates[0]), 1e-6f)
-        assertEquals(1f / 3f, g.xFraction(dates[1]), 1e-6f)
-        assertEquals(2f / 3f, g.xFraction(dates[2]), 1e-6f)
-        assertEquals(1f, g.xFraction(dates[3]), 1e-6f)
+        assertEquals(0f, g.xFraction(dates[0].startOfDay()), 1e-6f)
+        assertEquals(1f / 3f, g.xFraction(dates[1].startOfDay()), 1e-6f)
+        assertEquals(2f / 3f, g.xFraction(dates[2].startOfDay()), 1e-6f)
+        assertEquals(1f, g.xFraction(dates[3].startOfDay()), 1e-6f)
     }
 
     @Test
@@ -141,12 +148,12 @@ class ChartGeometryTest {
             settings = ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.ALL)
         )
         // TimeWindow.ALL with no future data => axis spans [start, today]; midpoint date is 0.5.
-        assertEquals(g.axisStart, start)
-        assertEquals(g.axisEnd, today)
-        assertEquals(10L, g.axisSpanDays)
-        assertEquals(0f, g.xFraction(start), 1e-6f)
-        assertEquals(1f, g.xFraction(today), 1e-6f)
-        assertEquals(0.5f, g.xFraction(start.plusDays(5)), 1e-6f)
+        assertEquals(start.startOfDay(), g.axisStart)
+        assertEquals(today.startOfDay(), g.axisEnd)
+        assertEquals(10L, ChronoUnit.DAYS.between(g.axisStart, g.axisEnd))
+        assertEquals(0f, g.xFraction(start.startOfDay()), 1e-6f)
+        assertEquals(1f, g.xFraction(today.startOfDay()), 1e-6f)
+        assertEquals(0.5f, g.xFraction(start.plusDays(5).startOfDay()), 1e-6f)
     }
 
     @Test
@@ -162,9 +169,9 @@ class ChartGeometryTest {
             settings = ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.DAYS_7)
         )
         // Window pulls the start back to today-7, and the end forward to today.
-        assertEquals(today.minusDays(7), g.axisStart)
-        assertEquals(today, g.axisEnd)
-        assertEquals(7L, g.axisSpanDays)
+        assertEquals(today.minusDays(7).startOfDay(), g.axisStart)
+        assertEquals(today.startOfDay(), g.axisEnd)
+        assertEquals(7L, ChronoUnit.DAYS.between(g.axisStart, g.axisEnd))
     }
 
     @Test
@@ -174,7 +181,7 @@ class ChartGeometryTest {
             xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
             settings = ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.ALL)
         )
-        assertEquals(0.5f, g.xFraction(today), 1e-6f)
+        assertEquals(0.5f, g.xFraction(today.startOfDay()), 1e-6f)
     }
 
     @Test
@@ -184,7 +191,7 @@ class ChartGeometryTest {
             xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
             settings = ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.ALL)
         )
-        assertTrue(g.axisSpanDays >= 1L)
+        assertTrue(g.axisSpanSeconds >= 1L)
         assertTrue(g.axisStart.isBefore(g.axisEnd))
         assertEquals(2L, ChronoUnit.DAYS.between(g.axisStart, g.axisEnd))
     }
@@ -249,8 +256,65 @@ class ChartGeometryTest {
         assertEquals(1f, band.edges[0].minYFractionFromTop, 1e-6f)
         assertEquals(0.5f, band.edges[0].maxYFractionFromTop, 1e-6f)
         // x follows the same discrete-index layout as the line.
-        assertEquals(g.xFraction(d0), band.edges[0].x, 1e-6f)
-        assertEquals(g.xFraction(today), band.edges[1].x, 1e-6f)
+        assertEquals(g.xFraction(d0.startOfDay()), band.edges[0].x, 1e-6f)
+        assertEquals(g.xFraction(today.startOfDay()), band.edges[1].x, 1e-6f)
+    }
+
+    @Test
+    fun intraday_continuousAxis_positionsByTimeOfDayWithinTheHourWindow() {
+        // Per-minute buckets over the last hour: the axis spans exactly the HOURS_1 window and each
+        // minute lands at its own fraction (not collapsed onto one calendar-day slot).
+        val t0 = nowInstant.minus(60, ChronoUnit.MINUTES)
+        val points = (0..60 step 15).map {
+            HealthDataModel.MetricPoint(t0.plus(it.toLong(), ChronoUnit.MINUTES), it.toDouble())
+        }
+        val g = ChartGeometry.create(
+            listOf(HealthDataModel.MetricSeries(label = "HR", unit = "bpm", points = points)),
+            ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.HOURS_1),
+            ChartGeometry.XAxisMode.CONTINUOUS_DATE,
+            nowInstant,
+            zone
+        )
+        assertTrue(g.isIntraday)
+        assertEquals(t0, g.axisStart)
+        assertEquals(nowInstant, g.axisEnd)
+        assertEquals(3600L, g.axisSpanSeconds)
+        // The bucket 30 minutes into a 60-minute axis sits at the horizontal midpoint.
+        assertEquals(0.5f, g.xFraction(t0.plus(30, ChronoUnit.MINUTES)), 1e-6f)
+    }
+
+    @Test
+    fun intraday_endpointLabels_showTimeOfDay() {
+        val start = today.atStartOfDay(zone).withHour(6).withMinute(15).toInstant()
+        val end = today.atStartOfDay(zone).withHour(12).withMinute(0).toInstant()
+        val points = listOf(
+            HealthDataModel.MetricPoint(start, 60.0),
+            HealthDataModel.MetricPoint(end, 80.0)
+        )
+        val g = ChartGeometry.create(
+            listOf(HealthDataModel.MetricSeries(label = "HR", unit = "bpm", points = points)),
+            ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.HOURS_6),
+            ChartGeometry.XAxisMode.DISCRETE_INDEX,
+            end,
+            zone
+        )
+        // Sub-day window => time-of-day labels for the actual data range.
+        assertEquals("6:15 AM" to "12:00 PM", g.dataRangeLabels(zone))
+    }
+
+    @Test
+    fun dayGranular_endpointLabels_showCalendarDate() {
+        val g = geometry(
+            listOf(
+                series(
+                    "Steps", "count",
+                    listOf(point(today.minusDays(3), 1.0), point(today, 2.0))
+                )
+            ),
+            xAxis = ChartGeometry.XAxisMode.DISCRETE_INDEX,
+            settings = ChartSettings(timeWindow = TimeWindow.DAYS_7)
+        )
+        assertEquals("Feb 19" to "Feb 22", g.dataRangeLabels(zone))
     }
 
     @Test

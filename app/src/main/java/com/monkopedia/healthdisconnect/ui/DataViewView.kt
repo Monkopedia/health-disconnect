@@ -171,11 +171,6 @@ fun DataViewView(
     val widgetBindings by context.widgetBindingsFlow().collectAsState(initial = emptyMap())
     val grantedPermissions by permissionsViewModel.grantedPermissions.collectAsState(initial = emptySet())
     val hasHistoryPermission = grantedPermissions.contains(PermissionsViewModel.HISTORY_PERMISSION)
-    val timeWindowOptions = if (hasHistoryPermission) {
-        TimeWindow.entries
-    } else {
-        listOf(TimeWindow.DAYS_7, TimeWindow.DAYS_30)
-    }
     var refreshTick by rememberSaveable(view!!.id) { mutableStateOf(0) }
     var isRefreshing by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var lastRefreshedMillis by rememberSaveable(view!!.id) { mutableStateOf<Long?>(null) }
@@ -190,6 +185,27 @@ fun DataViewView(
                 selection.withDefaultSettings(view!!.chartSettings)
             }
         )
+    }
+    // The finest bucket in use drives the adaptive window list: it's the tightest point-count
+    // constraint, so its windows() are the ones that keep every metric legible/fast. The list is
+    // then intersected with what history permission allows.
+    val effectiveBucket = selectedSelections
+        .mapNotNull { it.metricSettings?.bucketSize }
+        .minByOrNull { it.ordinal }
+        ?: chartSettings.bucketSize
+    val bucketWindows = effectiveBucket.windows()
+    val timeWindowOptions = bucketWindows.filter { window ->
+        hasHistoryPermission || window in listOf(TimeWindow.DAYS_7, TimeWindow.DAYS_30)
+    }.ifEmpty { listOf(TimeWindow.DAYS_7, TimeWindow.DAYS_30) }
+    // When a bucket change makes the current window invalid for that bucket, snap to the nearest
+    // valid one. This keys off the bucket's own windows (not the history-filtered list) so it stays
+    // orthogonal to the history-permission clamp/restore below, which owns that concern.
+    LaunchedEffect(effectiveBucket) {
+        if (chartSettings.timeWindow !in bucketWindows) {
+            chartSettings = chartSettings.copy(
+                timeWindow = effectiveBucket.nearestWindow(chartSettings.timeWindow)
+            )
+        }
     }
     val recordCountFlow = remember(
         view!!.id,
@@ -557,9 +573,22 @@ fun DataViewView(
 
                 if (view!!.type == ViewType.CHART) {
                     item {
-                        val dayCount = metricSeriesList?.flatMap { it.points }?.map { it.date }?.distinct()?.size ?: 0
+                        // Day-granular views count distinct calendar days of data; intraday views
+                        // count distinct clock-hours so the subtitle reflects a sub-day span.
+                        val allInstants = metricSeriesList?.flatMap { it.points }?.map { it.instant }
+                        val graphSpanLabel = if (chartSettings.timeWindow.isIntraday) {
+                            val hours = allInstants
+                                ?.map { it.truncatedTo(java.time.temporal.ChronoUnit.HOURS) }
+                                ?.distinct()?.size ?: 0
+                            stringResource(R.string.data_view_graph_hours, hours)
+                        } else {
+                            val days = allInstants
+                                ?.map { it.atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
+                                ?.distinct()?.size ?: 0
+                            stringResource(R.string.data_view_graph_days, days)
+                        }
                         ToggleSection(
-                            labelText = stringResource(R.string.data_view_graph_days, dayCount),
+                            labelText = graphSpanLabel,
                             visibleState = isShowingChart,
                             collapsible = false,
                             showArrow = false

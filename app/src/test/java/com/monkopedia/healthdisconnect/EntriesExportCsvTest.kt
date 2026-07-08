@@ -42,7 +42,8 @@ class EntriesExportCsvTest {
 
         assertTrue(csv.contains("view_id,view_type,series_index"))
         assertTrue(csv.contains("42,CHART,0"))
-        assertTrue(csv.contains("Weight,kilograms,2026-02-01,71.5"))
+        // bucket column is now a timestamp (a LocalDate would collapse intraday points).
+        assertTrue(csv.contains("Weight,kilograms,${bucketTimestamp("2026-02-01")},71.5"))
         assertTrue(csv.contains("DAYS_30"))
     }
 
@@ -66,7 +67,7 @@ class EntriesExportCsvTest {
 
         assertTrue(header.contains("value,min_value,max_value,peak_value_in_window"))
         // value present, min/max blank -> two empty fields between value and peak.
-        assertTrue(csv.contains(",2026-02-01,71.5,,,71.5,"))
+        assertTrue(csv.contains(",${bucketTimestamp("2026-02-01")},71.5,,,71.5,"))
     }
 
     @Test
@@ -88,7 +89,7 @@ class EntriesExportCsvTest {
 
         val csv = buildAggregatedEntriesCsv(view, series)
 
-        assertTrue(csv.contains(",2026-02-01,72.0,70.0,74.0,"))
+        assertTrue(csv.contains(",${bucketTimestamp("2026-02-01")},72.0,70.0,74.0,"))
     }
 
     @Test
@@ -169,6 +170,10 @@ class EntriesExportCsvTest {
         assertTrue(csv.contains("Garmin HRM-Pro chest_strap"))
         assertTrue(csv.contains("Polar H10 chest_strap"))
     }
+
+    /** The bucket_timestamp a day-granular point carries: the date's start-of-day in system zone. */
+    private fun bucketTimestamp(isoDate: String): String =
+        LocalDate.parse(isoDate).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toString()
 
     private fun weightRecord(
         kilograms: Double,

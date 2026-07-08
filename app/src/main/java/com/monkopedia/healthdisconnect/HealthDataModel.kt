@@ -14,6 +14,7 @@ import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.YAxisMode
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import kotlin.reflect.KClass
 import kotlin.coroutines.cancellation.CancellationException
@@ -387,7 +388,22 @@ class HealthDataModel @JvmOverloads constructor(
         ).flowOn(ioDispatcher)
     }
 
-    data class MetricPoint(val date: LocalDate, val value: Double)
+    /**
+     * A single aggregated point on a series. [instant] is the bucket's start time (truncated to the
+     * bucket's granularity in the view's zone), which the chart axis positions by — so an intraday
+     * hour/minute bucket lands at its own X coordinate instead of collapsing onto a day. [date] is
+     * that instant's day in the system zone, kept for the day-granular callers (bar slots, older
+     * tests) that still key by calendar day.
+     */
+    data class MetricPoint(val instant: Instant, val value: Double) {
+        val date: LocalDate get() = instant.atZone(ZoneId.systemDefault()).toLocalDate()
+
+        /** Day-granular convenience: a point at the start of [date] in the system zone. */
+        constructor(date: LocalDate, value: Double) : this(
+            date.atStartOfDay(ZoneId.systemDefault()).toInstant(),
+            value
+        )
+    }
 
     data class MetricSeries(
         val label: String,

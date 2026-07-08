@@ -70,18 +70,54 @@ enum class RangeDisplay {
 
 @Serializable
 enum class TimeWindow {
+    HOURS_1,
+    HOURS_3,
+    HOURS_6,
+    HOURS_24,
     DAYS_7,
     DAYS_30,
     DAYS_90,
     YEAR_1,
-    ALL
+    ALL;
+
+    /** True for the sub-day intraday spans, which drive the time-of-day axis in [ChartGeometry]. */
+    val isIntraday: Boolean
+        get() = this == HOURS_1 || this == HOURS_3 || this == HOURS_6 || this == HOURS_24
 }
 
 @Serializable
 enum class BucketSize {
+    MINUTE,
+    HOUR,
     DAY,
     WEEK,
-    MONTH
+    MONTH;
+
+    /**
+     * The time windows that make sense for this bucket size, ordered coarsest-last. This both
+     * declutters the window menu and caps the resolved point count (~1,500 max) so the chart stays
+     * legible/fast — there is no separate cap. When the bucket changes and the current window is no
+     * longer here, callers snap to the nearest valid one via [nearestWindow].
+     */
+    fun windows(): List<TimeWindow> = when (this) {
+        MINUTE -> listOf(TimeWindow.HOURS_1, TimeWindow.HOURS_3, TimeWindow.HOURS_6, TimeWindow.HOURS_24)
+        HOUR -> listOf(TimeWindow.HOURS_24, TimeWindow.DAYS_7, TimeWindow.DAYS_30)
+        DAY -> listOf(TimeWindow.DAYS_7, TimeWindow.DAYS_30, TimeWindow.DAYS_90, TimeWindow.YEAR_1, TimeWindow.ALL)
+        WEEK -> listOf(TimeWindow.DAYS_90, TimeWindow.YEAR_1, TimeWindow.ALL)
+        MONTH -> listOf(TimeWindow.YEAR_1, TimeWindow.ALL)
+    }
+
+    /**
+     * The window in this bucket's [windows] closest to [current] by span, used to snap the
+     * selection when a bucket change invalidates the current window. Picks the entry whose ordinal
+     * distance to [current]'s position in the full [TimeWindow] order is smallest (ties → shorter).
+     */
+    fun nearestWindow(current: TimeWindow): TimeWindow {
+        val options = windows()
+        return options.firstOrNull { it == current }
+            ?: options.minByOrNull { kotlin.math.abs(it.ordinal - current.ordinal) }
+            ?: TimeWindow.ALL
+    }
 }
 
 @Serializable

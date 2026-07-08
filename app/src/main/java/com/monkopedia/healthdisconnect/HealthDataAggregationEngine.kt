@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import java.time.DayOfWeek
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.max
@@ -25,7 +24,7 @@ import android.util.Log
 
 interface HealthDataAggregationEngine {
     fun windowStart(timeWindow: TimeWindow, now: Instant): Instant?
-    fun toBucketDate(date: LocalDate, bucketSize: BucketSize): LocalDate
+    fun toBucketInstant(timestamp: Instant, bucketSize: BucketSize, zoneId: ZoneId): Instant
     fun aggregateValues(values: List<Double>, mode: AggregationMode): Double
     fun smooth3(points: List<HealthDataModel.MetricPoint>): List<HealthDataModel.MetricPoint>
     fun metricDefaultsFromView(view: DataView): MetricChartSettings
@@ -50,6 +49,10 @@ class DefaultHealthDataAggregationEngine(
 
     override fun windowStart(timeWindow: TimeWindow, now: Instant): Instant? {
         return when (timeWindow) {
+            TimeWindow.HOURS_1 -> now.minus(1, ChronoUnit.HOURS)
+            TimeWindow.HOURS_3 -> now.minus(3, ChronoUnit.HOURS)
+            TimeWindow.HOURS_6 -> now.minus(6, ChronoUnit.HOURS)
+            TimeWindow.HOURS_24 -> now.minus(24, ChronoUnit.HOURS)
             TimeWindow.DAYS_7 -> now.minus(7, ChronoUnit.DAYS)
             TimeWindow.DAYS_30 -> now.minus(30, ChronoUnit.DAYS)
             TimeWindow.DAYS_90 -> now.minus(90, ChronoUnit.DAYS)
@@ -114,18 +117,18 @@ class DefaultHealthDataAggregationEngine(
                 val mode = selection.metricSettings.aggregation
                 val grouped = measurements
                     .groupBy {
-                        toBucketDate(measurementTimestampDate(it.timestamp, zoneId), view.chartSettings.bucketSize)
+                        toBucketInstant(it.timestamp, selection.metricSettings.bucketSize, zoneId)
                     }
                     .toSortedMap()
-                val aggregated = grouped.map { (date, values) ->
+                val aggregated = grouped.map { (instant, values) ->
                     HealthDataModel.MetricPoint(
-                        date = date,
+                        instant = instant,
                         value = aggregateValues(values = values.map { it.value }, mode = mode)
                     )
                 }
                 val band = bandFor(mode) {
-                    grouped.map { (date, values) ->
-                        date to (values.minOf { it.value } to values.maxOf { it.value })
+                    grouped.map { (instant, values) ->
+                        instant to (values.minOf { it.value } to values.maxOf { it.value })
                     }
                 }
                 buildMetricSeries(
@@ -201,11 +204,12 @@ class DefaultHealthDataAggregationEngine(
                                 null -> measurement.value
                                 else -> kotlin.math.min(current, measurement.value)
                             }
-                            val bucketDate = toBucketDate(
-                                measurementTimestampDate(measurement.timestamp, zoneId),
-                                metricState.metricSettings.bucketSize
+                            val bucketInstant = toBucketInstant(
+                                measurement.timestamp,
+                                metricState.metricSettings.bucketSize,
+                                zoneId
                             )
-                            val bucket = metricState.buckets.getOrPut(bucketDate) { BucketAccumulator() }
+                            val bucket = metricState.buckets.getOrPut(bucketInstant) { BucketAccumulator() }
                             bucket.add(measurement.value)
                         }
                     }
@@ -229,12 +233,24 @@ class DefaultHealthDataAggregationEngine(
         private const val LOG_TAG = "HealthDataAggregation"
     }
 
-    override fun toBucketDate(date: LocalDate, bucketSize: BucketSize): LocalDate {
-        return when (bucketSize) {
-            BucketSize.DAY -> date
-            BucketSize.WEEK -> date.with(DayOfWeek.MONDAY)
-            BucketSize.MONTH -> date.withDayOfMonth(1)
+    /**
+     * The start [Instant] of the bucket that [timestamp] falls into, truncating to the bucket's
+     * granularity in [zoneId]. Day/week/month truncation happens on the calendar (so a bucket is a
+     * real local day/week/month, not a fixed 24h/168h slice) which keeps it correct across DST: the
+     * result is re-resolved to an instant from the local date-time, so a bucket boundary is the
+     * local midnight even when that day is 23 or 25 hours long. Hour/minute truncate the local
+     * time-of-day the same way.
+     */
+    override fun toBucketInstant(timestamp: Instant, bucketSize: BucketSize, zoneId: ZoneId): Instant {
+        val local = timestamp.atZone(zoneId)
+        val truncated = when (bucketSize) {
+            BucketSize.MINUTE -> local.truncatedTo(ChronoUnit.MINUTES)
+            BucketSize.HOUR -> local.truncatedTo(ChronoUnit.HOURS)
+            BucketSize.DAY -> local.toLocalDate().atStartOfDay(zoneId)
+            BucketSize.WEEK -> local.toLocalDate().with(DayOfWeek.MONDAY).atStartOfDay(zoneId)
+            BucketSize.MONTH -> local.toLocalDate().withDayOfMonth(1).atStartOfDay(zoneId)
         }
+        return truncated.toInstant()
     }
 
     override fun aggregateValues(values: List<Double>, mode: AggregationMode): Double {
@@ -266,22 +282,18 @@ class DefaultHealthDataAggregationEngine(
         return measurementExtractor.extractMeasurement(record, unitPreference, metricKey)
     }
 
-    private fun measurementTimestampDate(timestamp: Instant, zoneId: ZoneId): LocalDate {
-        return timestamp.atZone(zoneId).toLocalDate()
-    }
-
     private fun buildStreamingSeries(states: List<StreamingMetricState>): List<HealthDataModel.MetricSeries> {
         return states.mapNotNull { state ->
             if (state.buckets.isEmpty()) return@mapNotNull null
             val mode = state.metricSettings.aggregation
-            val dates = state.buckets.keys.toList()
-            val aggregated = dates.map { date ->
-                HealthDataModel.MetricPoint(date = date, value = state.buckets.getValue(date).aggregated(mode))
+            val instants = state.buckets.keys.toList()
+            val aggregated = instants.map { instant ->
+                HealthDataModel.MetricPoint(instant = instant, value = state.buckets.getValue(instant).aggregated(mode))
             }
             val band = bandFor(mode) {
-                dates.map { date ->
-                    val bucket = state.buckets.getValue(date)
-                    date to (bucket.min to bucket.max)
+                instants.map { instant ->
+                    val bucket = state.buckets.getValue(instant)
+                    instant to (bucket.min to bucket.max)
                 }
             }
             buildMetricSeries(
@@ -303,12 +315,12 @@ class DefaultHealthDataAggregationEngine(
      */
     private inline fun bandFor(
         mode: AggregationMode,
-        entries: () -> List<Pair<LocalDate, Pair<Double, Double>>>
+        entries: () -> List<Pair<Instant, Pair<Double, Double>>>
     ): Pair<List<HealthDataModel.MetricPoint>, List<HealthDataModel.MetricPoint>>? {
         if (mode != AggregationMode.MIN_MAX_AVG) return null
         val bucketBounds = entries()
-        val min = bucketBounds.map { (date, bounds) -> HealthDataModel.MetricPoint(date, bounds.first) }
-        val max = bucketBounds.map { (date, bounds) -> HealthDataModel.MetricPoint(date, bounds.second) }
+        val min = bucketBounds.map { (instant, bounds) -> HealthDataModel.MetricPoint(instant, bounds.first) }
+        val max = bucketBounds.map { (instant, bounds) -> HealthDataModel.MetricPoint(instant, bounds.second) }
         return min to max
     }
 
@@ -377,7 +389,7 @@ class DefaultHealthDataAggregationEngine(
         var unit: String? = null,
         var peakValue: Double? = null,
         var minValue: Double? = null,
-        val buckets: TreeMap<LocalDate, BucketAccumulator> = TreeMap()
+        val buckets: TreeMap<Instant, BucketAccumulator> = TreeMap()
     )
 
     private data class AggregationMetricSelection(

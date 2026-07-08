@@ -182,12 +182,6 @@ fun renderGraphBitmap(
     }
 
     val allDates = allPoints.map { it.date }.distinct().sorted()
-    val spansMultipleYears = allDates.map { it.year }.distinct().size > 1
-    val dateFormatter = if (spansMultipleYears) {
-        DateTimeFormatter.ofPattern("MMM d, yyyy")
-    } else {
-        DateTimeFormatter.ofPattern("MMM d")
-    }
 
     val chartLeft = layout.chartLeft
     val chartTop = layout.chartTop
@@ -225,7 +219,7 @@ fun renderGraphBitmap(
     canvas.drawLine(chartLeft, chartTop, chartLeft, chartBottom, axisPaint)
 
     fun pointToXY(point: HealthDataModel.MetricPoint, seriesIndex: Int): Pair<Float, Float> {
-        val x = chartLeft + (chartWidth * geometry.xFraction(point.date))
+        val x = chartLeft + (chartWidth * geometry.xFraction(point.instant))
         val yNorm = geometry.normalized(point.value, seriesIndex)
         val y = chartBottom - (yNorm * chartHeight)
         return x to y
@@ -353,8 +347,7 @@ fun renderGraphBitmap(
         }
     }
 
-    val firstDate = allDates.first().format(dateFormatter)
-    val lastDate = allDates.last().format(dateFormatter)
+    val (firstDate, lastDate) = geometry.dataRangeLabels()
     val dateY = layout.dateY
     canvas.drawText(firstDate, chartLeft, dateY, bodyPaint)
     canvas.drawText(lastDate, chartRight - bodyPaint.measureText(lastDate), dateY, bodyPaint)
@@ -473,7 +466,7 @@ fun renderWidgetGraphBitmap(
     fun rangeFor(index: Int): ValueRange = geometry.rangeFor(index)
 
     fun pointToXY(point: HealthDataModel.MetricPoint, seriesIndex: Int): Pair<Float, Float> {
-        val x = chartLeft + (chartWidth * geometry.xFraction(point.date))
+        val x = chartLeft + (chartWidth * geometry.xFraction(point.instant))
         val yNorm = geometry.normalized(point.value, seriesIndex)
         val y = chartBottom - (yNorm * chartHeight)
         return x to y
@@ -608,21 +601,28 @@ fun renderWidgetGraphBitmap(
 
         val topLabelBaseline = chartTop + labelInset + labelTextSize
         val bottomLabelBaseline = chartBottom - labelInset - (labelTextSize * 0.08f)
-        if (allDates.size > 1) {
-            val dateFormatter = if (allDates.size > 365) {
-                DateTimeFormatter.ofPattern("MMM yy")
+        if (geometry.sortedInstants.size > 1) {
+            // Intraday inherits the time-of-day labels from ChartGeometry; day-granular keeps the
+            // widget's compact "MMM yy"/"MMM d" formatting for long/short spans.
+            val (firstLabel, lastLabel) = if (geometry.isIntraday) {
+                geometry.dataRangeLabels()
             } else {
-                DateTimeFormatter.ofPattern("MMM d")
+                val dateFormatter = if (allDates.size > 365) {
+                    DateTimeFormatter.ofPattern("MMM yy")
+                } else {
+                    DateTimeFormatter.ofPattern("MMM d")
+                }
+                allDates.first().format(dateFormatter) to allDates.last().format(dateFormatter)
             }
             drawLabelChip(
-                allDates.first().format(dateFormatter),
+                firstLabel,
                 chartLeft + labelInset,
                 bottomLabelBaseline,
                 alignRight = false,
                 paint = datePaint
             )
             drawLabelChip(
-                allDates.last().format(dateFormatter),
+                lastLabel,
                 chartRight - labelInset,
                 bottomLabelBaseline,
                 alignRight = true,
