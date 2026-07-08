@@ -10,9 +10,8 @@ import androidx.core.content.FileProvider
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
-import com.monkopedia.healthdisconnect.model.YAxisMode
+import com.monkopedia.healthdisconnect.ui.ChartGeometry
 import com.monkopedia.healthdisconnect.ui.ValueRange
-import com.monkopedia.healthdisconnect.ui.seriesRangeFromPoints
 import java.io.File
 import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
@@ -195,19 +194,13 @@ fun renderGraphBitmap(
     val chartWidth = chartRight - chartLeft
     val chartHeight = chartBottom - chartTop
 
-    val dateIndex = allDates.withIndex().associate { it.value to it.index }
-    val useSeparateNormalization = seriesList.size > 1
-    val globalRange = seriesRangeFromPoints(
-        allPoints,
-        seriesList.firstOrNull()?.yAxisMode ?: YAxisMode.AUTO
-    )
-    val perSeriesRanges = seriesList.map { series ->
-        seriesRangeFromPoints(series.points, series.yAxisMode)
-    }
+    val geometry = ChartGeometry.create(
+        seriesList = seriesList,
+        settings = settings,
+        xAxis = ChartGeometry.XAxisMode.DISCRETE_INDEX
+    )!!
 
-    fun rangeFor(index: Int): ValueRange {
-        return if (useSeparateNormalization) perSeriesRanges[index] else globalRange
-    }
+    fun rangeFor(index: Int): ValueRange = geometry.rangeFor(index)
 
     fun normalized(value: Double, range: ValueRange): Float {
         return ((value - range.min) / (range.max - range.min)).toFloat().coerceIn(0f, 1f)
@@ -233,11 +226,9 @@ fun renderGraphBitmap(
     canvas.drawLine(chartLeft, chartBottom, chartRight, chartBottom, axisPaint)
     canvas.drawLine(chartLeft, chartTop, chartLeft, chartBottom, axisPaint)
 
-    val xStep = if (allDates.size > 1) chartWidth / (allDates.size - 1) else 0f
     fun pointToXY(point: HealthDataModel.MetricPoint, seriesIndex: Int): Pair<Float, Float> {
-        val index = dateIndex[point.date] ?: 0
-        val x = chartLeft + (xStep * index)
-        val yNorm = normalized(point.value, rangeFor(seriesIndex))
+        val x = chartLeft + (chartWidth * geometry.xFraction(point.date))
+        val yNorm = geometry.normalized(point.value, seriesIndex)
         val y = chartBottom - (yNorm * chartHeight)
         return x to y
     }
@@ -462,27 +453,19 @@ fun renderWidgetGraphBitmap(
     if (allDates.isEmpty()) {
         return bitmap
     }
-    val dateIndex = allDates.withIndex().associate { it.value to it.index }
-    val useSeparateNormalization = seriesList.size > 1
-    val globalRange = seriesRangeFromPoints(
-        allPoints,
-        seriesList.firstOrNull()?.yAxisMode ?: YAxisMode.AUTO
-    )
-    val perSeriesRanges = seriesList.map { series ->
-        seriesRangeFromPoints(series.points, series.yAxisMode)
-    }
-    fun rangeFor(index: Int): ValueRange {
-        return if (useSeparateNormalization) perSeriesRanges[index] else globalRange
-    }
+    val geometry = ChartGeometry.create(
+        seriesList = seriesList,
+        settings = settings,
+        xAxis = ChartGeometry.XAxisMode.DISCRETE_INDEX
+    )!!
+    fun rangeFor(index: Int): ValueRange = geometry.rangeFor(index)
     fun normalized(value: Double, range: ValueRange): Float {
         return ((value - range.min) / (range.max - range.min)).toFloat().coerceIn(0f, 1f)
     }
 
-    val xStep = if (allDates.size > 1) chartWidth / (allDates.size - 1) else 0f
     fun pointToXY(point: HealthDataModel.MetricPoint, seriesIndex: Int): Pair<Float, Float> {
-        val index = dateIndex[point.date] ?: 0
-        val x = chartLeft + (xStep * index)
-        val yNorm = normalized(point.value, rangeFor(seriesIndex))
+        val x = chartLeft + (chartWidth * geometry.xFraction(point.date))
+        val yNorm = geometry.normalized(point.value, seriesIndex)
         val y = chartBottom - (yNorm * chartHeight)
         return x to y
     }
