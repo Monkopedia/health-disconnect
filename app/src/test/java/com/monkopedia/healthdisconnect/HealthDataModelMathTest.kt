@@ -9,6 +9,8 @@ import io.mockk.mockk
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -60,20 +62,33 @@ class HealthDataModelMathTest {
     }
 
     @Test
-    fun `toBucketDate aligns to correct boundaries`() {
-        val date = LocalDate.parse("2026-02-18")
-        assertEquals(
-            LocalDate.parse("2026-02-18"),
-            engine.toBucketDate(date, BucketSize.DAY)
-        )
-        assertEquals(
-            LocalDate.parse("2026-02-16"),
-            engine.toBucketDate(date, BucketSize.WEEK)
-        )
-        assertEquals(
-            LocalDate.parse("2026-02-01"),
-            engine.toBucketDate(date, BucketSize.MONTH)
-        )
+    fun `toBucketInstant aligns to correct boundaries`() {
+        // 2026-02-18 14:37:29 UTC, a Wednesday.
+        val zone = ZoneId.of("UTC")
+        val timestamp = ZonedDateTime.of(2026, 2, 18, 14, 37, 29, 0, zone).toInstant()
+        fun expect(y: Int, mo: Int, d: Int, h: Int, mi: Int): Instant =
+            ZonedDateTime.of(y, mo, d, h, mi, 0, 0, zone).toInstant()
+
+        assertEquals(expect(2026, 2, 18, 14, 37), engine.toBucketInstant(timestamp, BucketSize.MINUTE, zone))
+        assertEquals(expect(2026, 2, 18, 14, 0), engine.toBucketInstant(timestamp, BucketSize.HOUR, zone))
+        assertEquals(expect(2026, 2, 18, 0, 0), engine.toBucketInstant(timestamp, BucketSize.DAY, zone))
+        // Week truncates to the preceding Monday (2026-02-16).
+        assertEquals(expect(2026, 2, 16, 0, 0), engine.toBucketInstant(timestamp, BucketSize.WEEK, zone))
+        assertEquals(expect(2026, 2, 1, 0, 0), engine.toBucketInstant(timestamp, BucketSize.MONTH, zone))
+    }
+
+    @Test
+    fun `toBucketInstant is DST-correct across a spring-forward day boundary`() {
+        // US spring-forward 2026: clocks jump 02:00 -> 03:00 local on 2026-03-08. The day bucket
+        // must be that day's real local midnight (not a fixed -24h slice), so a value logged just
+        // after the jump still buckets to the 08th's local start-of-day.
+        val zone = ZoneId.of("America/New_York")
+        val afterJump = ZonedDateTime.of(2026, 3, 8, 3, 30, 0, 0, zone).toInstant()
+        val localMidnight = ZonedDateTime.of(2026, 3, 8, 0, 0, 0, 0, zone).toInstant()
+        assertEquals(localMidnight, engine.toBucketInstant(afterJump, BucketSize.DAY, zone))
+        // The hour bucket is the local 03:00 hour (the 02:00 hour does not exist that day).
+        val localThreeAm = ZonedDateTime.of(2026, 3, 8, 3, 0, 0, 0, zone).toInstant()
+        assertEquals(localThreeAm, engine.toBucketInstant(afterJump, BucketSize.HOUR, zone))
     }
 
     @Test

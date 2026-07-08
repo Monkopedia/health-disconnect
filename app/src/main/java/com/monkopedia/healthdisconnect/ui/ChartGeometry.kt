@@ -5,9 +5,11 @@ import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.YAxisMode
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
-import kotlin.math.max
 
 /**
  * Surface-independent chart geometry shared by every renderer (on-screen Compose chart,
@@ -25,32 +27,39 @@ internal class ChartGeometry private constructor(
     val settings: ChartSettings,
     /** Distinct, ascending dates across every series. */
     val sortedDates: List<LocalDate>,
-    private val dateIndex: Map<LocalDate, Int>,
+    /** Distinct, ascending bucket instants across every series (the discrete-axis slots). */
+    val sortedInstants: List<Instant>,
+    private val instantIndex: Map<Instant, Int>,
     private val globalRange: ValueRange,
     private val perSeriesRanges: List<ValueRange>,
     private val useSeparateNormalization: Boolean,
     /**
-     * Continuous date axis: the left edge (fraction 0) maps to this date, the right edge
+     * Continuous time axis: the left edge (fraction 0) maps to this instant, the right edge
      * (fraction 1) to [axisEnd]. Only meaningful when [xAxis] is [XAxisMode.CONTINUOUS_DATE].
+     * Positioning is by instant (not calendar day) so an intraday hour/minute bucket lands at its
+     * own X coordinate; day-granular data still lands identically since its buckets sit on day
+     * boundaries.
      */
-    val axisStart: LocalDate,
-    val axisEnd: LocalDate,
-    val axisSpanDays: Long,
+    val axisStart: Instant,
+    val axisEnd: Instant,
+    val axisSpanSeconds: Long,
+    /** True when the view's window is sub-day, driving the time-of-day axis labels. */
+    val isIntraday: Boolean,
     val xAxis: XAxisMode,
     private val singlePoint: Boolean
 ) {
-    /** How the horizontal position of a point's date is computed. */
+    /** How the horizontal position of a bucket instant is computed. */
     enum class XAxisMode {
         /**
-         * Continuous calendar axis: fraction = daysFromAxisStart / axisSpanDays. Used by the
-         * on-screen line chart, which spans the view's whole time window so a single day still
-         * sits within a real range.
+         * Continuous time axis: fraction = secondsFromAxisStart / axisSpanSeconds. Used by the
+         * on-screen line chart, which spans the view's whole time window so a single bucket still
+         * sits within a real range and intraday hour/minute buckets land at their own X positions.
          */
         CONTINUOUS_DATE,
 
         /**
-         * Discrete slot axis: fraction = dateIndex / (dateCount - 1). Used by the bitmap
-         * renderers (share + widget), which lay dates out at evenly-spaced indices.
+         * Discrete slot axis: fraction = instantIndex / (instantCount - 1). Used by the bitmap
+         * renderers (share + widget), which lay buckets out at evenly-spaced indices.
          */
         DISCRETE_INDEX
     }
@@ -72,7 +81,7 @@ internal class ChartGeometry private constructor(
         val edges = series.points.indices.map { i ->
             val point = series.points[i]
             BandEdge(
-                x = xFraction(point.date),
+                x = xFraction(point.instant),
                 minYFractionFromTop = 1f - normalized(bandMin[i].value, seriesIndex),
                 maxYFractionFromTop = 1f - normalized(bandMax[i].value, seriesIndex)
             )
@@ -91,18 +100,18 @@ internal class ChartGeometry private constructor(
     }
 
     /**
-     * Horizontal position of [date] as a 0..1 fraction of the chart's plot width, honoring the
-     * configured [xAxis]. A lone point is centered.
+     * Horizontal position of a bucket [instant] as a 0..1 fraction of the chart's plot width,
+     * honoring the configured [xAxis]. A lone point is centered.
      */
-    fun xFraction(date: LocalDate): Float {
+    fun xFraction(instant: Instant): Float {
         if (singlePoint) return 0.5f
         return when (xAxis) {
             XAxisMode.CONTINUOUS_DATE ->
-                (ChronoUnit.DAYS.between(axisStart, date).toFloat() / axisSpanDays.toFloat())
+                (ChronoUnit.SECONDS.between(axisStart, instant).toFloat() / axisSpanSeconds.toFloat())
                     .coerceIn(0f, 1f)
             XAxisMode.DISCRETE_INDEX -> {
-                val index = dateIndex[date] ?: 0
-                if (sortedDates.size > 1) index.toFloat() / (sortedDates.size - 1).toFloat() else 0f
+                val index = instantIndex[instant] ?: 0
+                if (sortedInstants.size > 1) index.toFloat() / (sortedInstants.size - 1).toFloat() else 0f
             }
         }
     }
@@ -112,10 +121,51 @@ internal class ChartGeometry private constructor(
      * (0 = top of plot, 1 = bottom) so a renderer maps it directly as `top + yFraction * height`.
      */
     fun pointFraction(point: HealthDataModel.MetricPoint, seriesIndex: Int): PointFraction {
-        val x = xFraction(point.date)
+        val x = xFraction(point.instant)
         val yNorm = normalized(point.value, seriesIndex)
         return PointFraction(x = x, yFractionFromTop = 1f - yNorm, yNormalized = yNorm)
     }
+
+    /**
+     * The formatted start/end X-axis labels for [from]..[to] shared by every renderer. Sub-day
+     * windows show time-of-day (e.g. `6:15 AM`, `12:00 PM`); day-granular windows show the calendar
+     * date, widening to include the year only when the span crosses years. Built here so all three
+     * surfaces label the intraday axis identically instead of each re-deriving the formatter.
+     *
+     * The continuous line chart passes the axis window ([axisStart]..[axisEnd]); the discrete-index
+     * bitmaps pass their actual data range ([sortedInstants] first/last), matching how each lays out
+     * the axis.
+     *
+     * @param zoneId the zone the instants are rendered in (system zone by default).
+     */
+    fun endpointLabels(
+        from: Instant,
+        to: Instant,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): Pair<String, String> {
+        val start = from.atZone(zoneId)
+        val end = to.atZone(zoneId)
+        val formatter = when {
+            // Intraday spans that stay within one local day read cleanly with just the clock time
+            // (`6:15 AM` … `12:00 PM`). When the two ends land on different local dates — e.g. a
+            // HOURS_24 window whose endpoints share a wall-clock time a day apart — the bare time
+            // collides (`2:26 PM` … `2:26 PM`), so qualify each end with its date to keep the span
+            // legible and chronological (`Feb 21, 2:26 PM` … `Feb 22, 2:26 PM`).
+            isIntraday && start.toLocalDate() == end.toLocalDate() -> DateTimeFormatter.ofPattern("h:mm a")
+            isIntraday -> DateTimeFormatter.ofPattern("MMM d, h:mm a")
+            start.year != end.year -> DateTimeFormatter.ofPattern("MMM d, yyyy")
+            else -> DateTimeFormatter.ofPattern("MMM d")
+        }
+        return start.format(formatter) to end.format(formatter)
+    }
+
+    /** Endpoint labels for the continuous line axis (the window span). */
+    fun axisWindowLabels(zoneId: ZoneId = ZoneId.systemDefault()): Pair<String, String> =
+        endpointLabels(axisStart, axisEnd, zoneId)
+
+    /** Endpoint labels for the discrete-index bitmaps (the actual first/last data instants). */
+    fun dataRangeLabels(zoneId: ZoneId = ZoneId.systemDefault()): Pair<String, String> =
+        endpointLabels(sortedInstants.first(), sortedInstants.last(), zoneId)
 
     /** Which axis-label block a renderer should draw, and the range/label associated with it. */
     fun axisLabelKind(): AxisLabelKind = when (seriesList.size) {
@@ -150,20 +200,23 @@ internal class ChartGeometry private constructor(
          * chart before it gets here (nothing to plot), so this fails loudly rather than
          * returning null: a null slipping through would only mask a missing upstream guard.
          *
-         * @param today reference "now" used only for the continuous-axis window computation.
+         * @param now reference "now" used only for the continuous-axis window computation.
+         * @param zoneId zone used to snap day-granular axis endpoints to local day boundaries.
          */
         fun create(
             seriesList: List<HealthDataModel.MetricSeries>,
             settings: ChartSettings,
             xAxis: XAxisMode,
-            today: LocalDate = LocalDate.now()
+            now: Instant = Instant.now(),
+            zoneId: ZoneId = ZoneId.systemDefault()
         ): ChartGeometry {
             require(seriesList.isNotEmpty()) { "ChartGeometry.create requires at least one series" }
             val allPoints = seriesList.flatMap { it.points }
             require(allPoints.isNotEmpty()) { "ChartGeometry.create requires at least one point" }
+            val sortedInstants = allPoints.map { it.instant }.distinct().sorted()
             val sortedDates = allPoints.map { it.date }.distinct().sorted()
 
-            val dateIndex = sortedDates.withIndex().associate { it.value to it.index }
+            val instantIndex = sortedInstants.withIndex().associate { it.value to it.index }
             val useSeparateNormalization = seriesList.size > 1
             // A min/max/avg series must share ONE Y-range spanning its whole envelope so the min,
             // avg, and max all sit on the same scale (not per-line normalization).
@@ -175,22 +228,27 @@ internal class ChartGeometry private constructor(
                 seriesRangeFromPoints(series.rangePoints(), series.yAxisMode)
             }
 
-            val dataMin = sortedDates.first()
-            val dataMax = sortedDates.last()
-            val windowDays = when (settings.timeWindow) {
-                TimeWindow.DAYS_7 -> 7L
-                TimeWindow.DAYS_30 -> 30L
-                TimeWindow.DAYS_90 -> 90L
-                TimeWindow.YEAR_1 -> 365L
-                TimeWindow.ALL -> null
+            val isIntraday = settings.timeWindow.isIntraday
+            val dataMin = sortedInstants.first()
+            val dataMax = sortedInstants.last()
+            // The continuous axis spans the view's time window so a single bucket still sits within
+            // a real range. Day-granular windows snap the "now" edge to the end of the local day so
+            // the axis endpoints stay on day boundaries and existing day-granular charts are
+            // unchanged; intraday windows keep the exact instant so the time-of-day axis is precise.
+            val windowSeconds = windowSeconds(settings.timeWindow)
+            val axisNow = if (isIntraday) now else now.atZone(zoneId).toLocalDate().atStartOfDay(zoneId).toInstant()
+            var axisStart = if (windowSeconds != null) {
+                minOf(axisNow.minusSeconds(windowSeconds), dataMin)
+            } else {
+                dataMin
             }
-            var axisStart = if (windowDays != null) minOf(today.minusDays(windowDays), dataMin) else dataMin
-            var axisEnd = maxOf(today, dataMax)
+            var axisEnd = maxOf(axisNow, dataMax)
             if (!axisStart.isBefore(axisEnd)) {
-                axisStart = dataMin.minusDays(1)
-                axisEnd = dataMax.plusDays(1)
+                val pad = if (isIntraday) 60L else ChronoUnit.DAYS.duration.seconds
+                axisStart = dataMin.minusSeconds(pad)
+                axisEnd = dataMax.plusSeconds(pad)
             }
-            val axisSpanDays = ChronoUnit.DAYS.between(axisStart, axisEnd).coerceAtLeast(1L)
+            val axisSpanSeconds = ChronoUnit.SECONDS.between(axisStart, axisEnd).coerceAtLeast(1L)
 
             // A lone point is centered horizontally only on the continuous line axis (matches the
             // on-screen renderer). Discrete-index surfaces keep their existing single-slot layout.
@@ -202,16 +260,30 @@ internal class ChartGeometry private constructor(
                 seriesList = seriesList,
                 settings = settings,
                 sortedDates = sortedDates,
-                dateIndex = dateIndex,
+                sortedInstants = sortedInstants,
+                instantIndex = instantIndex,
                 globalRange = globalRange,
                 perSeriesRanges = perSeriesRanges,
                 useSeparateNormalization = useSeparateNormalization,
                 axisStart = axisStart,
                 axisEnd = axisEnd,
-                axisSpanDays = axisSpanDays,
+                axisSpanSeconds = axisSpanSeconds,
+                isIntraday = isIntraday,
                 xAxis = xAxis,
                 singlePoint = singlePoint
             )
+        }
+
+        private fun windowSeconds(timeWindow: TimeWindow): Long? = when (timeWindow) {
+            TimeWindow.HOURS_1 -> 3_600L
+            TimeWindow.HOURS_3 -> 3 * 3_600L
+            TimeWindow.HOURS_6 -> 6 * 3_600L
+            TimeWindow.HOURS_24 -> 24 * 3_600L
+            TimeWindow.DAYS_7 -> 7 * 86_400L
+            TimeWindow.DAYS_30 -> 30 * 86_400L
+            TimeWindow.DAYS_90 -> 90 * 86_400L
+            TimeWindow.YEAR_1 -> 365 * 86_400L
+            TimeWindow.ALL -> null
         }
     }
 }

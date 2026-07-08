@@ -43,7 +43,6 @@ import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.YAxisMode
-import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
 @Composable
@@ -161,17 +160,15 @@ internal fun MetricOverTimeChart(
         primaryColor = MaterialTheme.colorScheme.primary.toArgb(),
         secondaryColor = MaterialTheme.colorScheme.secondary.toArgb()
     ).map { Color(it) }
-    // Line charts plot on a continuous date axis spanning the view's time window, so a
-    // single day's data still sits within a real range (different dates on each end) and a
-    // lone point is positioned correctly. Bar charts keep their discrete per-date slots.
-    val labelStart = if (settings.chartType == ChartType.LINE) geometry.axisStart else allDates.first()
-    val labelEnd = if (settings.chartType == ChartType.LINE) geometry.axisEnd else allDates.last()
-    val spansMultipleYears = (allDates.map { it.year } + labelStart.year + labelEnd.year)
-        .distinct().size > 1
-    val labelFormatter = if (spansMultipleYears) {
-        DateTimeFormatter.ofPattern("MMM d, yyyy")
+    // Line charts plot on a continuous time axis spanning the view's time window, so a single
+    // bucket still sits within a real range (different endpoints on each end) and a lone point is
+    // positioned correctly; intraday windows show time-of-day labels. Bar charts keep their
+    // discrete per-bucket slots and label the actual data range. Both formats come from
+    // ChartGeometry so the axis labelling is defined once for every renderer.
+    val (labelStart, labelEnd) = if (settings.chartType == ChartType.LINE) {
+        geometry.axisWindowLabels()
     } else {
-        DateTimeFormatter.ofPattern("MMM d")
+        geometry.dataRangeLabels()
     }
 
     fun rangeFor(index: Int): ValueRange = geometry.rangeFor(index)
@@ -239,7 +236,7 @@ internal fun MetricOverTimeChart(
             // A lone point is centered horizontally (and the symmetric value range centers
             // it vertically) so it sits in the middle of the chart instead of at an edge.
             fun pointToOffset(point: HealthDataModel.MetricPoint, seriesIndex: Int): Offset {
-                val fraction = geometry.xFraction(point.date)
+                val fraction = geometry.xFraction(point.instant)
                 val x = leftPad + (chartWidth * fraction)
                 val yNorm = geometry.normalized(point.value, seriesIndex)
                 val y = topPad + chartHeight - (yNorm * chartHeight)
@@ -353,8 +350,8 @@ internal fun MetricOverTimeChart(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        Text(labelStart.format(labelFormatter), style = MaterialTheme.typography.labelSmall)
-        Text(labelEnd.format(labelFormatter), style = MaterialTheme.typography.labelSmall)
+        Text(labelStart, style = MaterialTheme.typography.labelSmall)
+        Text(labelEnd, style = MaterialTheme.typography.labelSmall)
     }
     HorizontalDivider(
         modifier = Modifier.padding(top = 6.dp),
