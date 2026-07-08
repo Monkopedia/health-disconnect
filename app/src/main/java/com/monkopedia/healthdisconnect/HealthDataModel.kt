@@ -397,8 +397,18 @@ class HealthDataModel @JvmOverloads constructor(
         val minValueInWindow: Double = points.minOfOrNull { it.value } ?: 0.0,
         val showMaxLabel: Boolean = true,
         val showMinLabel: Boolean = false,
-        val yAxisMode: YAxisMode = YAxisMode.AUTO
-    )
+        val yAxisMode: YAxisMode = YAxisMode.AUTO,
+        /**
+         * Per-bucket minimum/maximum envelope for an [AggregationMode.MIN_MAX_AVG] series,
+         * aligned 1:1 with [points] (which carry the average). Null for every other mode, so a
+         * min/max/avg result stays one logical series carrying its band rather than three series.
+         */
+        val bandMin: List<MetricPoint>? = null,
+        val bandMax: List<MetricPoint>? = null
+    ) {
+        /** True when this series carries a min–max envelope to draw around its avg line. */
+        val hasBand: Boolean get() = bandMin != null && bandMax != null
+    }
 
     fun aggregateMetricSeriesList(view: DataView, records: List<Record>): List<MetricSeries> {
         return aggregationEngine.aggregateMetricSeriesList(view, records)

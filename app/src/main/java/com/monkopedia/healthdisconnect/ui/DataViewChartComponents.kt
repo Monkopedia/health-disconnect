@@ -246,9 +246,25 @@ internal fun MetricOverTimeChart(
                 return Offset(x, y)
             }
 
+            fun bandEdgeToOffsets(edge: ChartGeometry.BandEdge): Pair<Offset, Offset> {
+                val x = leftPad + (chartWidth * edge.x)
+                val minY = topPad + (edge.minYFractionFromTop * chartHeight)
+                val maxY = topPad + (edge.maxYFractionFromTop * chartHeight)
+                return Offset(x, minY) to Offset(x, maxY)
+            }
+
             if (settings.chartType == ChartType.LINE) {
                 seriesList.forEachIndexed { seriesIndex, series ->
                     val lineColor = seriesColors[seriesIndex % seriesColors.size]
+                    geometry.bandFor(seriesIndex)?.let { band ->
+                        drawMetricBand(
+                            band = band,
+                            color = lineColor,
+                            rangeDisplay = settings.rangeDisplay,
+                            bandEdgeToOffsets = ::bandEdgeToOffsets,
+                            strokeWidthPx = 1.5.dp.toPx()
+                        )
+                    }
                     val coordinates = series.points.map { pointToOffset(it, seriesIndex) }
                     coordinates.zipWithNext().forEach { (start, end) ->
                         drawLine(
@@ -410,7 +426,72 @@ internal fun MetricOverTimeChart(
     Spacer(Modifier.height(6.dp))
 }
 
+/** Alpha applied to a series color for the filled BAND envelope. */
+private const val BAND_FILL_ALPHA = 0.16f
+
+/** Alpha applied to a series color for the LINES min/max dashed strokes. */
+private const val BAND_LINE_ALPHA = 0.55f
+
+/**
+ * Draws a min/max/avg series' envelope for the on-screen chart. BAND fills the min–max area at low
+ * alpha; LINES draws lighter dashed min and max strokes. The avg line is drawn separately by the
+ * caller. Geometry (the [band] edges) comes from [ChartGeometry] so every renderer draws the same
+ * shape.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMetricBand(
+    band: ChartGeometry.BandGeometry,
+    color: Color,
+    rangeDisplay: com.monkopedia.healthdisconnect.model.RangeDisplay,
+    bandEdgeToOffsets: (ChartGeometry.BandEdge) -> Pair<Offset, Offset>,
+    strokeWidthPx: Float
+) {
+    val edges = band.edges
+    if (edges.isEmpty()) return
+    val bounds = edges.map(bandEdgeToOffsets)
+    when (rangeDisplay) {
+        com.monkopedia.healthdisconnect.model.RangeDisplay.BAND -> {
+            val path = androidx.compose.ui.graphics.Path()
+            bounds.forEachIndexed { index, (_, maxOffset) ->
+                if (index == 0) path.moveTo(maxOffset.x, maxOffset.y) else path.lineTo(maxOffset.x, maxOffset.y)
+            }
+            bounds.asReversed().forEach { (minOffset, _) -> path.lineTo(minOffset.x, minOffset.y) }
+            path.close()
+            drawPath(path, color = color.copy(alpha = BAND_FILL_ALPHA), style = Fill)
+        }
+        com.monkopedia.healthdisconnect.model.RangeDisplay.LINES -> {
+            val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
+                floatArrayOf(strokeWidthPx * 4f, strokeWidthPx * 3f)
+            )
+            val edgeColor = color.copy(alpha = BAND_LINE_ALPHA)
+            listOf(
+                bounds.map { it.first },
+                bounds.map { it.second }
+            ).forEach { line ->
+                line.zipWithNext().forEach { (start, end) ->
+                    drawLine(
+                        color = edgeColor,
+                        start = start,
+                        end = end,
+                        strokeWidth = strokeWidthPx,
+                        pathEffect = dash
+                    )
+                }
+            }
+        }
+    }
+}
+
 internal data class ValueRange(val min: Double, val max: Double)
+
+/**
+ * The points that define a series' Y-range. For a min/max/avg series this is the min–max envelope
+ * (so the shared range spans the whole band); otherwise it's just the plotted points.
+ */
+internal fun HealthDataModel.MetricSeries.rangePoints(): List<HealthDataModel.MetricPoint> {
+    val min = bandMin
+    val max = bandMax
+    return if (min != null && max != null) points + min + max else points
+}
 
 internal fun seriesRangeFromPoints(
     points: List<HealthDataModel.MetricPoint>,

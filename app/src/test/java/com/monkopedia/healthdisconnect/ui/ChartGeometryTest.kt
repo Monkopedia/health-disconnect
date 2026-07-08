@@ -221,6 +221,39 @@ class ChartGeometryTest {
     }
 
     @Test
+    fun bandFor_isNull_whenSeriesHasNoBand() {
+        val g = geometry(listOf(series("Weight", "lb", listOf(point(today, 70.0)))))
+        assertEquals(null, g.bandFor(0))
+    }
+
+    @Test
+    fun bandFor_sharesOneRangeSpanningWholeEnvelope() {
+        val d0 = today.minusDays(1)
+        val avg = listOf(point(d0, 150.0), point(today, 250.0))
+        val bandMin = listOf(point(d0, 100.0), point(today, 200.0))
+        val bandMax = listOf(point(d0, 200.0), point(today, 300.0))
+        val bandSeries = HealthDataModel.MetricSeries(
+            label = "Weight", unit = "lb", points = avg, bandMin = bandMin, bandMax = bandMax
+        )
+        val g = geometry(listOf(bandSeries))
+
+        // Range spans [min(bandMin)=100, max(bandMax)=300], shared by line, min and max.
+        assertEquals(0f, g.normalized(100.0, 0), 1e-6f)
+        assertEquals(1f, g.normalized(300.0, 0), 1e-6f)
+        // The avg (150) sits within that shared range, not normalized to its own [150,250].
+        assertEquals(0.25f, g.normalized(150.0, 0), 1e-6f)
+
+        val band = g.bandFor(0)!!
+        assertEquals(2, band.edges.size)
+        // yFractionFromTop: 0 = top (max value). First bucket: min=100 -> bottom, max=200 -> mid.
+        assertEquals(1f, band.edges[0].minYFractionFromTop, 1e-6f)
+        assertEquals(0.5f, band.edges[0].maxYFractionFromTop, 1e-6f)
+        // x follows the same discrete-index layout as the line.
+        assertEquals(g.xFraction(d0), band.edges[0].x, 1e-6f)
+        assertEquals(g.xFraction(today), band.edges[1].x, 1e-6f)
+    }
+
+    @Test
     fun sortedDates_areDistinctAndAscending() {
         val g = geometry(
             listOf(

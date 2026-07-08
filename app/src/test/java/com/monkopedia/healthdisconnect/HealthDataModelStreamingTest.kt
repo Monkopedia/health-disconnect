@@ -248,6 +248,77 @@ class HealthDataModelStreamingTest {
         assertEquals(true, finalSeries.showMinLabel)
     }
 
+    @Test
+    fun `min max avg emits average line and per-bucket min max band`() = runBlocking {
+        val model = HealthDataModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            autoRefreshMetrics = false
+        )
+        val selection = RecordSelection(
+            fqn = StepsRecord::class.qualifiedName!!,
+            metricSettings = MetricChartSettings(
+                aggregation = AggregationMode.MIN_MAX_AVG,
+                timeWindow = TimeWindow.ALL,
+                bucketSize = BucketSize.DAY,
+                smoothing = SmoothingMode.OFF
+            )
+        )
+        val view = DataView(
+            id = 6,
+            type = ViewType.CHART,
+            records = listOf(selection),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.ALL, bucketSize = BucketSize.DAY)
+        )
+
+        val day1 = Instant.parse("2026-02-18T10:00:00Z")
+        val day2 = Instant.parse("2026-02-19T10:00:00Z")
+        val emissions = model.collectAggregatedSeries(view) { _, _, _, onPage ->
+            onPage(
+                listOf(
+                    stepsRecord(100, day1),
+                    stepsRecord(300, day1),
+                    stepsRecord(800, day2),
+                    stepsRecord(1000, day2)
+                )
+            )
+        }.toList()
+
+        val series = emissions.last().single()
+        // The line carries the per-bucket average.
+        assertEquals(listOf(200.0, 900.0), series.points.map { it.value })
+        // The band carries the per-bucket min and max, aligned 1:1 with the points.
+        assertEquals(listOf(100.0, 800.0), series.bandMin?.map { it.value })
+        assertEquals(listOf(300.0, 1000.0), series.bandMax?.map { it.value })
+        assertEquals(series.points.map { it.date }, series.bandMin?.map { it.date })
+    }
+
+    @Test
+    fun `non min max avg aggregation carries no band`() = runBlocking {
+        val model = HealthDataModel(
+            ApplicationProvider.getApplicationContext<Application>(),
+            autoRefreshMetrics = false
+        )
+        val selection = RecordSelection(
+            fqn = StepsRecord::class.qualifiedName!!,
+            metricSettings = MetricChartSettings(aggregation = AggregationMode.AVERAGE)
+        )
+        val view = DataView(
+            id = 7,
+            type = ViewType.CHART,
+            records = listOf(selection),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.ALL, bucketSize = BucketSize.DAY)
+        )
+
+        val emissions = model.collectAggregatedSeries(view) { _, _, _, onPage ->
+            onPage(listOf(stepsRecord(100, Instant.parse("2026-02-18T10:00:00Z"))))
+        }.toList()
+
+        val series = emissions.last().single()
+        assertEquals(null, series.bandMin)
+        assertEquals(null, series.bandMax)
+        assertEquals(false, series.hasBand)
+    }
+
     private fun stepsRecord(count: Long, time: Instant): StepsRecord {
         val record = mockk<StepsRecord>(relaxed = true)
         every { record.count } returns count
