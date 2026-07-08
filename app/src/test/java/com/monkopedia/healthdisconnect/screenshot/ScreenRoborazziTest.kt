@@ -25,6 +25,7 @@ import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
+import com.monkopedia.healthdisconnect.model.MetricChartSettings
 import com.monkopedia.healthdisconnect.model.RangeDisplay
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.DataViewInfo
@@ -510,6 +511,43 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_editing") {
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
+        }
+    }
+
+    @Test
+    fun dataViewConfigRangeDisplayScreen() {
+        // A view whose info has a blank name forces isEditing=true so the config panel opens,
+        // while non-empty records ensure the per-metric card (with Range display row) renders.
+        val minMaxRecord = RecordSelection(PermissionsViewModel.CLASSES.first()).copy(
+            metricSettings = MetricChartSettings(aggregation = AggregationMode.MIN_MAX_AVG)
+        )
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(minMaxRecord),
+            chartSettings = ChartSettings(
+                aggregation = AggregationMode.MIN_MAX_AVG,
+                rangeDisplay = RangeDisplay.BAND
+            )
+        )
+        // Blank name → DataViewInfo.isConfigValid=false → isEditing starts true
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = ""),
+            view = dataView
+        )
+        val healthDataModel = mockHealthDataModel()
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
+        every { healthDataModel.collectAggregatedSeries(dataView) } returns flowOf(emptyList())
+        every { healthDataModel.collectRecordCount(dataView) } returns flowOf(0)
+        every { healthDataModel.collectMetricsWithData(any()) } returns
+            flowOf(PermissionsViewModel.CLASSES.take(4))
+        captureScreen("data_view_config_range_display") {
             DataViewView(
                 viewModel = viewModel,
                 page = 0,
