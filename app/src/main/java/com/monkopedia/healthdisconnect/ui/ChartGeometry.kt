@@ -146,7 +146,13 @@ internal class ChartGeometry private constructor(
         val start = from.atZone(zoneId)
         val end = to.atZone(zoneId)
         val formatter = when {
-            isIntraday -> DateTimeFormatter.ofPattern("h:mm a")
+            // Intraday spans that stay within one local day read cleanly with just the clock time
+            // (`6:15 AM` … `12:00 PM`). When the two ends land on different local dates — e.g. a
+            // HOURS_24 window whose endpoints share a wall-clock time a day apart — the bare time
+            // collides (`2:26 PM` … `2:26 PM`), so qualify each end with its date to keep the span
+            // legible and chronological (`Feb 21, 2:26 PM` … `Feb 22, 2:26 PM`).
+            isIntraday && start.toLocalDate() == end.toLocalDate() -> DateTimeFormatter.ofPattern("h:mm a")
+            isIntraday -> DateTimeFormatter.ofPattern("MMM d, h:mm a")
             start.year != end.year -> DateTimeFormatter.ofPattern("MMM d, yyyy")
             else -> DateTimeFormatter.ofPattern("MMM d")
         }

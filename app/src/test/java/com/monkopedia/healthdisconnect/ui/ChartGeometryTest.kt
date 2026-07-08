@@ -303,6 +303,50 @@ class ChartGeometryTest {
     }
 
     @Test
+    fun intraday_endpointLabels_qualifyWithDate_whenSpanCrossesDayBoundary() {
+        // A HOURS_24 axis spans exactly 24h, so its two endpoints share a wall-clock time one day
+        // apart. Bare `h:mm a` would render them identically (`2:26 PM` … `2:26 PM`); the labels
+        // must carry the date so the span is legible and reads chronologically start -> end.
+        val end = today.atStartOfDay(zone).withHour(14).withMinute(26).toInstant()
+        val start = end.minus(24, ChronoUnit.HOURS)
+        val points = listOf(
+            HealthDataModel.MetricPoint(start, 60.0),
+            HealthDataModel.MetricPoint(end, 80.0)
+        )
+        val g = ChartGeometry.create(
+            listOf(HealthDataModel.MetricSeries(label = "HR", unit = "bpm", points = points)),
+            ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.HOURS_24),
+            ChartGeometry.XAxisMode.CONTINUOUS_DATE,
+            end,
+            zone
+        )
+        val (startLabel, endLabel) = g.axisWindowLabels(zone)
+        // The two ends differ and each carries a date qualifier (not the colliding bare time).
+        assertTrue("labels must differ, got '$startLabel' == '$endLabel'", startLabel != endLabel)
+        assertEquals("Feb 21, 2:26 PM", startLabel)
+        assertEquals("Feb 22, 2:26 PM", endLabel)
+    }
+
+    @Test
+    fun intraday_endpointLabels_stayTimeOnly_whenSpanWithinOneDay() {
+        // HOURS_6 entirely within one local day keeps the compact time-of-day labels (no date).
+        val start = today.atStartOfDay(zone).withHour(6).withMinute(15).toInstant()
+        val end = today.atStartOfDay(zone).withHour(12).withMinute(0).toInstant()
+        val points = listOf(
+            HealthDataModel.MetricPoint(start, 60.0),
+            HealthDataModel.MetricPoint(end, 80.0)
+        )
+        val g = ChartGeometry.create(
+            listOf(HealthDataModel.MetricSeries(label = "HR", unit = "bpm", points = points)),
+            ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.HOURS_6),
+            ChartGeometry.XAxisMode.DISCRETE_INDEX,
+            end,
+            zone
+        )
+        assertEquals("6:15 AM" to "12:00 PM", g.dataRangeLabels(zone))
+    }
+
+    @Test
     fun dayGranular_endpointLabels_showCalendarDate() {
         val g = geometry(
             listOf(

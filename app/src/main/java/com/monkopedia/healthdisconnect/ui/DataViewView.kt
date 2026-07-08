@@ -77,6 +77,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
@@ -574,18 +575,21 @@ fun DataViewView(
                 if (view!!.type == ViewType.CHART) {
                     item {
                         // Day-granular views count distinct calendar days of data; intraday views
-                        // count distinct clock-hours so the subtitle reflects a sub-day span.
-                        val allInstants = metricSeriesList?.flatMap { it.points }?.map { it.instant }
-                        val graphSpanLabel = if (chartSettings.timeWindow.isIntraday) {
-                            val hours = allInstants
-                                ?.map { it.truncatedTo(java.time.temporal.ChronoUnit.HOURS) }
-                                ?.distinct()?.size ?: 0
-                            stringResource(R.string.data_view_graph_hours, hours)
+                        // report the window's own span (a 1-hour window reads "1 hour", not the
+                        // count of distinct clock-hours the buckets straddle).
+                        val intradaySpanHours = chartSettings.timeWindow.intradaySpanHours
+                        val graphSpanLabel = if (intradaySpanHours != null) {
+                            pluralStringResource(
+                                R.plurals.data_view_graph_hours,
+                                intradaySpanHours,
+                                intradaySpanHours
+                            )
                         } else {
-                            val days = allInstants
-                                ?.map { it.atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
+                            val days = metricSeriesList
+                                ?.flatMap { it.points }
+                                ?.map { it.instant.atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
                                 ?.distinct()?.size ?: 0
-                            stringResource(R.string.data_view_graph_days, days)
+                            pluralStringResource(R.plurals.data_view_graph_days, days, days)
                         }
                         ToggleSection(
                             labelText = graphSpanLabel,

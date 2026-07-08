@@ -83,6 +83,16 @@ enum class TimeWindow {
     /** True for the sub-day intraday spans, which drive the time-of-day axis in [ChartGeometry]. */
     val isIntraday: Boolean
         get() = this == HOURS_1 || this == HOURS_3 || this == HOURS_6 || this == HOURS_24
+
+    /** The window's own span in whole hours for the intraday spans, else null. */
+    val intradaySpanHours: Int?
+        get() = when (this) {
+            HOURS_1 -> 1
+            HOURS_3 -> 3
+            HOURS_6 -> 6
+            HOURS_24 -> 24
+            else -> null
+        }
 }
 
 @Serializable

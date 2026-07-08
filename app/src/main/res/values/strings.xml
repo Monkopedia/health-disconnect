@@ -35,8 +35,14 @@
     <string name="permissions_rationale_emphasis">Health data</string>
     <string name="permissions_rationale_body">Health Disconnect needs access to your %1$s in order to display your %2$s.</string>
 
-    <string name="data_view_graph_days">Graph (%1$d days)</string>
-    <string name="data_view_graph_hours">Graph (%1$d hours)</string>
+    <plurals name="data_view_graph_days">
+        <item quantity="one">Graph (%1$d day)</item>
+        <item quantity="other">Graph (%1$d days)</item>
+    </plurals>
+    <plurals name="data_view_graph_hours">
+        <item quantity="one">Graph (%1$d hour)</item>
+        <item quantity="other">Graph (%1$d hours)</item>
+    </plurals>
     <string name="data_view_no_graphable">No graphable metric values available yet.</string>
     <string name="data_view_no_graphable_with_hint">No graphable values in the current filters. Try setting Time window to All.</string>
     <string name="data_view_showing_first_metrics">Showing first %1$d selected metrics.</string>
