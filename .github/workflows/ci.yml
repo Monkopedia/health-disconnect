@@ -26,9 +26,29 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testProdDebugUnitTest
 
+      # Screenshot regression guard: compare rendered screens against the committed baselines
+      # under app/src/test/screenshots. Renders are frozen to a fixed clock (LocalClock) so the
+      # chart axis and "Last refreshed" header are deterministic. Reported non-blocking for now
+      # (continue-on-error) until cross-env (font/anti-aliasing) stability is proven in CI — a
+      # mismatch surfaces a diff artifact without failing the required check. See issue #39.
+      # -x unitTestGate: the unit suite already ran in the previous step; skip re-running it
+      # (it also keeps this step inside the 20-min job timeout).
+      - name: Verify screenshots (report-only)
+        if: success() || failure()
+        continue-on-error: true
+        run: ./gradlew verifyRoborazziGate -x unitTestGate -x testProdDebugUnitTest
+
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: app/build/reports/tests/testProdDebugUnitTest/
+
+      - name: Upload screenshot diffs
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roborazzi-screenshot-diffs
+          path: app/build/outputs/roborazzi/
+          if-no-files-found: ignore

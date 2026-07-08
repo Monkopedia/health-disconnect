@@ -147,7 +147,8 @@ internal fun MetricOverTimeChart(
     val geometry = ChartGeometry.create(
         seriesList = seriesList,
         settings = settings,
-        xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE
+        xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
+        now = LocalClock.current.instant()
     )
     val allDates = geometry.sortedDates
     val axisColor: Color = MaterialTheme.colorScheme.outline
