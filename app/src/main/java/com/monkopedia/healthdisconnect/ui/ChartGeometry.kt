@@ -114,8 +114,9 @@ internal class ChartGeometry private constructor(
 
     companion object {
         /**
-         * Builds geometry for the given series. Returns null when there is nothing to plot
-         * (no series or no points), matching every renderer's early-out.
+         * Builds geometry for the given series. Every renderer already guards for an empty
+         * chart before it gets here (nothing to plot), so this fails loudly rather than
+         * returning null: a null slipping through would only mask a missing upstream guard.
          *
          * @param today reference "now" used only for the continuous-axis window computation.
          */
@@ -124,12 +125,11 @@ internal class ChartGeometry private constructor(
             settings: ChartSettings,
             xAxis: XAxisMode,
             today: LocalDate = LocalDate.now()
-        ): ChartGeometry? {
-            if (seriesList.isEmpty()) return null
+        ): ChartGeometry {
+            require(seriesList.isNotEmpty()) { "ChartGeometry.create requires at least one series" }
             val allPoints = seriesList.flatMap { it.points }
-            if (allPoints.isEmpty()) return null
+            require(allPoints.isNotEmpty()) { "ChartGeometry.create requires at least one point" }
             val sortedDates = allPoints.map { it.date }.distinct().sorted()
-            if (sortedDates.isEmpty()) return null
 
             val dateIndex = sortedDates.withIndex().associate { it.value to it.index }
             val useSeparateNormalization = seriesList.size > 1

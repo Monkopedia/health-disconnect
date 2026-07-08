@@ -198,13 +198,9 @@ fun renderGraphBitmap(
         seriesList = seriesList,
         settings = settings,
         xAxis = ChartGeometry.XAxisMode.DISCRETE_INDEX
-    )!!
+    )
 
     fun rangeFor(index: Int): ValueRange = geometry.rangeFor(index)
-
-    fun normalized(value: Double, range: ValueRange): Float {
-        return ((value - range.min) / (range.max - range.min)).toFloat().coerceIn(0f, 1f)
-    }
 
     if (settings.backgroundStyle == ChartBackgroundStyle.HORIZONTAL_LINES ||
         settings.backgroundStyle == ChartBackgroundStyle.GRID
@@ -267,7 +263,7 @@ fun renderGraphBitmap(
             val groupLeft = chartLeft + (slotWidth * index) + ((slotWidth - barGroupWidth) / 2f)
             seriesList.forEachIndexed { seriesIndex, series ->
                 val value = series.points.firstOrNull { it.date == date }?.value ?: return@forEachIndexed
-                val yNorm = normalized(value, rangeFor(seriesIndex))
+                val yNorm = geometry.normalized(value, seriesIndex)
                 val top = chartBottom - (yNorm * chartHeight)
                 val left = groupLeft + (barWidth * seriesIndex)
                 val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -450,18 +446,12 @@ fun renderWidgetGraphBitmap(
     canvas.drawLine(chartLeft, chartBottom, chartRight, chartBottom, axisPaint)
 
     val allDates = allPoints.map { it.date }.distinct().sorted()
-    if (allDates.isEmpty()) {
-        return bitmap
-    }
     val geometry = ChartGeometry.create(
         seriesList = seriesList,
         settings = settings,
         xAxis = ChartGeometry.XAxisMode.DISCRETE_INDEX
-    )!!
+    )
     fun rangeFor(index: Int): ValueRange = geometry.rangeFor(index)
-    fun normalized(value: Double, range: ValueRange): Float {
-        return ((value - range.min) / (range.max - range.min)).toFloat().coerceIn(0f, 1f)
-    }
 
     fun pointToXY(point: HealthDataModel.MetricPoint, seriesIndex: Int): Pair<Float, Float> {
         val x = chartLeft + (chartWidth * geometry.xFraction(point.date))
@@ -511,7 +501,7 @@ fun renderWidgetGraphBitmap(
             val groupLeft = chartLeft + (slotWidth * dateIndexValue) + ((slotWidth - barGroupWidth) / 2f)
             seriesList.forEachIndexed { seriesIndex, series ->
                 val value = series.points.firstOrNull { it.date == date }?.value ?: return@forEachIndexed
-                val yNorm = normalized(value, rangeFor(seriesIndex))
+                val yNorm = geometry.normalized(value, seriesIndex)
                 val top = chartBottom - (yNorm * chartHeight)
                 val left = groupLeft + (barWidth * seriesIndex)
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

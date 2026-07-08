@@ -8,8 +8,6 @@ import com.monkopedia.healthdisconnect.model.YAxisMode
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,14 +30,14 @@ class ChartGeometryTest {
         settings: ChartSettings = ChartSettings()
     ) = ChartGeometry.create(seriesList, settings, xAxis, today)
 
-    @Test
-    fun create_returnsNull_forEmptySeries() {
-        assertNull(geometry(emptyList()))
+    @Test(expected = IllegalArgumentException::class)
+    fun create_throws_forEmptySeries() {
+        geometry(emptyList())
     }
 
-    @Test
-    fun create_returnsNull_whenNoPoints() {
-        assertNull(geometry(listOf(series("Weight", "lb", emptyList()))))
+    @Test(expected = IllegalArgumentException::class)
+    fun create_throws_whenNoPoints() {
+        geometry(listOf(series("Weight", "lb", emptyList())))
     }
 
     @Test
@@ -55,7 +53,7 @@ class ChartGeometryTest {
                     )
                 )
             )
-        )!!
+        )
         // AUTO range = [100, 200]; midpoint value maps to 0.5.
         assertEquals(0f, g.normalized(100.0, 0), 1e-6f)
         assertEquals(0.5f, g.normalized(150.0, 0), 1e-6f)
@@ -66,7 +64,7 @@ class ChartGeometryTest {
     fun normalized_clampsOutOfRangeValues() {
         val g = geometry(
             listOf(series("Weight", "lb", listOf(point(today.minusDays(1), 10.0), point(today, 20.0))))
-        )!!
+        )
         assertEquals(0f, g.normalized(-5.0, 0), 1e-6f)
         assertEquals(1f, g.normalized(999.0, 0), 1e-6f)
     }
@@ -81,7 +79,7 @@ class ChartGeometryTest {
                     yAxisMode = YAxisMode.START_AT_ZERO
                 )
             )
-        )!!
+        )
         // min forced to 0 -> 4000 sits at half of [0, 8000].
         assertEquals(0.5f, g.normalized(4000.0, 0), 1e-6f)
         assertEquals(0f, g.normalized(0.0, 0), 1e-6f)
@@ -97,7 +95,7 @@ class ChartGeometryTest {
             "Weight", "lb",
             listOf(point(today.minusDays(1), 200.0), point(today, 260.0))
         )
-        val g = geometry(listOf(steps, weight))!!
+        val g = geometry(listOf(steps, weight))
         // Each series normalizes within its own range, not a shared one.
         assertEquals(0f, g.normalized(1000.0, 0), 1e-6f)
         assertEquals(1f, g.normalized(5000.0, 0), 1e-6f)
@@ -111,7 +109,7 @@ class ChartGeometryTest {
     fun singleDistinctValue_centersVertically() {
         val g = geometry(
             listOf(series("Weight", "lb", listOf(point(today.minusDays(1), 70.0), point(today, 70.0))))
-        )!!
+        )
         // Symmetric padded band around the lone value -> it sits at the vertical midpoint.
         assertEquals(0.5f, g.normalized(70.0, 0), 1e-6f)
     }
@@ -122,7 +120,7 @@ class ChartGeometryTest {
         val g = geometry(
             listOf(series("Steps", "count", dates.map { point(it, 1.0) })),
             xAxis = ChartGeometry.XAxisMode.DISCRETE_INDEX
-        )!!
+        )
         assertEquals(0f, g.xFraction(dates[0]), 1e-6f)
         assertEquals(1f / 3f, g.xFraction(dates[1]), 1e-6f)
         assertEquals(2f / 3f, g.xFraction(dates[2]), 1e-6f)
@@ -141,7 +139,7 @@ class ChartGeometryTest {
             ),
             xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
             settings = ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.ALL)
-        )!!
+        )
         // TimeWindow.ALL with no future data => axis spans [start, today]; midpoint date is 0.5.
         assertEquals(g.axisStart, start)
         assertEquals(g.axisEnd, today)
@@ -162,7 +160,7 @@ class ChartGeometryTest {
             ),
             xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
             settings = ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.DAYS_7)
-        )!!
+        )
         // Window pulls the start back to today-7, and the end forward to today.
         assertEquals(today.minusDays(7), g.axisStart)
         assertEquals(today, g.axisEnd)
@@ -175,7 +173,7 @@ class ChartGeometryTest {
             listOf(series("Weight", "lb", listOf(point(today, 70.0)))),
             xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
             settings = ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.ALL)
-        )!!
+        )
         assertEquals(0.5f, g.xFraction(today), 1e-6f)
     }
 
@@ -185,7 +183,7 @@ class ChartGeometryTest {
             listOf(series("Weight", "lb", listOf(point(today, 70.0)))),
             xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
             settings = ChartSettings(chartType = ChartType.LINE, timeWindow = TimeWindow.ALL)
-        )!!
+        )
         assertTrue(g.axisSpanDays >= 1L)
         assertTrue(g.axisStart.isBefore(g.axisEnd))
         assertEquals(2L, ChronoUnit.DAYS.between(g.axisStart, g.axisEnd))
@@ -195,7 +193,7 @@ class ChartGeometryTest {
     fun pointFraction_yFractionFromTop_isInverseOfNormalized() {
         val g = geometry(
             listOf(series("Weight", "lb", listOf(point(today.minusDays(1), 0.0), point(today, 100.0))))
-        )!!
+        )
         val pf = g.pointFraction(point(today, 100.0), 0)
         assertEquals(1f, pf.yNormalized, 1e-6f)
         assertEquals(0f, pf.yFractionFromTop, 1e-6f)
@@ -203,20 +201,20 @@ class ChartGeometryTest {
 
     @Test
     fun axisLabelKind_followsSeriesCountBranch() {
-        val one = geometry(listOf(series("A", "u", listOf(point(today, 1.0)))))!!
+        val one = geometry(listOf(series("A", "u", listOf(point(today, 1.0)))))
         val two = geometry(
             listOf(
                 series("A", "u", listOf(point(today, 1.0))),
                 series("B", "u", listOf(point(today, 2.0)))
             )
-        )!!
+        )
         val three = geometry(
             listOf(
                 series("A", "u", listOf(point(today, 1.0))),
                 series("B", "u", listOf(point(today, 2.0))),
                 series("C", "u", listOf(point(today, 3.0)))
             )
-        )!!
+        )
         assertEquals(ChartGeometry.AxisLabelKind.SINGLE, one.axisLabelKind())
         assertEquals(ChartGeometry.AxisLabelKind.DUAL, two.axisLabelKind())
         assertEquals(ChartGeometry.AxisLabelKind.NORMALIZED, three.axisLabelKind())
@@ -229,14 +227,8 @@ class ChartGeometryTest {
                 series("A", "u", listOf(point(today, 1.0), point(today.minusDays(2), 2.0))),
                 series("B", "u", listOf(point(today.minusDays(1), 3.0), point(today, 4.0)))
             )
-        )!!
+        )
         assertEquals(listOf(today.minusDays(2), today.minusDays(1), today), g.sortedDates)
     }
 
-    @Test
-    fun create_succeeds_forTypicalSingleSeries() {
-        assertNotNull(
-            geometry(listOf(series("Weight", "lb", listOf(point(today, 70.0), point(today.minusDays(1), 71.0)))))
-        )
-    }
 }
