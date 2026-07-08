@@ -42,8 +42,11 @@ import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
+import com.monkopedia.healthdisconnect.ui.LocalClock
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -59,6 +62,14 @@ import org.robolectric.annotation.GraphicsMode
 
 abstract class BaseScreenRoborazziTest {
     protected abstract val sizeBucket: String
+
+    private companion object {
+        // Screenshot renders are frozen to this instant so both the chart's continuous time axis
+        // and the "Last refreshed" header are stable run-to-run. Representative data is generated
+        // relative to it (below) so charts fill the plot area instead of squishing to the edge.
+        val FIXED_NOW: Instant = Instant.parse("2026-02-15T09:30:00Z")
+        val FIXED_CLOCK: Clock = Clock.fixed(FIXED_NOW, ZoneId.systemDefault())
+    }
 
     @Test
     fun loadingScreen() {
@@ -638,13 +649,13 @@ abstract class BaseScreenRoborazziTest {
         )
     }
 
-    // The on-screen chart anchors its intraday axis to the current instant (the real render clock),
-    // so the buckets are laid out ending at "now" truncated to the hour/minute — that keeps every
-    // point inside the window and the time-of-day axis populated regardless of when the test runs.
+    // The on-screen chart anchors its intraday axis to the frozen render clock (LocalClock, set to
+    // FIXED_NOW below), so the buckets are laid out ending at "now" truncated to the hour/minute —
+    // that keeps every point inside the window and the time-of-day axis populated deterministically.
 
-    /** 24 hourly buckets ending at the current hour, with a plausible daily HR rhythm. */
+    /** 24 hourly buckets ending at the frozen hour, with a plausible daily HR rhythm. */
     private fun hourlyIntradayPoints(): List<HealthDataModel.MetricPoint> {
-        val end = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.HOURS)
+        val end = FIXED_NOW.truncatedTo(java.time.temporal.ChronoUnit.HOURS)
         return (0..23).map { hoursAgo ->
             val instant = end.minusSeconds((23 - hoursAgo) * 3600L)
             val value = 58.0 + 22.0 * kotlin.math.sin(hoursAgo / 24.0 * 2 * Math.PI)
@@ -652,9 +663,9 @@ abstract class BaseScreenRoborazziTest {
         }
     }
 
-    /** 60 per-minute buckets ending at the current minute, with a gentle intra-hour drift. */
+    /** 60 per-minute buckets ending at the frozen minute, with a gentle intra-hour drift. */
     private fun minuteIntradayPoints(): List<HealthDataModel.MetricPoint> {
-        val end = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MINUTES)
+        val end = FIXED_NOW.truncatedTo(java.time.temporal.ChronoUnit.MINUTES)
         return (0..59).map { minutesAgo ->
             val instant = end.minusSeconds((59 - minutesAgo) * 60L)
             val value = 72.0 + 14.0 * kotlin.math.sin(minutesAgo / 60.0 * 2 * Math.PI)
@@ -736,10 +747,13 @@ abstract class BaseScreenRoborazziTest {
         )
         val healthDataModel = mockHealthDataModel()
         val records = emptyList<Record>()
-        val dates = (0..4).map { LocalDate.of(2026, 2, 1).plusDays(it.toLong()) }
-        val avg = listOf(64.0, 68.0, 62.0, 70.0, 66.0)
-        val lows = listOf(52.0, 55.0, 50.0, 58.0, 54.0)
-        val highs = listOf(88.0, 92.0, 85.0, 96.0, 90.0)
+        // One daily min/avg/max sample across the full 30-day window ending at the frozen clock,
+        // so the shaded envelope and avg line span the whole plot width instead of a left sliver.
+        val today = FIXED_NOW.atZone(ZoneId.systemDefault()).toLocalDate()
+        val dates = (0..29).map { today.minusDays((29 - it).toLong()) }
+        val avg = dates.indices.map { 66.0 + 6.0 * kotlin.math.sin(it / 5.0) }
+        val lows = avg.map { it - 12.0 }
+        val highs = avg.map { it + 22.0 }
         val bandSeries = HealthDataModel.MetricSeries(
             label = "Heart rate",
             unit = "bpm",
@@ -983,10 +997,12 @@ abstract class BaseScreenRoborazziTest {
     }
 
     private fun captureScreen(name: String, darkTheme: Boolean = false, content: @Composable () -> Unit) {
-        captureRoboImage("build/outputs/roborazzi/screens/${name}_$sizeBucket.png") {
-            HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
-                Surface {
-                    content()
+        captureRoboImage("src/test/screenshots/${name}_$sizeBucket.png") {
+            CompositionLocalProvider(LocalClock provides FIXED_CLOCK) {
+                HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
+                    Surface {
+                        content()
+                    }
                 }
             }
         }
@@ -1043,6 +1059,7 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
         every { healthDataModel.aggregateMetricSeries(any(), any()) } returns null
         every { healthDataModel.recordSelectionLabel(any()) } returns "Metric"
+        every { healthDataModel.recordSelectionOptions(any(), any()) } returns emptyList()
         return healthDataModel
     }
 

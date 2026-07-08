@@ -153,6 +153,7 @@ fun DataViewView(
     onOpenEntriesRequested: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val clock = LocalClock.current
     val infoFlow = remember(viewModel, page) {
         viewModel.dataViews.map { list ->
             val viewId = list?.ordering?.getOrNull(page) ?: return@map null
@@ -466,7 +467,7 @@ fun DataViewView(
 
     LaunchedEffect(recordCount, metricSeriesList) {
         if ((recordCount != null || metricSeriesList != null) && lastRefreshedMillis == null) {
-            lastRefreshedMillis = System.currentTimeMillis()
+            lastRefreshedMillis = clock.millis()
         }
     }
     LaunchedEffect(
@@ -517,7 +518,7 @@ fun DataViewView(
                         healthDataModel.refreshMetricsWithData()
                         refreshTick += 1
                     } finally {
-                        lastRefreshedMillis = System.currentTimeMillis()
+                        lastRefreshedMillis = clock.millis()
                         isRefreshing = false
                     }
                 }

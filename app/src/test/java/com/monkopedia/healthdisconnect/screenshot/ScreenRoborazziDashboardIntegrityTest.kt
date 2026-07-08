@@ -8,7 +8,7 @@ class ScreenRoborazziDashboardIntegrityTest {
 
     @Test
     fun phoneAndTabletScreensHaveCounterparts() {
-        val screenshotDir = File("app/build/outputs/roborazzi/screens")
+        val screenshotDir = File("app/src/test/screenshots")
         if (!screenshotDir.exists()) return
 
         val buckets = listOf("phone", "tablet", "tablet7")
