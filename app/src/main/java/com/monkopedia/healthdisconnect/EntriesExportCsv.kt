@@ -57,6 +57,8 @@ fun buildAggregatedEntriesCsv(
         "series_unit",
         "bucket_date",
         "value",
+        "min_value",
+        "max_value",
         "peak_value_in_window",
         "time_window",
         "chart_type",
@@ -82,6 +84,8 @@ fun buildAggregatedEntriesCsv(
                 series.unit.orEmpty(),
                 "",
                 "",
+                "",
+                "",
                 series.peakValueInWindow.toString(),
                 view.chartSettings.timeWindow.name,
                 view.chartSettings.chartType.name,
@@ -94,7 +98,11 @@ fun buildAggregatedEntriesCsv(
                 view.chartSettings.showDataPoints.toString()
             )
         } else {
-            series.points.forEach { point ->
+            series.points.forEachIndexed { pointIndex, point ->
+                // Populated only for min/max/avg (the band edges align 1:1 with points); blank
+                // otherwise so we never silently drop the min/max a min/max/avg series carries.
+                val minValue = series.bandMin?.getOrNull(pointIndex)?.value?.toString().orEmpty()
+                val maxValue = series.bandMax?.getOrNull(pointIndex)?.value?.toString().orEmpty()
                 rows += listOf(
                     view.id.toString(),
                     view.type.name,
@@ -104,6 +112,8 @@ fun buildAggregatedEntriesCsv(
                     series.unit.orEmpty(),
                     point.date.toString(),
                     point.value.toString(),
+                    minValue,
+                    maxValue,
                     series.peakValueInWindow.toString(),
                     view.chartSettings.timeWindow.name,
                     view.chartSettings.chartType.name,

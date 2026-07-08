@@ -268,10 +268,26 @@ fun viewConfigurationSection(
                 }
                 EnumCycleRow(
                     label = stringResource(R.string.data_view_label_aggregation),
-                    value = settings.aggregation
+                    value = settings.aggregation,
+                    displayName = { aggregationDisplayName(it) }
                 ) { newValue ->
                     updateSelectedSelection {
                         it.copy(metricSettings = settings.copy(aggregation = newValue))
+                    }
+                }
+                // Range display only applies to min/max/avg; hide it otherwise, keeping the
+                // stored Band/Lines choice so it returns when the mode is re-selected. The band
+                // is drawn from the view-level ChartSettings (the only settings the renderers
+                // receive), so edit both in lockstep to keep the metric card and chart in sync.
+                if (settings.aggregation == AggregationMode.MIN_MAX_AVG) {
+                    EnumCycleRow(
+                        label = stringResource(R.string.data_view_label_range_display),
+                        value = chartSettings.rangeDisplay
+                    ) { newValue ->
+                        onChartSettingsChanged(chartSettings.copy(rangeDisplay = newValue))
+                        updateSelectedSelection {
+                            it.copy(metricSettings = settings.copy(rangeDisplay = newValue))
+                        }
                     }
                 }
                 EnumCycleRow(
@@ -404,12 +420,23 @@ internal fun ChartSettings.toMetricChartSettings(): MetricChartSettings {
         smoothing = smoothing,
         unitPreference = unitPreference,
         showMaxLabel = true,
-        showMinLabel = false
+        showMinLabel = false,
+        rangeDisplay = rangeDisplay
     )
 }
 
 internal fun RecordSelection.withDefaultSettings(chartSettings: ChartSettings): RecordSelection {
     return if (metricSettings != null) this else copy(metricSettings = chartSettings.toMetricChartSettings())
+}
+
+/**
+ * Human-readable aggregation label. Only MIN_MAX_AVG needs an override; the auto-format would
+ * render "Min max avg", so we spell it "Min/max/avg" to match the design.
+ */
+@Composable
+private fun aggregationDisplayName(mode: AggregationMode): String = when (mode) {
+    AggregationMode.MIN_MAX_AVG -> stringResource(R.string.data_view_aggregation_min_max_avg)
+    else -> mode.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercaseChar() }
 }
 
 @Composable
@@ -418,6 +445,7 @@ private inline fun <reified T : Enum<T>> EnumCycleRow(
     value: T,
     options: List<T> = enumValues<T>().toList(),
     testTag: String? = null,
+    noinline displayName: @Composable (T) -> String = { it.name.replace('_', ' ').lowercase().replaceFirstChar { c -> c.uppercaseChar() } },
     crossinline onValueChanged: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -440,17 +468,12 @@ private inline fun <reified T : Enum<T>> EnumCycleRow(
                     Modifier
                 }
             ) {
-                Text(selectedValue.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercaseChar() })
+                Text(displayName(selectedValue))
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 options.forEach { option ->
                     DropdownMenuItem(
-                        text = {
-                            Text(
-                                option.name.replace('_', ' ').lowercase()
-                                    .replaceFirstChar { it.uppercaseChar() }
-                            )
-                        },
+                        text = { Text(displayName(option)) },
                         onClick = {
                             onValueChanged(option)
                             expanded = false

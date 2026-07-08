@@ -60,6 +60,26 @@ internal class ChartGeometry private constructor(
 
     val seriesCount: Int get() = seriesList.size
 
+    /**
+     * The min–max band around series [seriesIndex]'s avg line, as chart fractions on the same
+     * Y-range as the line, or null when the series carries no band. Every renderer draws the band
+     * from this so the fill/dashed-line geometry is defined once, not re-derived per surface.
+     */
+    fun bandFor(seriesIndex: Int): BandGeometry? {
+        val series = seriesList[seriesIndex]
+        val bandMin = series.bandMin ?: return null
+        val bandMax = series.bandMax ?: return null
+        val edges = series.points.indices.map { i ->
+            val point = series.points[i]
+            BandEdge(
+                x = xFraction(point.date),
+                minYFractionFromTop = 1f - normalized(bandMin[i].value, seriesIndex),
+                maxYFractionFromTop = 1f - normalized(bandMax[i].value, seriesIndex)
+            )
+        }
+        return BandGeometry(edges)
+    }
+
     /** The value range used to normalize [seriesIndex]. */
     fun rangeFor(seriesIndex: Int): ValueRange =
         if (useSeparateNormalization) perSeriesRanges[seriesIndex] else globalRange
@@ -112,6 +132,18 @@ internal class ChartGeometry private constructor(
         val yNormalized: Float
     )
 
+    /** One min–max envelope column, as chart fractions on the series' shared Y-range. */
+    data class BandEdge(
+        val x: Float,
+        /** Y of the bucket minimum, 0 = top of plot, 1 = bottom. */
+        val minYFractionFromTop: Float,
+        /** Y of the bucket maximum, 0 = top of plot, 1 = bottom. */
+        val maxYFractionFromTop: Float
+    )
+
+    /** The full min–max envelope for a series, ordered left-to-right by date. */
+    data class BandGeometry(val edges: List<BandEdge>)
+
     companion object {
         /**
          * Builds geometry for the given series. Every renderer already guards for an empty
@@ -133,12 +165,14 @@ internal class ChartGeometry private constructor(
 
             val dateIndex = sortedDates.withIndex().associate { it.value to it.index }
             val useSeparateNormalization = seriesList.size > 1
+            // A min/max/avg series must share ONE Y-range spanning its whole envelope so the min,
+            // avg, and max all sit on the same scale (not per-line normalization).
             val globalRange = seriesRangeFromPoints(
-                allPoints,
+                seriesList.flatMap { it.rangePoints() },
                 seriesList.firstOrNull()?.yAxisMode ?: YAxisMode.AUTO
             )
             val perSeriesRanges = seriesList.map { series ->
-                seriesRangeFromPoints(series.points, series.yAxisMode)
+                seriesRangeFromPoints(series.rangePoints(), series.yAxisMode)
             }
 
             val dataMin = sortedDates.first()

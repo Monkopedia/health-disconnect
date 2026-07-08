@@ -21,9 +21,11 @@ import com.monkopedia.healthdisconnect.PermissionsRationaleScreen
 import com.monkopedia.healthdisconnect.PermissionsViewModel
 import com.monkopedia.healthdisconnect.RequestPermissions
 import com.monkopedia.healthdisconnect.UpdateRequired
+import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
+import com.monkopedia.healthdisconnect.model.RangeDisplay
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.DataViewInfo
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
@@ -560,6 +562,59 @@ abstract class BaseScreenRoborazziTest {
             )
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
         captureScreen("data_view_metric_graph") {
+            DataViewView(
+                viewModel = viewModel,
+                page = 0,
+                healthDataModel = healthDataModel,
+                permissionsViewModel = mockPermissionsViewModelForScreens()
+            )
+        }
+    }
+
+    @Test
+    fun dataViewMetricGraphMinMaxAvgBandScreen() {
+        captureMinMaxAvgGraph("data_view_metric_graph_min_max_avg_band", RangeDisplay.BAND)
+    }
+
+    @Test
+    fun dataViewMetricGraphMinMaxAvgLinesScreen() {
+        captureMinMaxAvgGraph("data_view_metric_graph_min_max_avg_lines", RangeDisplay.LINES)
+    }
+
+    private fun captureMinMaxAvgGraph(name: String, rangeDisplay: RangeDisplay) {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            chartSettings = ChartSettings(
+                aggregation = AggregationMode.MIN_MAX_AVG,
+                rangeDisplay = rangeDisplay,
+                timeWindow = TimeWindow.DAYS_30
+            )
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Heart rate"),
+            view = dataView
+        )
+        val healthDataModel = mockHealthDataModel()
+        val records = emptyList<Record>()
+        val dates = (0..4).map { LocalDate.of(2026, 2, 1).plusDays(it.toLong()) }
+        val avg = listOf(64.0, 68.0, 62.0, 70.0, 66.0)
+        val lows = listOf(52.0, 55.0, 50.0, 58.0, 54.0)
+        val highs = listOf(88.0, 92.0, 85.0, 96.0, 90.0)
+        val bandSeries = HealthDataModel.MetricSeries(
+            label = "Heart rate",
+            unit = "bpm",
+            points = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, avg[i]) },
+            bandMin = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, lows[i]) },
+            bandMax = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, highs[i]) }
+        )
+        every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
+        every { healthDataModel.collectAggregatedSeries(dataView) } returns flowOf(listOf(bandSeries))
+        every { healthDataModel.collectRecordCount(dataView) } returns flowOf(dates.size)
+        every { healthDataModel.aggregateMetricSeries(dataView, records) } returns bandSeries
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(4))
+        captureScreen(name) {
             DataViewView(
                 viewModel = viewModel,
                 page = 0,

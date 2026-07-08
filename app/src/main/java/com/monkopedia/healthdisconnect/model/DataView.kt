@@ -35,7 +35,8 @@ data class ChartSettings(
     val smoothing: SmoothingMode = SmoothingMode.OFF,
     val unitPreference: UnitPreference = UnitPreference.AUTO,
     val backgroundStyle: ChartBackgroundStyle = ChartBackgroundStyle.HORIZONTAL_LINES,
-    val widgetUpdateWindow: WidgetUpdateWindow = WidgetUpdateWindow.HOURS_12
+    val widgetUpdateWindow: WidgetUpdateWindow = WidgetUpdateWindow.HOURS_12,
+    val rangeDisplay: RangeDisplay = RangeDisplay.BAND
 )
 
 @Serializable
@@ -47,7 +48,8 @@ data class MetricChartSettings(
     val smoothing: SmoothingMode = SmoothingMode.OFF,
     val unitPreference: UnitPreference = UnitPreference.AUTO,
     val showMaxLabel: Boolean = true,
-    val showMinLabel: Boolean = false
+    val showMinLabel: Boolean = false,
+    val rangeDisplay: RangeDisplay = RangeDisplay.BAND
 )
 
 @Serializable
@@ -55,7 +57,15 @@ enum class AggregationMode {
     AVERAGE,
     SUM,
     MIN,
-    MAX
+    MAX,
+    MIN_MAX_AVG
+}
+
+/** How a [AggregationMode.MIN_MAX_AVG] series draws its min–max envelope around the avg line. */
+@Serializable
+enum class RangeDisplay {
+    BAND,
+    LINES
 }
 
 @Serializable

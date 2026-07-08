@@ -67,7 +67,8 @@ class DefaultHealthDataAggregationEngine(
             smoothing = view.chartSettings.smoothing,
             unitPreference = view.chartSettings.unitPreference,
             showMaxLabel = true,
-            showMinLabel = false
+            showMinLabel = false,
+            rangeDisplay = view.chartSettings.rangeDisplay
         )
     }
 
@@ -110,31 +111,31 @@ class DefaultHealthDataAggregationEngine(
                     .toList()
                 if (measurements.isEmpty()) return@mapNotNull null
 
-                val grouped = measurements.groupBy {
-                    toBucketDate(measurementTimestampDate(it.timestamp, zoneId), view.chartSettings.bucketSize)
-                }
-                val aggregated = grouped
-                    .toSortedMap()
-                    .map { (date, values) ->
-                        val value = aggregateValues(
-                            values = values.map { it.value },
-                            mode = selection.metricSettings.aggregation
-                        )
-                        HealthDataModel.MetricPoint(date = date, value = value)
+                val mode = selection.metricSettings.aggregation
+                val grouped = measurements
+                    .groupBy {
+                        toBucketDate(measurementTimestampDate(it.timestamp, zoneId), view.chartSettings.bucketSize)
                     }
-                val points = when (selection.metricSettings.smoothing) {
-                    com.monkopedia.healthdisconnect.model.SmoothingMode.OFF -> aggregated
-                    com.monkopedia.healthdisconnect.model.SmoothingMode.MOVING_AVERAGE_3 -> smooth3(aggregated)
+                    .toSortedMap()
+                val aggregated = grouped.map { (date, values) ->
+                    HealthDataModel.MetricPoint(
+                        date = date,
+                        value = aggregateValues(values = values.map { it.value }, mode = mode)
+                    )
                 }
-                HealthDataModel.MetricSeries(
+                val band = bandFor(mode) {
+                    grouped.map { (date, values) ->
+                        date to (values.minOf { it.value } to values.maxOf { it.value })
+                    }
+                }
+                buildMetricSeries(
                     label = selection.label,
                     unit = measurements.firstNotNullOfOrNull { it.unitLabel },
-                    points = points,
-                    peakValueInWindow = measurements.maxOf { it.value },
-                    minValueInWindow = measurements.minOf { it.value },
-                    showMaxLabel = selection.metricSettings.showMaxLabel,
-                    showMinLabel = selection.metricSettings.showMinLabel,
-                    yAxisMode = selection.metricSettings.yAxisMode
+                    aggregated = aggregated,
+                    band = band,
+                    peakValue = measurements.maxOf { it.value },
+                    minValue = measurements.minOf { it.value },
+                    settings = selection.metricSettings
                 )
             }
             .take(HealthDataModel.MAX_CHART_SERIES)
@@ -239,7 +240,8 @@ class DefaultHealthDataAggregationEngine(
     override fun aggregateValues(values: List<Double>, mode: AggregationMode): Double {
         if (values.isEmpty()) return 0.0
         return when (mode) {
-            AggregationMode.AVERAGE -> values.average()
+            // MIN_MAX_AVG plots the average as its line; the min/max form the band around it.
+            AggregationMode.AVERAGE, AggregationMode.MIN_MAX_AVG -> values.average()
             AggregationMode.SUM -> values.sum()
             AggregationMode.MIN -> values.minOrNull() ?: 0.0
             AggregationMode.MAX -> values.maxOrNull() ?: 0.0
@@ -271,28 +273,75 @@ class DefaultHealthDataAggregationEngine(
     private fun buildStreamingSeries(states: List<StreamingMetricState>): List<HealthDataModel.MetricSeries> {
         return states.mapNotNull { state ->
             if (state.buckets.isEmpty()) return@mapNotNull null
-            val aggregated = state.buckets
-                .map { (date, bucket) ->
-                    HealthDataModel.MetricPoint(
-                        date = date,
-                        value = bucket.aggregated(state.metricSettings.aggregation)
-                    )
-                }
-            val points = when (state.metricSettings.smoothing) {
-                com.monkopedia.healthdisconnect.model.SmoothingMode.OFF -> aggregated
-                com.monkopedia.healthdisconnect.model.SmoothingMode.MOVING_AVERAGE_3 -> smooth3(aggregated)
+            val mode = state.metricSettings.aggregation
+            val dates = state.buckets.keys.toList()
+            val aggregated = dates.map { date ->
+                HealthDataModel.MetricPoint(date = date, value = state.buckets.getValue(date).aggregated(mode))
             }
-            HealthDataModel.MetricSeries(
+            val band = bandFor(mode) {
+                dates.map { date ->
+                    val bucket = state.buckets.getValue(date)
+                    date to (bucket.min to bucket.max)
+                }
+            }
+            buildMetricSeries(
                 label = state.label,
                 unit = state.unit,
-                points = points,
-                peakValueInWindow = state.peakValue ?: 0.0,
-                minValueInWindow = state.minValue ?: 0.0,
-                showMaxLabel = state.metricSettings.showMaxLabel,
-                showMinLabel = state.metricSettings.showMinLabel,
-                yAxisMode = state.metricSettings.yAxisMode
+                aggregated = aggregated,
+                band = band,
+                peakValue = state.peakValue ?: 0.0,
+                minValue = state.minValue ?: 0.0,
+                settings = state.metricSettings
             )
         }
+    }
+
+    /**
+     * For [AggregationMode.MIN_MAX_AVG] materializes the per-bucket (min, max) envelope from
+     * [entries]; null for every other mode. Kept in one place so the streaming and the batch
+     * aggregation paths produce identical band shapes.
+     */
+    private inline fun bandFor(
+        mode: AggregationMode,
+        entries: () -> List<Pair<LocalDate, Pair<Double, Double>>>
+    ): Pair<List<HealthDataModel.MetricPoint>, List<HealthDataModel.MetricPoint>>? {
+        if (mode != AggregationMode.MIN_MAX_AVG) return null
+        val bucketBounds = entries()
+        val min = bucketBounds.map { (date, bounds) -> HealthDataModel.MetricPoint(date, bounds.first) }
+        val max = bucketBounds.map { (date, bounds) -> HealthDataModel.MetricPoint(date, bounds.second) }
+        return min to max
+    }
+
+    /**
+     * Assembles a [HealthDataModel.MetricSeries], applying the configured smoothing uniformly to
+     * the avg line and (when present) both band edges so the envelope stays aligned with the line.
+     */
+    private fun buildMetricSeries(
+        label: String,
+        unit: String?,
+        aggregated: List<HealthDataModel.MetricPoint>,
+        band: Pair<List<HealthDataModel.MetricPoint>, List<HealthDataModel.MetricPoint>>?,
+        peakValue: Double,
+        minValue: Double,
+        settings: MetricChartSettings
+    ): HealthDataModel.MetricSeries {
+        fun applySmoothing(points: List<HealthDataModel.MetricPoint>): List<HealthDataModel.MetricPoint> =
+            when (settings.smoothing) {
+                com.monkopedia.healthdisconnect.model.SmoothingMode.OFF -> points
+                com.monkopedia.healthdisconnect.model.SmoothingMode.MOVING_AVERAGE_3 -> smooth3(points)
+            }
+        return HealthDataModel.MetricSeries(
+            label = label,
+            unit = unit,
+            points = applySmoothing(aggregated),
+            peakValueInWindow = peakValue,
+            minValueInWindow = minValue,
+            showMaxLabel = settings.showMaxLabel,
+            showMinLabel = settings.showMinLabel,
+            yAxisMode = settings.yAxisMode,
+            bandMin = band?.first?.let(::applySmoothing),
+            bandMax = band?.second?.let(::applySmoothing)
+        )
     }
 
     private data class BucketAccumulator(
@@ -311,7 +360,8 @@ class DefaultHealthDataAggregationEngine(
         fun aggregated(mode: AggregationMode): Double {
             if (count == 0) return 0.0
             return when (mode) {
-                AggregationMode.AVERAGE -> sum / count
+                // MIN_MAX_AVG plots the average as its line; the min/max form the band around it.
+                AggregationMode.AVERAGE, AggregationMode.MIN_MAX_AVG -> sum / count
                 AggregationMode.SUM -> sum
                 AggregationMode.MIN -> min
                 AggregationMode.MAX -> max

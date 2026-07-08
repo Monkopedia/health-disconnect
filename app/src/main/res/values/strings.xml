@@ -65,6 +65,8 @@
     <string name="data_view_label_show_data_points">Show data points</string>
     <string name="data_view_label_y_axis">Y-axis</string>
     <string name="data_view_label_smoothing">Smoothing</string>
+    <string name="data_view_label_range_display">Range display</string>
+    <string name="data_view_aggregation_min_max_avg">Min/max/avg</string>
     <string name="data_view_label_units">Units</string>
     <string name="data_view_label_show_max">Show max label</string>
     <string name="data_view_label_show_min">Show min label</string>

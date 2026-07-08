@@ -4,12 +4,14 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import androidx.core.content.FileProvider
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
+import com.monkopedia.healthdisconnect.model.RangeDisplay
 import com.monkopedia.healthdisconnect.ui.ChartGeometry
 import com.monkopedia.healthdisconnect.ui.ValueRange
 import java.io.File
@@ -229,8 +231,25 @@ fun renderGraphBitmap(
         return x to y
     }
 
+    fun bandEdgeToXY(edge: ChartGeometry.BandEdge): Pair<Pair<Float, Float>, Pair<Float, Float>> {
+        val x = chartLeft + (chartWidth * edge.x)
+        val minY = chartTop + (edge.minYFractionFromTop * chartHeight)
+        val maxY = chartTop + (edge.maxYFractionFromTop * chartHeight)
+        return (x to minY) to (x to maxY)
+    }
+
     if (settings.chartType == ChartType.LINE) {
         seriesList.forEachIndexed { seriesIndex, series ->
+            geometry.bandFor(seriesIndex)?.let { band ->
+                drawMetricBand(
+                    canvas = canvas,
+                    band = band,
+                    color = seriesColors[seriesIndex % seriesColors.size],
+                    rangeDisplay = settings.rangeDisplay,
+                    edgeToXY = ::bandEdgeToXY,
+                    strokeWidth = ss(2.5f)
+                )
+            }
             val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = seriesColors[seriesIndex % seriesColors.size]
                 strokeWidth = ss(4f)
@@ -460,11 +479,28 @@ fun renderWidgetGraphBitmap(
         return x to y
     }
 
+    fun bandEdgeToXY(edge: ChartGeometry.BandEdge): Pair<Pair<Float, Float>, Pair<Float, Float>> {
+        val x = chartLeft + (chartWidth * edge.x)
+        val minY = chartTop + (edge.minYFractionFromTop * chartHeight)
+        val maxY = chartTop + (edge.maxYFractionFromTop * chartHeight)
+        return (x to minY) to (x to maxY)
+    }
+
     if (settings.chartType == ChartType.LINE) {
         val pointRadius = max(1.5f, min(width, height) * 0.011f)
         val lineStroke = max(2.2f, min(width, height) * 0.011f)
         seriesList.forEachIndexed { seriesIndex, series ->
             val color = seriesColors[seriesIndex % seriesColors.size]
+            geometry.bandFor(seriesIndex)?.let { band ->
+                drawMetricBand(
+                    canvas = canvas,
+                    band = band,
+                    color = color,
+                    rangeDisplay = settings.rangeDisplay,
+                    edgeToXY = ::bandEdgeToXY,
+                    strokeWidth = lineStroke * 0.7f
+                )
+            }
             val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 this.color = color
                 strokeWidth = lineStroke
@@ -628,6 +664,63 @@ fun renderWidgetGraphBitmap(
     }
 
     return bitmap
+}
+
+/** Alpha of a series color for the filled BAND envelope (matches the on-screen chart). */
+private const val BAND_FILL_ALPHA = 0.16f
+
+/** Alpha of a series color for the LINES min/max dashed strokes (matches the on-screen chart). */
+private const val BAND_LINE_ALPHA = 0.55f
+
+/**
+ * Draws a min/max/avg series' envelope onto [canvas]. BAND fills the min–max area at low alpha;
+ * LINES draws lighter dashed min and max strokes. Shared by the share and widget bitmaps; the
+ * envelope [band] geometry is produced by [ChartGeometry] so all surfaces draw the same shape.
+ */
+private fun drawMetricBand(
+    canvas: Canvas,
+    band: ChartGeometry.BandGeometry,
+    color: Int,
+    rangeDisplay: RangeDisplay,
+    edgeToXY: (ChartGeometry.BandEdge) -> Pair<Pair<Float, Float>, Pair<Float, Float>>,
+    strokeWidth: Float
+) {
+    val edges = band.edges
+    if (edges.isEmpty()) return
+    val bounds = edges.map(edgeToXY)
+    when (rangeDisplay) {
+        RangeDisplay.BAND -> {
+            val path = Path()
+            bounds.forEachIndexed { index, (_, maxXY) ->
+                if (index == 0) path.moveTo(maxXY.first, maxXY.second) else path.lineTo(maxXY.first, maxXY.second)
+            }
+            bounds.asReversed().forEach { (minXY, _) -> path.lineTo(minXY.first, minXY.second) }
+            path.close()
+            val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = withAlpha(color, BAND_FILL_ALPHA)
+                style = Paint.Style.FILL
+            }
+            canvas.drawPath(path, fillPaint)
+        }
+        RangeDisplay.LINES -> {
+            val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                this.color = withAlpha(color, BAND_LINE_ALPHA)
+                style = Paint.Style.STROKE
+                this.strokeWidth = strokeWidth
+                pathEffect = DashPathEffect(floatArrayOf(strokeWidth * 4f, strokeWidth * 3f), 0f)
+            }
+            listOf(
+                bounds.map { it.first },
+                bounds.map { it.second }
+            ).forEach { line ->
+                val path = Path()
+                line.forEachIndexed { index, (x, y) ->
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                canvas.drawPath(path, linePaint)
+            }
+        }
+    }
 }
 
 private fun withAlpha(color: Int, alphaFraction: Float): Int {

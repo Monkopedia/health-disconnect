@@ -47,6 +47,51 @@ class EntriesExportCsvTest {
     }
 
     @Test
+    fun aggregatedCsvHasBlankMinMaxColumnsForNonBandSeries() {
+        val view = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(WeightRecord::class))
+        )
+        val series = listOf(
+            HealthDataModel.MetricSeries(
+                label = "Weight",
+                unit = "kilograms",
+                points = listOf(HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 71.5))
+            )
+        )
+
+        val csv = buildAggregatedEntriesCsv(view, series)
+        val header = csv.lineSequence().first()
+
+        assertTrue(header.contains("value,min_value,max_value,peak_value_in_window"))
+        // value present, min/max blank -> two empty fields between value and peak.
+        assertTrue(csv.contains(",2026-02-01,71.5,,,71.5,"))
+    }
+
+    @Test
+    fun aggregatedCsvPopulatesMinMaxColumnsForBandSeries() {
+        val view = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(WeightRecord::class))
+        )
+        val series = listOf(
+            HealthDataModel.MetricSeries(
+                label = "Weight",
+                unit = "kilograms",
+                points = listOf(HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 72.0)),
+                bandMin = listOf(HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 70.0)),
+                bandMax = listOf(HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 74.0))
+            )
+        )
+
+        val csv = buildAggregatedEntriesCsv(view, series)
+
+        assertTrue(csv.contains(",2026-02-01,72.0,70.0,74.0,"))
+    }
+
+    @Test
     fun rawCsvIncludesTypeTimestampAndFieldValues() {
         val record = mockk<WeightRecord>(relaxed = true)
         every { record.weight } returns Mass.kilograms(72.0)
