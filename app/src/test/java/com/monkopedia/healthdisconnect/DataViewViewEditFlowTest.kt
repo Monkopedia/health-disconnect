@@ -142,14 +142,14 @@ class DataViewViewEditFlowTest {
         )
 
         openViewConfiguration()
-        composeRule.onNodeWithText("Days 30").assertIsDisplayed()
+        composeRule.onNodeWithText("30 Days").assertIsDisplayed()
 
         composeRule.runOnIdle {
             harness.grantedPermissions.value = setOf(PermissionsViewModel.HISTORY_PERMISSION)
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Year 1").assertIsDisplayed()
+        composeRule.onNodeWithText("1 Year").assertIsDisplayed()
     }
 
     @Test

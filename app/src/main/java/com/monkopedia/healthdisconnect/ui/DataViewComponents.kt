@@ -150,7 +150,8 @@ fun viewConfigurationSection(
         EnumCycleRow(
             label = stringResource(R.string.data_view_label_time_window),
             value = chartSettings.timeWindow,
-            options = timeWindowOptions
+            options = timeWindowOptions,
+            displayName = { timeWindowDisplayName(it) }
         ) { onChartSettingsChanged(chartSettings.copy(timeWindow = it)) }
     }
     scope.item {
@@ -437,6 +438,23 @@ internal fun RecordSelection.withDefaultSettings(chartSettings: ChartSettings): 
 private fun aggregationDisplayName(mode: AggregationMode): String = when (mode) {
     AggregationMode.MIN_MAX_AVG -> stringResource(R.string.data_view_aggregation_min_max_avg)
     else -> mode.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercaseChar() }
+}
+
+/**
+ * Human-readable time window label ("24 Hours", "7 Days", "1 Year", etc.). The auto-format would
+ * render "Hours 24" / "Days 7" — reversed and awkward — so every value gets an explicit string.
+ */
+@Composable
+private fun timeWindowDisplayName(window: TimeWindow): String = when (window) {
+    TimeWindow.HOURS_1 -> stringResource(R.string.data_view_time_window_hours_1)
+    TimeWindow.HOURS_3 -> stringResource(R.string.data_view_time_window_hours_3)
+    TimeWindow.HOURS_6 -> stringResource(R.string.data_view_time_window_hours_6)
+    TimeWindow.HOURS_24 -> stringResource(R.string.data_view_time_window_hours_24)
+    TimeWindow.DAYS_7 -> stringResource(R.string.data_view_time_window_days_7)
+    TimeWindow.DAYS_30 -> stringResource(R.string.data_view_time_window_days_30)
+    TimeWindow.DAYS_90 -> stringResource(R.string.data_view_time_window_days_90)
+    TimeWindow.YEAR_1 -> stringResource(R.string.data_view_time_window_year_1)
+    TimeWindow.ALL -> stringResource(R.string.data_view_time_window_all)
 }
 
 @Composable

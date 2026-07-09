@@ -74,6 +74,15 @@
     <string name="data_view_label_smoothing">Smoothing</string>
     <string name="data_view_label_range_display">Range display</string>
     <string name="data_view_aggregation_min_max_avg">Min/max/avg</string>
+    <string name="data_view_time_window_hours_1">1 Hour</string>
+    <string name="data_view_time_window_hours_3">3 Hours</string>
+    <string name="data_view_time_window_hours_6">6 Hours</string>
+    <string name="data_view_time_window_hours_24">24 Hours</string>
+    <string name="data_view_time_window_days_7">7 Days</string>
+    <string name="data_view_time_window_days_30">30 Days</string>
+    <string name="data_view_time_window_days_90">90 Days</string>
+    <string name="data_view_time_window_year_1">1 Year</string>
+    <string name="data_view_time_window_all">All</string>
     <string name="data_view_label_units">Units</string>
     <string name="data_view_label_show_max">Show max label</string>
     <string name="data_view_label_show_min">Show min label</string>
