@@ -93,6 +93,14 @@ enum class TimeWindow {
             HOURS_24 -> 24
             else -> null
         }
+
+    /**
+     * True for the windows that look back further than 30 days, which is exactly the range gated by
+     * the Health Connect READ_HEALTH_DATA_HISTORY permission. Windows with a lookback ≤ 30 days
+     * (all intraday spans plus DAYS_7/DAYS_30) only ever read recent data and are always reachable.
+     */
+    val requiresHistoryPermission: Boolean
+        get() = this == DAYS_90 || this == YEAR_1 || this == ALL
 }
 
 @Serializable
@@ -129,6 +137,21 @@ enum class BucketSize {
             ?: TimeWindow.ALL
     }
 }
+
+/**
+ * The time windows offered in the menu for [bucket], filtered to what the caller may actually read.
+ * Only windows that look back further than 30 days ([TimeWindow.requiresHistoryPermission]) are
+ * gated behind [hasHistoryPermission]; all intraday spans and DAYS_7/DAYS_30 stay reachable, so
+ * intraday charts are never hidden from a user who lacks the history permission.
+ *
+ * The WEEK/MONTH buckets only offer >30-day windows, so without the permission their list would be
+ * empty; those fall back to DAYS_7/DAYS_30 (the range the no-permission clamp snaps to) so the menu
+ * is never empty.
+ */
+fun availableTimeWindows(bucket: BucketSize, hasHistoryPermission: Boolean): List<TimeWindow> =
+    bucket.windows()
+        .filter { hasHistoryPermission || !it.requiresHistoryPermission }
+        .ifEmpty { listOf(TimeWindow.DAYS_7, TimeWindow.DAYS_30) }
 
 @Serializable
 enum class ChartType {

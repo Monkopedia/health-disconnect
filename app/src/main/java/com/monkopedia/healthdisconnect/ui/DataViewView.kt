@@ -123,6 +123,7 @@ import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.SmoothingMode
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
+import com.monkopedia.healthdisconnect.model.availableTimeWindows
 import com.monkopedia.healthdisconnect.model.YAxisMode
 import com.monkopedia.healthdisconnect.model.isConfigValid
 import java.time.Instant
@@ -196,9 +197,7 @@ fun DataViewView(
         .minByOrNull { it.ordinal }
         ?: chartSettings.bucketSize
     val bucketWindows = effectiveBucket.windows()
-    val timeWindowOptions = bucketWindows.filter { window ->
-        hasHistoryPermission || window in listOf(TimeWindow.DAYS_7, TimeWindow.DAYS_30)
-    }.ifEmpty { listOf(TimeWindow.DAYS_7, TimeWindow.DAYS_30) }
+    val timeWindowOptions = availableTimeWindows(effectiveBucket, hasHistoryPermission)
     // When a bucket change makes the current window invalid for that bucket, snap to the nearest
     // valid one. This keys off the bucket's own windows (not the history-filtered list) so it stays
     // orthogonal to the history-permission clamp/restore below, which owns that concern.
