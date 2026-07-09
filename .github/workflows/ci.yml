@@ -11,9 +11,21 @@ jobs:
     runs-on: ubuntu-latest
     # Backstop so a hung run fails fast and frees the runner instead of wedging for hours.
     timeout-minutes: 20
+    # contents: write is needed so the record-and-commit step below can push the
+    # regenerated screenshot baselines back to the PR head branch. On fork PRs the
+    # GITHUB_TOKEN is downgraded to read-only, so that step is guarded to same-repo PRs.
+    permissions:
+      contents: write
 
     steps:
+      # For pull_request events we check out the PR head branch (not the default
+      # detached merge ref) with persisted credentials, so the record-and-commit
+      # step can push the regenerated baselines straight back onto the PR. For push
+      # events this falls back to the pushed ref.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
 
       - uses: actions/setup-java@v4
         with:
@@ -26,17 +38,30 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testProdDebugUnitTest
 
-      # Screenshot regression guard: compare rendered screens against the committed baselines
-      # under app/src/test/screenshots. Renders are frozen to a fixed clock (LocalClock) so the
-      # chart axis and "Last refreshed" header are deterministic. Reported non-blocking for now
-      # (continue-on-error) until cross-env (font/anti-aliasing) stability is proven in CI — a
-      # mismatch surfaces a diff artifact without failing the required check. See issue #39.
-      # -x unitTestGate: the unit suite already ran in the previous step; skip re-running it
-      # (it also keeps this step inside the 20-min job timeout).
-      - name: Verify screenshots (report-only)
-        if: success() || failure()
-        continue-on-error: true
-        run: ./gradlew verifyRoborazziGate -x unitTestGate -x testProdDebugUnitTest
+      # Screenshot baselines (app/src/test/screenshots) drift across environments
+      # (font/anti-aliasing) when recorded locally, so instead of verifying against a
+      # possibly-stale golden we RECORD them in the CI environment and auto-commit any
+      # change back to the PR branch. The reviewer then sees the real CI-rendered diff on
+      # the PR. This records, it does not gate — the unit-test step above is the test gate.
+      #
+      # Gated to same-repo pull_request events only: fork PRs get a read-only GITHUB_TOKEN
+      # (push would 403), and push-to-main runs have no PR head to commit onto.
+      # -x testProdDebugUnitTest: the unit suite already ran above; don't re-run it.
+      - name: Record screenshots and commit to PR
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          ./gradlew recordRoborazziTableDebug -x testProdDebugUnitTest
+          if [ -n "$(git status --porcelain app/src/test/screenshots)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add app/src/test/screenshots
+            git commit -m "ci: update screenshot baselines"
+            git push origin HEAD:${{ github.head_ref }}
+          else
+            echo "No screenshot baseline changes to commit."
+          fi
 
       - name: Upload test results
         if: failure()
