@@ -74,8 +74,7 @@ class DefaultHealthConnectGateway(
                     pageToken = pageToken
                 )
             )
-            @Suppress("UNCHECKED_CAST")
-            onPage(response.records as List<Record>)
+            onPage(response.records)
             pageToken = response.pageToken
         } while (pageToken != null)
     }
@@ -98,8 +97,7 @@ class DefaultHealthConnectGateway(
                     ascendingOrder = false
                 )
             )
-            @Suppress("UNCHECKED_CAST")
-            if ((response.records as List<Record>).any(predicate)) {
+            if (response.records.any(predicate)) {
                 return true
             }
             pageToken = response.pageToken

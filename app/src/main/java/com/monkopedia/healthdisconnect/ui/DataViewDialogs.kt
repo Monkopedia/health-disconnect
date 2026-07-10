@@ -18,7 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -131,7 +131,7 @@ internal fun GraphShareThemeDialog(
                 Spacer(Modifier.height(6.dp))
                 val tabThemes = listOf(GraphShareTheme.LIGHT, GraphShareTheme.DARK)
                 val selectedIndex = tabThemes.indexOf(selectedTheme).coerceAtLeast(0)
-                TabRow(
+                PrimaryTabRow(
                     selectedTabIndex = selectedIndex,
                     containerColor = AlertDialogDefaults.containerColor
                 ) {
