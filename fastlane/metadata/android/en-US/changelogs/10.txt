@@ -1,0 +1,5 @@
+• New "Min/max/avg" aggregation — see each period's average together with its full min-to-max range, drawn as a shaded band or as separate min/avg/max lines
+• Per-hour and per-minute charts for frequently-recorded data like heart rate, with intraday time windows down to the last hour, showing the time of day along the axis
+• CSV export now includes minimum and maximum columns in min/max/avg mode
+• Time-window options read more naturally ("24 Hours", "7 Days")
+• Fixed the graph subtitle to show the correct unit ("weeks"/"months") for weekly and monthly views
