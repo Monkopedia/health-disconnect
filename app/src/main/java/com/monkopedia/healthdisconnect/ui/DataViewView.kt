@@ -574,9 +574,11 @@ fun DataViewView(
 
                 if (view!!.type == ViewType.CHART) {
                     item {
-                        // Day-granular views count distinct calendar days of data; intraday views
-                        // report the window's own span (a 1-hour window reads "1 hour", not the
-                        // count of distinct clock-hours the buckets straddle).
+                        // Intraday views report the window's own span (a 1-hour window reads
+                        // "1 hour", not the count of distinct clock-hours the buckets straddle).
+                        // Coarser views count their distinct buckets and label by the bucket's own
+                        // granularity — points are already snapped to bucket starts upstream, so a
+                        // WEEK view reads "N weeks" and a MONTH view "N months", not "N days".
                         val intradaySpanHours = chartSettings.timeWindow.intradaySpanHours
                         val graphSpanLabel = if (intradaySpanHours != null) {
                             pluralStringResource(
@@ -585,11 +587,18 @@ fun DataViewView(
                                 intradaySpanHours
                             )
                         } else {
-                            val days = metricSeriesList
+                            val buckets = metricSeriesList
                                 ?.flatMap { it.points }
-                                ?.map { it.instant.atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
+                                ?.map { it.instant }
                                 ?.distinct()?.size ?: 0
-                            pluralStringResource(R.plurals.data_view_graph_days, days, days)
+                            val bucketPlural = when (effectiveBucket) {
+                                BucketSize.WEEK -> R.plurals.data_view_graph_weeks
+                                BucketSize.MONTH -> R.plurals.data_view_graph_months
+                                BucketSize.MINUTE, BucketSize.HOUR ->
+                                    R.plurals.data_view_graph_hours
+                                BucketSize.DAY -> R.plurals.data_view_graph_days
+                            }
+                            pluralStringResource(bucketPlural, buckets, buckets)
                         }
                         ToggleSection(
                             labelText = graphSpanLabel,
