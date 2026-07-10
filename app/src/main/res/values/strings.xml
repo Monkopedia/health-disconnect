@@ -43,6 +43,14 @@
         <item quantity="one">Graph (%1$d hour)</item>
         <item quantity="other">Graph (%1$d hours)</item>
     </plurals>
+    <plurals name="data_view_graph_weeks">
+        <item quantity="one">Graph (%1$d week)</item>
+        <item quantity="other">Graph (%1$d weeks)</item>
+    </plurals>
+    <plurals name="data_view_graph_months">
+        <item quantity="one">Graph (%1$d month)</item>
+        <item quantity="other">Graph (%1$d months)</item>
+    </plurals>
     <string name="data_view_no_graphable">No graphable metric values available yet.</string>
     <string name="data_view_no_graphable_with_hint">No graphable values in the current filters. Try setting Time window to All.</string>
     <string name="data_view_showing_first_metrics">Showing first %1$d selected metrics.</string>
