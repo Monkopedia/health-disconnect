@@ -159,7 +159,7 @@ fun recordPrimaryValueLabel(record: Record): String? {
         is RestingHeartRateRecord -> "${record.beatsPerMinute} bpm"
         is Vo2MaxRecord -> formatValueWithUnit(record.vo2MillilitersPerMinuteKilogram, "mL/min/kg")
         is HeartRateVariabilityRmssdRecord -> formatValueWithUnit(record.heartRateVariabilityMillis, "ms")
-        is FloorsClimbedRecord -> formatValueWithUnit(record.floors.toDouble(), "floors")
+        is FloorsClimbedRecord -> formatValueWithUnit(record.floors, "floors")
         is HydrationRecord -> formatValueWithUnit(record.volume.inLiters, "liters")
         is BodyWaterMassRecord -> formatValueWithUnit(record.mass.inKilograms, "kg")
         is BoneMassRecord -> formatValueWithUnit(record.mass.inKilograms, "kg")

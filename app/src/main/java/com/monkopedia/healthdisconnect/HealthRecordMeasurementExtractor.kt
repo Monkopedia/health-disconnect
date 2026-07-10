@@ -534,7 +534,7 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
             scalarMappingLookup(
                 fieldName = "Floors",
                 recordClass = FloorsClimbedRecord::class,
-                valueField = { it.floors.toDouble() },
+                valueField = { it.floors },
                 unitLabel = "floors"
             ),
             scalarMappingLookup(
