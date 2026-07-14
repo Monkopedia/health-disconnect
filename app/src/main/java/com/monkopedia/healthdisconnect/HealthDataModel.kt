@@ -104,9 +104,15 @@ class HealthDataModel @JvmOverloads constructor(
         return metricsWithData.filterNotNull()
     }
 
-    fun recordSelectionLabel(selection: RecordSelection): String {
+    /**
+     * Human-readable label for [selection], or null when its record type can no longer be resolved
+     * (e.g. a view saved by a build that obfuscated the record class name — see the Health Connect
+     * keep rule in proguard-rules.pro). Callers surface a localized "re-add this metric" prompt for
+     * the null case rather than leaking the raw stored [RecordSelection.fqn] into the UI.
+     */
+    fun recordSelectionLabel(selection: RecordSelection): String? {
         val cls = PermissionsViewModel.classForFqn(selection.fqn)
-            ?: return selection.fqn
+            ?: return null
         return measurementExtractor.metricLabel(cls, selection.metricKey)
             ?: PermissionsViewModel.recordLabel(cls)
     }

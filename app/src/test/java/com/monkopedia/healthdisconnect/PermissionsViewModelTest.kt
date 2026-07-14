@@ -112,4 +112,39 @@ class PermissionsViewModelTest {
             )
         )
     }
+
+    // --- Record-class identity contract (regression guard for #56) ---
+    // Views persist RecordSelection.fqn = KClass.qualifiedName and resolve it back via classForFqn.
+    // If R8 ever obfuscates the Health Connect record classes (missing keep rule), qualifiedName
+    // stops being the real, stable androidx.health.connect.client.records name and saved views break
+    // after an update. These assert the invariant the app depends on; the release-build guard that
+    // actually detects obfuscation lives in CI (grep of the R8 mapping), since unit tests run
+    // against un-minified classes.
+
+    @Test
+    fun `every registered record class exposes its real Health Connect qualified name`() {
+        PermissionsViewModel.CLASSES.forEach { cls ->
+            val fqn = cls.qualifiedName
+            assertTrue(
+                "record class qualifiedName must be a real HC name, was: $fqn",
+                fqn != null && fqn.startsWith("androidx.health.connect.client.records.")
+            )
+        }
+    }
+
+    @Test
+    fun `classForFqn round-trips every registered record class`() {
+        PermissionsViewModel.CLASSES.forEach { cls ->
+            assertEquals(cls, PermissionsViewModel.classForFqn(cls.qualifiedName))
+        }
+    }
+
+    @Test
+    fun `classForFqn returns null for an unresolvable stored name`() {
+        // A legacy view saved under an obfuscated build holds a name like this; it must not resolve
+        // (so callers show the localized "re-add this metric" prompt) rather than mis-resolve.
+        assertEquals(null, PermissionsViewModel.classForFqn("S1.z0"))
+        assertEquals(null, PermissionsViewModel.classForFqn(null))
+        assertEquals(null, PermissionsViewModel.classForFqn(""))
+    }
 }

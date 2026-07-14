@@ -121,8 +121,9 @@ fun viewConfigurationSection(
     showWidgetUpdateWindowControl: Boolean = false
 ) {
     val selectedDisplay = selectedSelections.map { selection ->
-        val label = healthDataModel.recordSelectionLabel(selection)
-        selection to label
+        // null label => the record type no longer resolves (legacy view saved under an obfuscated
+        // build); the item renders a localized "re-add this metric" prompt instead.
+        selection to healthDataModel.recordSelectionLabel(selection)
     }
     fun metricDefaults(): MetricChartSettings = chartSettings.toMetricChartSettings()
 
@@ -209,7 +210,8 @@ fun viewConfigurationSection(
     }
 
     scope.items(selectedDisplay.size, key = { selectedDisplay[it].first.selectionKey() }) { index ->
-        val (selection, label) = selectedDisplay[index]
+        val (selection, resolvedLabel) = selectedDisplay[index]
+        val label = resolvedLabel ?: stringResource(R.string.data_view_metric_unavailable)
         val settings = selection.metricSettings ?: metricDefaults()
         val selectionKey = selection.selectionKey()
         fun updateSelectedSelection(transform: (RecordSelection) -> RecordSelection) {

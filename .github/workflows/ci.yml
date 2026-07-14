@@ -38,6 +38,38 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testProdDebugUnitTest
 
+      # Release-build guard for #56: the app identifies Health Connect record types by
+      # KClass.qualifiedName (persisted in saved views) and labels them by simpleName, so if R8
+      # obfuscates androidx.health.connect.client.records.** those names go unstable and every
+      # saved view breaks after an update. Unit tests run against un-minified classes and can't
+      # see this, so we run R8 for the release variant and assert the record classes keep their
+      # real names in the mapping. This is what makes the proguard-rules keep rule enforceable.
+      - name: Verify Health Connect record classes are not obfuscated
+        run: |
+          ./gradlew :app:minifyProdReleaseWithR8
+          # The minify task alone writes the mapping under intermediates/ (the outputs/mapping
+          # copy is only produced by a later assemble step, which we don't run here since it
+          # would need release signing). Locate it wherever AGP puts it rather than hardcode.
+          MAP=$(find app/build -type f -name mapping.txt -path '*prodRelease*' | head -1)
+          if [ -z "$MAP" ]; then
+            echo "::error::R8 mapping.txt not produced by minifyProdReleaseWithR8"
+            find app/build -name mapping.txt || true
+            exit 1
+          fi
+          echo "Using R8 mapping: $MAP"
+          # Class-level lines look like "orig.Name -> target:"; for HC record classes the target
+          # must remain the identical real name. Any other target means it was obfuscated.
+          BAD=$(grep -E '^androidx\.health\.connect\.client\.records\.[A-Za-z0-9]+ -> ' "$MAP" \
+                | grep -vE ' -> androidx\.health\.connect\.client\.records\.' || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::Health Connect record classes are obfuscated by R8 — saved views will"
+            echo "::error::break on update (issue #56). Ensure the -keepnames rule in"
+            echo "::error::app/proguard-rules.pro covers androidx.health.connect.client.records.**"
+            echo "$BAD"
+            exit 1
+          fi
+          echo "OK: Health Connect record classes retain their real names in the R8 mapping."
+
       # Screenshot baselines (app/src/test/screenshots) drift across environments
       # (font/anti-aliasing) when recorded locally, so instead of verifying against a
       # possibly-stale golden we RECORD them in the CI environment and auto-commit any
