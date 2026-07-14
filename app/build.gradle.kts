@@ -2,12 +2,15 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.time.Duration
 
 plugins {
+    // AGP 9.0 provides built-in Kotlin support, so the standalone org.jetbrains.kotlin.android
+    // plugin is no longer applied (https://kotl.in/gradle/agp-built-in-kotlin). The compose,
+    // serialization, and kapt Kotlin plugins are still applied explicitly.
     alias(libs.plugins.android.application)
-    alias(libs.plugins.jetbrains.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.roborazzi)
-    id("org.jetbrains.kotlin.kapt")
+    // Room's annotation processor runs via KSP; kapt is incompatible with AGP 9 built-in Kotlin.
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -69,6 +72,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    // Under AGP 9 built-in Kotlin the Kotlin DSL lives inside the android block.
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -85,9 +94,6 @@ android {
             buildConfigField("boolean", "DEMO_MODE", "true")
         }
     }
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
-    }
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
@@ -98,12 +104,6 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "/META-INF/{LICENSE,LICENSE.md,LICENSE-notice.md,NOTICE,NOTICE.md,LICENSE.txt,NOTICE.txt}"
         }
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -133,7 +133,10 @@ dependencies {
     // Room
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    kapt(libs.androidx.room.compiler)
+    ksp(libs.androidx.room.compiler)
+    // DataViewRoomTransactionTest defines a legacy @Database in the unit-test source set; KSP
+    // needs the Room processor wired per source set (kapt processed it implicitly).
+    kspTest(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
     testImplementation(libs.androidx.junit)
@@ -377,15 +380,22 @@ tasks.matching { it.name == "testProdReleaseUnitTest" }.configureEach {
     (this as? Test)?.exclude("**/DataViewHeaderInteractionTest.class")
 }
 
-kapt {
-    arguments {
-        arg("room.schemaLocation", "$projectDir/schemas")
-    }
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 // Disable baseline profile ArtProfile tasks. Compose pulls in profileinstaller
 // transitively, which adds non-deterministic baseline.prof generation that
 // breaks F-Droid reproducible builds.
 tasks.matching { it.name.contains("ArtProfile") }.configureEach {
+    enabled = false
+}
+
+// Disable AGP 9's Compose group-mapping task. It resolves
+// org.jetbrains.kotlin:compose-group-mapping at AGP's built-in Kotlin version, an
+// artifact only published for Kotlin 2.4.0+ — so it fails to resolve on our Kotlin
+// (2.3.x). The mapping is optional Compose diagnostics metadata (not required to build
+// or run the app), so we disable the task rather than pin Kotlin ahead to 2.4.x.
+tasks.matching { it.name.contains("ComposeMapping") }.configureEach {
     enabled = false
 }
