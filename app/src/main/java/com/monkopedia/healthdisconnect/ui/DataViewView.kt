@@ -153,6 +153,12 @@ fun DataViewView(
     onOpenEntriesRequested: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
+    // Error strings resolved at composition rather than via context.getString in the action
+    // callbacks below, per Compose's LocalContextGetResourceValueCall lint check.
+    val graphShareFailedMessage = stringResource(R.string.graph_share_failed_message)
+    val entriesExportFailedMessage = stringResource(R.string.data_view_export_failed)
+    val widgetPinNotSupportedMessage = stringResource(R.string.widget_pin_not_supported)
+    val widgetPinRequestFailedMessage = stringResource(R.string.widget_pin_request_failed)
     val clock = LocalClock.current
     val infoFlow = remember(viewModel, page) {
         viewModel.dataViews.map { list ->
@@ -357,7 +363,7 @@ fun DataViewView(
                 )
             } catch (exception: Exception) {
                 Log.e(ENTRY_DETAILS_LOG_TAG, "Failed to share graph image", exception)
-                graphShareError = context.getString(R.string.graph_share_failed_message)
+                graphShareError = graphShareFailedMessage
             } finally {
                 isGraphShareInProgress = false
             }
@@ -394,7 +400,7 @@ fun DataViewView(
                 )
             } catch (exception: Exception) {
                 Log.e(ENTRY_DETAILS_LOG_TAG, "Failed to export entries from graph view", exception)
-                entriesExportError = context.getString(R.string.data_view_export_failed)
+                entriesExportError = entriesExportFailedMessage
             } finally {
                 isEntriesExporting = false
             }
@@ -404,7 +410,7 @@ fun DataViewView(
         val appWidgetManager = android.appwidget.AppWidgetManager.getInstance(context)
         if (!appWidgetManager.isRequestPinAppWidgetSupported) {
             logWidgetFlow("DataViewView.requestWidgetPin unsupportedLauncher viewId=${view!!.id}")
-            addWidgetError = context.getString(R.string.widget_pin_not_supported)
+            addWidgetError = widgetPinNotSupportedMessage
             return
         }
         val widgetUpdateWindow = view!!.chartSettings.widgetUpdateWindow
@@ -452,7 +458,7 @@ fun DataViewView(
                 logWidgetFlow(
                     "DataViewView.requestWidgetPin rejectedByLauncher viewId=${view!!.id}"
                 )
-                addWidgetError = context.getString(R.string.widget_pin_request_failed)
+                addWidgetError = widgetPinRequestFailedMessage
             }
         }
     }

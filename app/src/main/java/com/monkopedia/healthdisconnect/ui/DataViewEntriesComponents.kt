@@ -137,6 +137,9 @@ fun EntriesRouteScreen(
     initialSelectedEntry: Record? = null
 ) {
     val context = LocalContext.current
+    // Resolved at composition (not via context.getString in the export coroutine) per Compose's
+    // LocalContextGetResourceValueCall lint check.
+    val exportFailedMessage = stringResource(R.string.data_view_export_failed)
     val actionScope = rememberCoroutineScope()
     val infoFlow = remember(viewModel, viewId) {
         viewModel.dataViews.map { it?.dataViews?.get(viewId) }
@@ -247,7 +250,7 @@ fun EntriesRouteScreen(
                         )
                     } catch (exception: Exception) {
                         Log.e(ENTRY_DETAILS_LOG_TAG, "Failed to export entries CSV", exception)
-                        exportErrorMessage = context.getString(R.string.data_view_export_failed)
+                        exportErrorMessage = exportFailedMessage
                     } finally {
                         isExporting = false
                     }
