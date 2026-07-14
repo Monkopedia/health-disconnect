@@ -107,6 +107,17 @@ android {
     }
 }
 
+// Turn off the Compose compiler's group-mapping file. Under AGP 9 this feature makes the
+// build resolve org.jetbrains.kotlin:compose-group-mapping at AGP's built-in Kotlin version
+// (2.2.x) — an artifact only published for Kotlin 2.4.0+ — so it fails on our Kotlin 2.3.x and
+// broke the release AAB (packageProdReleaseBundle wants outputs/mapping/prodRelease/mapping.txt,
+// which the compose-mapping merge would have produced). The mapping only deobfuscates Compose
+// group keys in stack traces (optional diagnostics), so disabling it is behavior-neutral and
+// lets the plain R8 mapping flow feed both the APK and AAB.
+composeCompiler {
+    includeComposeMappingFile.set(false)
+}
+
 dependencies {
 
     implementation(libs.androidx.datastore.preferences)
@@ -388,14 +399,5 @@ ksp {
 // transitively, which adds non-deterministic baseline.prof generation that
 // breaks F-Droid reproducible builds.
 tasks.matching { it.name.contains("ArtProfile") }.configureEach {
-    enabled = false
-}
-
-// Disable AGP 9's Compose group-mapping task. It resolves
-// org.jetbrains.kotlin:compose-group-mapping at AGP's built-in Kotlin version, an
-// artifact only published for Kotlin 2.4.0+ — so it fails to resolve on our Kotlin
-// (2.3.x). The mapping is optional Compose diagnostics metadata (not required to build
-// or run the app), so we disable the task rather than pin Kotlin ahead to 2.4.x.
-tasks.matching { it.name.contains("ComposeMapping") }.configureEach {
     enabled = false
 }
