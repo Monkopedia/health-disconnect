@@ -27,13 +27,28 @@ jobs:
       - name: Decode keystore
         run: echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > /tmp/release.keystore
 
-      - name: Build signed release APK and AAB
+      # Build the APK and AAB in SEPARATE Gradle invocations. Under AGP 9 the combined
+      # `assembleProdRelease bundleProdRelease` invocation produces a non-deterministic dex
+      # (differs build-to-build), whereas `assembleProdRelease` alone is byte-reproducible.
+      # F-Droid's reproducible-Binaries verification rebuilds the APK via assembleProdRelease
+      # and compares it to the uploaded APK, so the uploaded APK MUST come from the
+      # deterministic assemble-alone build — hence the APK is built first, on its own, and the
+      # AAB (Play only, no reproducibility check) is built afterwards.
+      - name: Build signed release APK
         env:
           RELEASE_KEYSTORE_PATH: /tmp/release.keystore
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-        run: ./gradlew assembleProdRelease bundleProdRelease
+        run: ./gradlew assembleProdRelease
+
+      - name: Build signed release AAB
+        env:
+          RELEASE_KEYSTORE_PATH: /tmp/release.keystore
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+        run: ./gradlew bundleProdRelease
 
       - name: Rename outputs
         run: |
