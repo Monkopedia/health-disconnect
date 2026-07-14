@@ -1,0 +1,2 @@
+• Fixes graphs showing empty with "no graphable metric values" after updating, even though Health Connect was connected and had data. If a saved view still shows a metric as "unavailable" after this update, remove and re-add that metric once — it will stay working afterwards.
+• Under-the-hood build/toolchain update (Android Gradle Plugin 9); the reproducible-build guarantee is preserved.
