@@ -64,6 +64,7 @@
     <string name="data_view_no_selected_metrics">No metrics selected.</string>
     <string name="data_view_add_metric">Add metric</string>
     <string name="data_view_remove_metric">Remove metric</string>
+    <string name="data_view_metric_unavailable">Metric unavailable — tap to re-add</string>
     <string name="data_view_select_metric_to_add">Select a metric to add</string>
     <string name="data_view_select_replacement_metric">Select replacement metric</string>
     <string name="data_view_no_more_metrics_to_add">All available metrics are already added.</string>
