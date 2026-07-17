@@ -140,11 +140,35 @@ class PermissionsViewModelTest {
     }
 
     @Test
-    fun `classForFqn returns null for an unresolvable stored name`() {
-        // A legacy view saved under an obfuscated build holds a name like this; it must not resolve
+    fun `classForFqn returns null for a genuinely unrecoverable stored name`() {
+        // A name that is neither a real class nor a known legacy obfuscated one must not resolve
         // (so callers show the localized "re-add this metric" prompt) rather than mis-resolve.
-        assertEquals(null, PermissionsViewModel.classForFqn("S1.z0"))
+        assertEquals(null, PermissionsViewModel.classForFqn("definitely.not.a.record.type"))
         assertEquals(null, PermissionsViewModel.classForFqn(null))
         assertEquals(null, PermissionsViewModel.classForFqn(""))
+    }
+
+    // --- Legacy obfuscated-name recovery (issue #56) ---
+    // Views saved before v1.2.1 persisted R8-obfuscated record-class names. classForFqn recovers
+    // them via LegacyFqnRecovery so the view auto-heals instead of breaking after an update.
+
+    @Test
+    fun `classForFqn recovers legacy obfuscated record names across eras`() {
+        // WeightRecord was "S1.z0" through v1.1.1 and "i5.y1" in v1.2.0 — both must recover.
+        val weight = "androidx.health.connect.client.records.WeightRecord"
+        assertEquals(weight, PermissionsViewModel.classForFqn("S1.z0")?.qualifiedName)
+        assertEquals(weight, PermissionsViewModel.classForFqn("i5.y1")?.qualifiedName)
+        // StepsRecord likewise (S1.w0 / i5.v1).
+        val steps = "androidx.health.connect.client.records.StepsRecord"
+        assertEquals(steps, PermissionsViewModel.classForFqn("S1.w0")?.qualifiedName)
+        assertEquals(steps, PermissionsViewModel.classForFqn("i5.v1")?.qualifiedName)
+    }
+
+    @Test
+    fun `LegacyFqnRecovery normalize leaves real and unknown names unchanged`() {
+        val real = "androidx.health.connect.client.records.WeightRecord"
+        assertEquals(real, LegacyFqnRecovery.normalize(real))
+        assertEquals("definitely.not.a.record.type", LegacyFqnRecovery.normalize("definitely.not.a.record.type"))
+        assertEquals(real, LegacyFqnRecovery.normalize("S1.z0"))
     }
 }
