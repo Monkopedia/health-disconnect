@@ -226,9 +226,17 @@ class PermissionsViewModel(
         private val CLASSES_BY_FQN: Map<String, KClass<out Record>> =
             CLASSES.associateBy { it.qualifiedName.orEmpty() }
 
-        /** The supported record class whose qualified name is [fqn], or null if unrecognized. */
-        fun classForFqn(fqn: String?): KClass<out Record>? =
-            if (fqn.isNullOrEmpty()) null else CLASSES_BY_FQN[fqn]
+        /**
+         * The supported record class whose qualified name is [fqn], or null if unrecognized.
+         * Falls back to [LegacyFqnRecovery] so a view saved under a pre-v1.2.1 build — which
+         * persisted an R8-obfuscated class name — still resolves to its real record type instead
+         * of breaking after an update reshuffled the obfuscation (issue #56).
+         */
+        fun classForFqn(fqn: String?): KClass<out Record>? {
+            if (fqn.isNullOrEmpty()) return null
+            return CLASSES_BY_FQN[fqn]
+                ?: LegacyFqnRecovery.realFqn(fqn)?.let { CLASSES_BY_FQN[it] }
+        }
 
         /**
          * Human-readable label for [recordClass]: its registered display name, falling back to

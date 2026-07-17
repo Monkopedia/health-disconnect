@@ -24,6 +24,12 @@ internal fun decodeDataViewEntity(entity: DataViewEntity, json: Json = Json): Da
         }
         Log.w(CODEC_TAG, "Failed to parse recordsJson for data view ${entity.id}", exception)
         emptyList()
+    }.map { selection ->
+        // Heal a stale R8-obfuscated fqn from a pre-v1.2.1 build back to the real record-type name
+        // (issue #56), so the recovered name persists on the next save rather than only resolving
+        // in-memory via classForFqn.
+        val recovered = LegacyFqnRecovery.normalize(selection.fqn)
+        if (recovered == selection.fqn) selection else selection.copy(fqn = recovered)
     }
     val settings = runCatching {
         json.decodeFromString(ChartSettings.serializer(), entity.settingsJson)
