@@ -1,0 +1,1 @@
+• Automatically restores charts that went empty after a previous update. If a saved view showed "Metric unavailable" or an empty graph, it now recovers on its own when you open the app — no need to remove and re-add the metric. (Follow-up to the v1.2.1 fix, covering views created in older versions.)
