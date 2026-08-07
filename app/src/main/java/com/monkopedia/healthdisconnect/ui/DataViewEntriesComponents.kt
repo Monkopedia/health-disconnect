@@ -1,7 +1,6 @@
 package com.monkopedia.healthdisconnect.ui
 
 import android.content.ClipData
-import android.content.Intent
 import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -56,7 +55,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.health.connect.client.records.Record
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.DefaultHealthRecordMeasurementExtractor

@@ -8,9 +8,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.filterNotNull
-import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
-import kotlin.reflect.KClass
 
 interface HealthDataRecordCachePolicy {
     val recordCache: MutableMap<String, CachedRecordState>
