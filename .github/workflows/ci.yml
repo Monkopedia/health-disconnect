@@ -38,6 +38,17 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testProdDebugUnitTest
 
+      # The demo flavor is ~700 lines that no other CI step builds — it is absent from every
+      # gradle invocation in this workflow and from testProdDebugUnitTest's task graph. It does
+      # not ship (release.yml builds prod only), so this is not a release guard; it protects the
+      # flavor used for on-device rendering verification, whose DemoDataSeeder calls
+      # encodeDataViewEntity and would otherwise rot silently until someone needed it. See #65.
+      #
+      # Deliberately a compile-only check and NOT ./gradlew allTests: whether CI should run the
+      # full gate (lint, androidTest compile) is a separate, larger decision tracked in #68.
+      - name: Compile demo flavor
+        run: ./gradlew :app:compileDemoDebugSources
+
       # Release-build guard for #56: the app identifies Health Connect record types by
       # KClass.qualifiedName (persisted in saved views) and labels them by simpleName, so if R8
       # obfuscates androidx.health.connect.client.records.** those names go unstable and every

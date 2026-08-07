@@ -353,8 +353,23 @@ tasks.register("verifyRoborazziGate") {
 
 tasks.register("allTests") {
     group = "verification"
-    description = "Runs unit tests, screenshot generation, lint, and androidTest compile checks."
-    setDependsOn(listOf("unitTestGate", "roborazziGate", "lintProdDebug", "compileProdDebugAndroidTestKotlin"))
+    description =
+        "Runs unit tests, screenshot generation, lint, and androidTest + demo-flavor compile checks."
+    // compileDemoDebugSources: the demo flavor is ~700 lines that nothing else builds. It does not
+    // ship (release.yml builds prod only, and it carries its own applicationIdSuffix), but it IS the
+    // flavor used for on-device rendering checks — including the A/B that verified the v1.2.2
+    // LegacyFqnRecovery fix. DemoDataSeeder calls encodeDataViewEntity, so a change to the
+    // persistence codec can break it with nothing to catch that. Guarding it keeps the instrument
+    // working; see issue #65.
+    setDependsOn(
+        listOf(
+            "unitTestGate",
+            "roborazziGate",
+            "lintProdDebug",
+            "compileProdDebugAndroidTestKotlin",
+            "compileDemoDebugSources"
+        )
+    )
 }
 
 tasks.register("releaseVerification") {
