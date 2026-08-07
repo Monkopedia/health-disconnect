@@ -267,6 +267,22 @@ fun configureRoborazziForkingDefaults(task: Test) {
     task.maxHeapSize = "2g"
     task.maxParallelForks = 1
     task.outputs.upToDateWhen { false }
+    // Pin the render JVM to UTC so screenshots do not depend on the HOST's timezone.
+    //
+    // The screenshot clock is pinned to a fixed instant, but it was rendered through
+    // ZoneId.systemDefault() — and so is every production formatting path the screens exercise
+    // (ChartGeometry axis labels, SettingsScreen date ranges, the "Last refreshed" header).
+    // A fixed instant plus a floating zone is not a fixed wall-clock time: CI runs UTC and
+    // renders "9:30:00 AM" while a developer in America/New_York renders "4:30:00 AM" from the
+    // same Instant. That made 72 of 160 committed baselines differ on a developer machine
+    // before a single line of app code changed, which is why the verify gate was unrunnable
+    // locally and ended up disabled (see #64, #73).
+    //
+    // UTC specifically, because CI already runs UTC — so this converges local onto the
+    // committed baselines rather than rewriting them. Production is untouched: real users
+    // still get ZoneId.systemDefault(), which is correct for them.
+    task.systemProperty("user.timezone", "UTC")
+    task.environment("TZ", "UTC")
 }
 
 // mode is "record" (regenerate committed baselines) or "verify" (compare renders against the
