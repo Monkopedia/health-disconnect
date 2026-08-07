@@ -95,17 +95,37 @@ jobs:
             echo "No screenshot baseline changes to commit."
           fi
 
+      # Publish on SUCCESS as well as failure. Previously `if: failure()`, which meant a green
+      # run produced no test report at all — so the only way to see what a passing run actually
+      # did was to have a local checkout. That makes a green tick unauditable by a reviewer who
+      # is not on the build machine, which is most of them.
       - name: Upload test results
-        if: failure()
+        if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: app/build/reports/tests/testProdDebugUnitTest/
+          if-no-files-found: error
 
+      # The rendered screenshots themselves, so a passing run is inspectable. The diffs directory
+      # below only has content when a VERIFY run finds a mismatch; this job records rather than
+      # verifies (see #64), so on a green run it is empty and nothing was ever published.
+      - name: Upload rendered screenshots
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: roborazzi-screenshots
+          path: app/src/test/screenshots/
+          if-no-files-found: error
+
+      # `if-no-files-found: ignore` was hiding the emptiness above: the step SUCCEEDED while
+      # uploading nothing, so "artifact published" and "artifact absent" looked identical. `warn`
+      # keeps the step non-fatal (an empty diffs dir is the normal, healthy case on a record run)
+      # while making the silence visible in the log instead of indistinguishable from success.
       - name: Upload screenshot diffs
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
           name: roborazzi-screenshot-diffs
           path: app/build/outputs/roborazzi/
-          if-no-files-found: ignore
+          if-no-files-found: warn
