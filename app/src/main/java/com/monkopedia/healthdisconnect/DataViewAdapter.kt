@@ -73,6 +73,22 @@ fun DataViewAdapter(
     onOpenEntries: (Int) -> Unit = {}
 ) {
     val listInfo by viewModel.dataViews.collectAsState(initial = null)
+
+    // Return BEFORE creating the pager, not after. `collectAsState(initial = null)` guarantees a
+    // null first frame, so when the pager was created above this check it was constructed with
+    // viewCount = 0 — i.e. pageCount = 1 — and only later saw pageCount = 3 once the views
+    // arrived. A whole-page initialPage survives that (offset 0 coerces to 0 either way), but
+    // `initialPageOffsetFraction` does not: a 0.45 offset against 1 page is coerced, and whether
+    // that coercion lands before or after the count updates depends on frame timing.
+    //
+    // That is the suspected source of the 12 oscillating screenshot baselines in #73 — exactly
+    // the three scroll-offset scenarios, never the whole-page ones. Creating the pager only once
+    // the count is known removes the race by construction rather than waiting for it to settle.
+    if (listInfo == null) {
+        LoadingScreen()
+        return
+    }
+
     val viewCount = listInfo?.ordering?.size ?: 0
     val pagerState = rememberPagerState(
         initialPage = initialPage,
@@ -80,11 +96,6 @@ fun DataViewAdapter(
         pageCount = { viewCount + 1 }
     )
     var handledInitialViewId by remember { mutableStateOf<Int?>(null) }
-
-    if (listInfo == null) {
-        LoadingScreen()
-        return
-    }
     LaunchedEffect(initialViewId, listInfo?.ordering) {
         val targetViewId = initialViewId
         if (targetViewId == null) {
