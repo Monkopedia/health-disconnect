@@ -17,9 +17,9 @@ navigationCompose = "2.9.8"
 kotlinx-serialization = "1.11.0"
 datastore = "1.2.1"
 room = "2.8.4"
-ksp = "2.3.10"
+ksp = "2.3.11"
 robolectric = "4.16.1"
-roborazzi = "1.67.0"
+roborazzi = "1.71.0"
 mockk = "1.14.11"
 
 [libraries]
