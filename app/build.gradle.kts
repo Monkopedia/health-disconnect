@@ -15,7 +15,7 @@ plugins {
 
 android {
     namespace = "com.monkopedia.healthdisconnect"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.monkopedia.healthdisconnect"
