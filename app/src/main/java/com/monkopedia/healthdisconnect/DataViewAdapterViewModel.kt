@@ -44,7 +44,8 @@ class DataViewAdapterViewModel(
 ) : AndroidViewModel(app) {
 
     private val context = getApplication<Application>()
-    private val json = Json
+    // Durable store — see StorageJson: reads must tolerate rows written by a different build.
+    private val json = StorageJson
 
     // Expose DataViewInfoList as Flow to match existing consumers
     val dataViews: Flow<DataViewInfoList?> = dataViewInfoDao.allOrdered().map { list ->
@@ -199,8 +200,8 @@ class DataViewAdapterViewModel(
         val maxOrdering = dataViewInfoDao.maxOrdering() ?: 0
         val nextOrder = maxOrdering + 1
         val newId = nextOrder
-        val recordsJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(selection))
-        val settingsJson = Json.encodeToString(ChartSettings.serializer(), ChartSettings())
+        val recordsJson = json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(selection))
+        val settingsJson = json.encodeToString(ChartSettings.serializer(), ChartSettings())
         appDatabase.withTransaction {
             dataViewDao.insert(
                 DataViewEntity(
