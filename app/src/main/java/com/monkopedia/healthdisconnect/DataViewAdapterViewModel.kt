@@ -113,10 +113,13 @@ class DataViewAdapterViewModel(
             if (exception is CancellationException) {
                 throw exception
             }
+            // Same reason as the DataStore migration below: this path decodes saved views
+            // (decodeDataViewEntity above), so the exception message can embed the view's JSON.
+            // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
             Log.w(
                 TAG,
-                "Legacy view-name migration failed; will retry on next launch",
-                exception
+                "Legacy view-name migration failed (${exception.errorLabel()}); " +
+                    "will retry on next launch"
             )
         }
     }
