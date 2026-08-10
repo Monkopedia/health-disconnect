@@ -110,14 +110,6 @@ fun DataViewAdapter(
     var headerClickJob by remember { mutableStateOf<Job?>(null) }
     var renameTargetId by remember { mutableStateOf<Int?>(null) }
     var renameText by remember { mutableStateOf("") }
-    fun headerTitle(page: Int): String {
-        return if (page < viewCount) {
-            val id = listInfo!!.ordering[page]
-            listInfo!!.dataViews[id]?.name ?: ""
-        } else {
-            createViewTitle
-        }
-    }
     Box(modifier = modifier.fillMaxSize()) {
         HorizontalPager(
             state = pagerState,

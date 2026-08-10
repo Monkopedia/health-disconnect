@@ -685,9 +685,6 @@ class DefaultHealthRecordMeasurementExtractor : HealthRecordMeasurementExtractor
         const val BLOOD_PRESSURE_DIASTOLIC_METRIC_KEY = "blood_pressure_diastolic"
         const val NUTRITION_ENERGY_FROM_FAT_METRIC_KEY = "nutrition_energy_from_fat"
         const val NUTRITION_PROTEIN_METRIC_KEY = "nutrition_protein"
-        const val NUTRITION_TOTAL_CARBOHYDRATE_METRIC_KEY = "nutrition_total_carbohydrate"
-        const val NUTRITION_TOTAL_FAT_METRIC_KEY = "nutrition_total_fat"
         const val NUTRITION_SUGAR_METRIC_KEY = "nutrition_sugar"
-        const val NUTRITION_DIETARY_FIBER_METRIC_KEY = "nutrition_dietary_fiber"
     }
 }
