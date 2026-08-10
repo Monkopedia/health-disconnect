@@ -38,6 +38,17 @@ jobs:
       - name: Run unit tests
         run: ./gradlew testProdDebugUnitTest
 
+      # The demo flavor is ~700 lines that no other CI step builds — it is absent from every
+      # gradle invocation in this workflow and from testProdDebugUnitTest's task graph. It does
+      # not ship (release.yml builds prod only), so this is not a release guard; it protects the
+      # flavor used for on-device rendering verification, whose DemoDataSeeder calls
+      # encodeDataViewEntity and would otherwise rot silently until someone needed it. See #65.
+      #
+      # Deliberately a compile-only check and NOT ./gradlew allTests: whether CI should run the
+      # full gate (lint, androidTest compile) is a separate, larger decision tracked in #68.
+      - name: Compile demo flavor
+        run: ./gradlew :app:compileDemoDebugSources
+
       # Release-build guard for #56: the app identifies Health Connect record types by
       # KClass.qualifiedName (persisted in saved views) and labels them by simpleName, so if R8
       # obfuscates androidx.health.connect.client.records.** those names go unstable and every
@@ -101,17 +112,57 @@ jobs:
             echo "No screenshot baseline changes to commit."
           fi
 
+      # Publish on SUCCESS as well as failure. Previously `if: failure()`, which meant a green
+      # run produced no test report at all — so the only way to see what a passing run actually
+      # did was to have a local checkout. That makes a green tick unauditable by a reviewer who
+      # is not on the build machine, which is most of them.
       - name: Upload test results
-        if: failure()
+        if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: app/build/reports/tests/testProdDebugUnitTest/
+          # `warn`, not `error`. `error` was tempting — a report that stops being produced should
+          # be loud — but it fires in exactly the wrong case: a build that fails BEFORE the tests
+          # run (compile error, or the #18 task-timeout hard-kill, which the comment at
+          # build.gradle.kts:373 notes kills the worker without writing a report) produces no
+          # report directory at all. The step still runs on failure, so `error` would stack a
+          # second, misleading upload failure onto a job that already failed for a real reason.
+          # Verified by reproducing it: a deliberate compile error leaves this directory absent.
+          if-no-files-found: warn
 
-      - name: Upload screenshot diffs
-        if: success() || failure()
+      # The rendered screenshots, so a passing run is inspectable by a reviewer without a local
+      # checkout — previously nothing at all was published on a green run.
+      #
+      # Gated identically to the record step above, deliberately. On a fork PR or a push to main
+      # that step is skipped, so nothing re-renders and this would upload a byte-for-byte copy of
+      # what is already committed in git — 6.3 MiB carrying zero information. Uploading only when
+      # something was actually rendered is what makes the artifact mean anything.
+      #
+      # `error` is safe HERE (unlike on the test report above) because this directory is committed
+      # to the repo: if the run got far enough to record, the path exists. It fires only if a
+      # future change moves or deletes the baselines, which is precisely when we want to know.
+      - name: Upload rendered screenshots
+        if: >-
+          (success() || failure()) &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/upload-artifact@v4
         with:
-          name: roborazzi-screenshot-diffs
-          path: app/build/outputs/roborazzi/
-          if-no-files-found: ignore
+          name: roborazzi-screenshots
+          path: app/src/test/screenshots/
+          if-no-files-found: error
+
+      # The "Upload screenshot diffs" step that used to live here has been REMOVED rather than
+      # made noisier. It pointed at app/build/outputs/roborazzi/, which is Roborazzi's *compare*
+      # output — and build.gradle.kts:301 sets `roborazzi.test.compare = "false"` on every subset
+      # task, record and verify alike. So nothing this workflow runs has ever written to that
+      # directory, and the step has never uploaded a single file.
+      #
+      # It was masked by `if-no-files-found: ignore`, which made it report success while doing
+      # nothing. Changing that to `warn` would have made it honest and permanently useless: a
+      # warning on every run, forever, that can never indicate anything actionable. A step that
+      # cannot produce output is not observability, it is furniture.
+      #
+      # If the verify gate is ever wired up (#64) and compare output is re-enabled, restore this
+      # step then — with a path that something actually writes to.

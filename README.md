@@ -15,11 +15,11 @@ rendering metric charts, and managing multiple chart views.
 - Build debug APK:
   - `./gradlew assembleDebug`
 - Run local unit tests:
-  - `./gradlew :app:testDebugUnitTest`
+  - `./gradlew :app:testProdDebugUnitTest`
 - Run full local verification (unit + screenshot capture):
   - `./gradlew :app:allTests`
 - Run only screenshot rendering:
-  - `./gradlew :app:recordRoborazziDebug`
+  - `./gradlew :app:roborazziGate`
 
 ## Repo Conventions
 

@@ -47,5 +47,5 @@
   - `app/build/outputs/roborazzi/screens`
   - side-by-side dashboard in `app/build/reports/roborazzi/debug/index.html`
 - If outputs appear stale in a browser, hard-refresh and clear cache.
-- If a screenshot appears empty, rerun `./gradlew :app:recordRoborazziDebug` to regenerate.
+- If a screenshot appears empty, rerun `./gradlew :app:roborazziGate` to regenerate.
 

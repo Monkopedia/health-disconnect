@@ -7,8 +7,6 @@ import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
-import com.monkopedia.healthdisconnect.model.RecordSelection
-import com.monkopedia.healthdisconnect.model.YAxisMode
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
