@@ -22,9 +22,10 @@ import org.junit.Test
  * The `buckets` list also omitted `smallphone`, leaving a quarter of the matrix unexamined even
  * once the path was correct.
  *
- * Scope note: this fixes findings (b) and (d) of #64 only. The suite still RECORDS rather than
- * verifies — `verifyRoborazziGate` remains registered and unwired — which is finding (a) and an
- * open decision. Nothing here compares pixels; this asserts only which screens exist.
+ * Scope note: this fixes findings (a) and (d) of #64 only. The suite still RECORDS rather than
+ * verifies — `verifyRoborazziGate` remains registered and unwired — which is finding (b) and an
+ * open decision. Finding (c), a screen with no baseline in any bucket, is also untouched. Nothing
+ * here compares pixels; this asserts only which screens exist.
  */
 class ScreenRoborazziDashboardIntegrityTest {
 
@@ -49,20 +50,24 @@ class ScreenRoborazziDashboardIntegrityTest {
             }?.map { it.name.removeSuffix("_$bucket.png") }?.toSet() ?: emptySet()
         }
 
-        val nonEmpty = screensByBucket.filterValues { it.isNotEmpty() }
-        if (nonEmpty.size < 2) {
+        // Every bucket must be populated. Filtering empty buckets out of the comparison (the
+        // previous behaviour) meant an ENTIRE dashboard could be deleted and the survivors would
+        // still agree with each other, so the test passed — the same "clean answer and did-not-run
+        // answer are indistinguishable" defect as the early returns above, one level up. Demonstrated
+        // during review: removing all 40 *_smallphone.png left this test green.
+        val emptyBuckets = screensByBucket.filterValues { it.isEmpty() }.keys
+        if (emptyBuckets.isNotEmpty()) {
             fail(
-                "Expected baselines in at least 2 of the ${buckets.size} size buckets to compare, " +
-                    "but found: " +
+                "No baselines found for size bucket(s): ${emptyBuckets.joinToString()}. Counts: " +
                     screensByBucket.entries.joinToString { "${it.key}=${it.value.size}" } +
-                    ". With fewer than two populated buckets there is nothing to cross-check, so " +
-                    "this is a failure rather than a silent pass."
+                    ". A bucket vanishing entirely is precisely the regression this test exists to " +
+                    "catch, so it fails rather than being dropped from the comparison."
             )
         }
 
-        val allScreens = nonEmpty.values.reduce { acc, set -> acc union set }
+        val allScreens = screensByBucket.values.reduce { acc, set -> acc union set }
 
-        nonEmpty.forEach { (bucket, screens) ->
+        screensByBucket.forEach { (bucket, screens) ->
             val missing = allScreens - screens
             assertTrue(
                 "Screens missing on $bucket dashboard: ${missing.joinToString()}",
