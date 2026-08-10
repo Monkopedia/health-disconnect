@@ -2,7 +2,6 @@ package com.monkopedia.healthdisconnect.room
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.ViewType
 
 @Entity(tableName = "data_views")

@@ -2,7 +2,6 @@
     <string name="app_name">Health Disconnect</string>
     <string name="loading_message">Loading…</string>
     <string name="settings_title">Settings</string>
-    <string name="settings_placeholder">This is where the settings will go.</string>
     <string name="settings_hc_available">Health Connect is available on this device.</string>
     <string name="settings_hc_unavailable">Health Connect is not available on this device.</string>
     <string name="settings_permissions_granted">Base read permissions: granted.</string>
@@ -54,7 +53,6 @@
     <string name="data_view_no_graphable">No graphable metric values available yet.</string>
     <string name="data_view_no_graphable_with_hint">No graphable values in the current filters. Try setting Time window to All.</string>
     <string name="data_view_showing_first_metrics">Showing first %1$d selected metrics.</string>
-    <string name="data_view_showing_latest_entries">Showing latest %1$d of %2$d entries.</string>
     <string name="data_view_entries_count">Entries (%1$d)</string>
     <string name="data_view_view_entries">View entries</string>
     <string name="data_view_back">Back</string>
@@ -118,7 +116,6 @@
     <string name="data_view_export_error_title">Export Failed</string>
     <string name="data_view_export_failed">Could not export data right now. Please try again.</string>
     <string name="graph_share_button_content_description">Share graph image</string>
-    <string name="graph_share_dialog_title">Share Graph</string>
     <string name="graph_share_actions_title">Share Options</string>
     <string name="graph_share_action_graph">Share graph image</string>
     <string name="graph_share_action_entries">Share entries CSV</string>
