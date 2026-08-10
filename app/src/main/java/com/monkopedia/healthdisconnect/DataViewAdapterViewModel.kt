@@ -150,10 +150,15 @@ class DataViewAdapterViewModel(
             if (exception is CancellationException) {
                 throw exception
             }
+            // Deliberately NOT passing the throwable: on this path it is a CorruptionException
+            // wrapping a SerializationException whose message embeds the entire legacy DataStore
+            // blob — every saved view and every health record type the user tracks. Log.w(tag, msg,
+            // tr) emits getStackTraceString, which includes the `Caused by:` message, so passing it
+            // would put that whole corpus in logcat. See errorLabel in StorageJson.kt.
             Log.w(
                 TAG,
-                "Migration from DataStore to Room failed; migration will retry on next launch",
-                exception
+                "Migration from DataStore to Room failed (${exception.errorLabel()}); " +
+                    "migration will retry on next launch"
             )
         }
     }

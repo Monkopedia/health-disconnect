@@ -79,9 +79,6 @@ private fun decodeRecordSelections(entity: DataViewEntity, json: Json): List<Rec
     }
 }
 
-/** The exception's type, for logs — deliberately excluding the message, which embeds the JSON. */
-private fun Throwable.errorLabel(): String = this::class.simpleName ?: "unknown error"
-
 internal fun encodeDataViewEntity(view: DataView, json: Json = StorageJson): DataViewEntity {
     val recordsJson = json.encodeToString(
         ListSerializer(RecordSelection.serializer()),
