@@ -44,7 +44,8 @@ class DataViewAdapterViewModel(
 ) : AndroidViewModel(app) {
 
     private val context = getApplication<Application>()
-    private val json = Json
+    // Durable store — see StorageJson: reads must tolerate rows written by a different build.
+    private val json = StorageJson
 
     // Expose DataViewInfoList as Flow to match existing consumers
     val dataViews: Flow<DataViewInfoList?> = dataViewInfoDao.allOrdered().map { list ->
@@ -112,10 +113,13 @@ class DataViewAdapterViewModel(
             if (exception is CancellationException) {
                 throw exception
             }
+            // Same reason as the DataStore migration below: this path decodes saved views
+            // (decodeDataViewEntity above), so the exception message can embed the view's JSON.
+            // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
             Log.w(
                 TAG,
-                "Legacy view-name migration failed; will retry on next launch",
-                exception
+                "Legacy view-name migration failed (${exception.errorLabel()}); " +
+                    "will retry on next launch"
             )
         }
     }
@@ -149,10 +153,15 @@ class DataViewAdapterViewModel(
             if (exception is CancellationException) {
                 throw exception
             }
+            // Deliberately NOT passing the throwable: on this path it is a CorruptionException
+            // wrapping a SerializationException whose message embeds the entire legacy DataStore
+            // blob — every saved view and every health record type the user tracks. Log.w(tag, msg,
+            // tr) emits getStackTraceString, which includes the `Caused by:` message, so passing it
+            // would put that whole corpus in logcat. See errorLabel in StorageJson.kt.
             Log.w(
                 TAG,
-                "Migration from DataStore to Room failed; migration will retry on next launch",
-                exception
+                "Migration from DataStore to Room failed (${exception.errorLabel()}); " +
+                    "migration will retry on next launch"
             )
         }
     }
@@ -199,8 +208,8 @@ class DataViewAdapterViewModel(
         val maxOrdering = dataViewInfoDao.maxOrdering() ?: 0
         val nextOrder = maxOrdering + 1
         val newId = nextOrder
-        val recordsJson = Json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(selection))
-        val settingsJson = Json.encodeToString(ChartSettings.serializer(), ChartSettings())
+        val recordsJson = json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(selection))
+        val settingsJson = json.encodeToString(ChartSettings.serializer(), ChartSettings())
         appDatabase.withTransaction {
             dataViewDao.insert(
                 DataViewEntity(
