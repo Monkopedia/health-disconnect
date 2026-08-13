@@ -68,7 +68,13 @@ abstract class BaseScreenRoborazziTest {
         // and the "Last refreshed" header are stable run-to-run. Representative data is generated
         // relative to it (below) so charts fill the plot area instead of squishing to the edge.
         val FIXED_NOW: Instant = Instant.parse("2026-02-15T09:30:00Z")
-        val FIXED_CLOCK: Clock = Clock.fixed(FIXED_NOW, ZoneId.systemDefault())
+        // UTC explicitly, not systemDefault(). A fixed instant with a FLOATING zone is what made 60
+        // of the 160 baselines unreproducible off-CI: the instant was pinned, the zone was whatever
+        // the machine said, so every rendered clock face shifted with the developer's locale. The
+        // Gradle config also forces the test JVM to UTC, which is what makes the suite reproducible
+        // — but that lives in app/build.gradle.kts, and someone debugging a baseline diff will be
+        // reading THIS line. Stating it here too costs nothing and changes no baseline.
+        val FIXED_CLOCK: Clock = Clock.fixed(FIXED_NOW, ZoneId.of("UTC"))
     }
 
     @Test
@@ -749,7 +755,7 @@ abstract class BaseScreenRoborazziTest {
         val records = emptyList<Record>()
         // One daily min/avg/max sample across the full 30-day window ending at the frozen clock,
         // so the shaded envelope and avg line span the whole plot width instead of a left sliver.
-        val today = FIXED_NOW.atZone(ZoneId.systemDefault()).toLocalDate()
+        val today = FIXED_NOW.atZone(ZoneId.of("UTC")).toLocalDate()
         val dates = (0..29).map { today.minusDays((29 - it).toLong()) }
         val avg = dates.indices.map { 66.0 + 6.0 * kotlin.math.sin(it / 5.0) }
         val lows = avg.map { it - 12.0 }

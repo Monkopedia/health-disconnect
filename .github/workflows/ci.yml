@@ -81,9 +81,15 @@ jobs:
           fi
           echo "OK: Health Connect record classes retain their real names in the R8 mapping."
 
-      # Screenshot baselines (app/src/test/screenshots) drift across environments
-      # (font/anti-aliasing) when recorded locally, so instead of verifying against a
-      # possibly-stale golden we RECORD them in the CI environment and auto-commit any
+      # Screenshot baselines (app/src/test/screenshots) have historically not reproduced
+      # off-CI, so instead of verifying against a possibly-stale golden we RECORD them in
+      # the CI environment and auto-commit any
+      #
+      # The "font/anti-aliasing drift" this comment used to assert was measured and is WRONG:
+      # 60 of the 72 divergent baselines were a timezone bug (a fixed instant rendered through
+      # ZoneId.systemDefault()), fixed by pinning the test JVM to UTC. The remaining 12 are the
+      # scroll-offset family in #73 -- +/-1 LSB antialias rounding at subpixel positions. Left
+      # here because the wrong explanation sent one investigation down a dead end already.
       # change back to the PR branch. The reviewer then sees the real CI-rendered diff on
       # the PR. This records, it does not gate — the unit-test step above is the test gate.
       #
