@@ -205,12 +205,27 @@ class DataViewAdapterViewModel(
         selection: com.monkopedia.healthdisconnect.model.RecordSelection,
         name: String
     ) {
-        val maxOrdering = dataViewInfoDao.maxOrdering() ?: 0
-        val nextOrder = maxOrdering + 1
-        val newId = nextOrder
         val recordsJson = json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(selection))
         val settingsJson = json.encodeToString(ChartSettings.serializer(), ChartSettings())
+        // The id must be read and written in one transaction. Reading MAX(...) outside it makes
+        // this a read-modify-write race: CreateViewView launches one createView per tap with no
+        // debounce, so overlapping calls all read the same maximum, all mint the same id, and
+        // because both DAOs insert with OnConflictStrategy.REPLACE (SQLite DELETE + INSERT) the
+        // later inserts silently destroy the earlier saved views. That race is the reachable
+        // defect behind issue #82.
         appDatabase.withTransaction {
+            val maxOrdering = dataViewInfoDao.maxOrdering() ?: 0
+            val maxId = dataViewInfoDao.maxId() ?: 0
+            val nextOrder = maxOrdering + 1
+            // Mint the id from the id space, not from ordering. Nothing guarantees id == ordering
+            // in general: migrateLegacyDataStoreIntoRoom preserves legacy ids while renumbering
+            // ordering to index + 1, so MAX(ordering) can in principle sit below MAX(id). (That
+            // divergence is defensive rather than observed — the legacy DataStore writer had no
+            // delete path, so legacy ids were always contiguous 1..n and the migration produced
+            // ordering == id. No shipped build can have written a legacy store that diverges.)
+            // Deriving the id from ordering when it does diverge mints an id that already exists,
+            // and the REPLACE insert then destroys the existing saved view.
+            val newId = maxOf(maxId, maxOrdering) + 1
             dataViewDao.insert(
                 DataViewEntity(
                     id = newId,

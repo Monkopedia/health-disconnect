@@ -28,8 +28,11 @@ import com.monkopedia.healthdisconnect.room.DataViewInfoDao
 import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
 import java.lang.reflect.Field
 import androidx.datastore.preferences.core.edit
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.builtins.ListSerializer
@@ -293,6 +296,129 @@ class DataViewAdapterViewModelTest {
         assertEquals(WeightRecord::class.qualifiedName, view.records.single().fqn)
         assertEquals(ChartSettings(timeWindow = TimeWindow.YEAR_1), view.chartSettings)
         assertTrue(isLegacyMigrationComplete())
+    }
+
+    /**
+     * Defensive regression for #82: `createView` used to mint the new id from `MAX(ordering)`,
+     * which is only correct while `id == ordering` for every row. The legacy migration preserves
+     * the legacy `id` but renumbers `ordering` to `index + 1`, so a legacy store with a gap in its
+     * ids would leave the ordering counter below the id counter — here a single legacy view at
+     * id 11 lands at ordering 1. Successive creates then mint 2, 3, 4 … and the tenth mints id 11,
+     * whose `OnConflictStrategy.REPLACE` insert silently DELETEs + re-INSERTs the migrated row.
+     *
+     * No shipped build can actually produce that precondition: the pre-Room DataStore writer had
+     * no delete path, so legacy ids were always contiguous `1..n` and the migration produced
+     * `ordering == id`. This pins the hardening, not a field failure — the field-reachable defect
+     * is covered by `concurrent createView calls do not collide on the same id`.
+     */
+    @Test
+    fun `createView does not clobber a migrated view whose id exceeds max ordering`() = runBlocking {
+        val migratedId = 11
+        val migratedInfo = DataViewInfo(migratedId, "Migrated Weight")
+        val migratedView = DataView(
+            id = migratedId,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(WeightRecord::class)),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.YEAR_1)
+        )
+
+        app.dataViewInfoDataStore.updateData {
+            DataViewInfoList(dataViews = mapOf(migratedId to migratedInfo), ordering = listOf(migratedId))
+        }
+        app.dataViewDataStore.updateData { DataViewList(views = mapOf(migratedId to migratedView)) }
+        app.migrationStateDataStore.edit { it.clear() }
+
+        val viewModel = dataViewAdapterViewModel(runLegacyMigrationOnInit = false)
+        viewModel.migrateLegacyDataStoreIfNeededForTest()
+
+        // Post-migration the row is (id = 11, ordering = 1): the id space and the ordering space
+        // have diverged.
+        assertEquals(migratedId, infoDao.getById(migratedId)?.id)
+        assertEquals(1, infoDao.getById(migratedId)?.ordering)
+
+        // Ten creates walk the ordering counter 2 → 11. The tenth is the one that collides.
+        repeat(10) {
+            viewModel.createView(DistanceRecord::class)
+        }
+
+        val survivingInfo = infoDao.getById(migratedId)
+        assertEquals(
+            "migrated view at id $migratedId was overwritten by createView",
+            "Migrated Weight",
+            survivingInfo?.name
+        )
+
+        val survivingEntity = viewDao.getById(migratedId)
+        assertTrue(
+            "migrated view row at id $migratedId is missing",
+            survivingEntity != null
+        )
+        val decoded = decodeDataViewEntity(survivingEntity!!)
+        assertEquals(
+            "migrated view's records were overwritten by createView",
+            WeightRecord::class.qualifiedName,
+            decoded.records.single().fqn
+        )
+        assertEquals(
+            "migrated view's chart settings were overwritten by createView",
+            ChartSettings(timeWindow = TimeWindow.YEAR_1),
+            decoded.chartSettings
+        )
+
+        // Nothing was lost: the migrated view plus ten new ones.
+        assertEquals(11, infoDao.count())
+        assertEquals(11, countDataViews())
+    }
+
+    /**
+     * Regression for the reachable half of #82: `createView` read `maxOrdering()`/`maxId()` outside
+     * the `withTransaction` block, making it a read-modify-write race. `ui/CreateViewView.kt` fires
+     * one `scope.launch { viewModel.createView(...) }` per tap with no debounce, so overlapping
+     * creates are user-reachable — and because both DAOs insert with `OnConflictStrategy.REPLACE`
+     * (SQLite DELETE + INSERT), the losers of the race silently destroy the winner's row instead of
+     * getting ids of their own.
+     *
+     * Three concurrent creates must leave three distinct rows behind.
+     */
+    @Test
+    fun `concurrent createView calls do not collide on the same id`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+
+        coroutineScope {
+            listOf(
+                WeightRecord::class,
+                DistanceRecord::class,
+                NutritionRecord::class
+            ).map { cls ->
+                launch { viewModel.createView(cls) }
+            }.joinAll()
+        }
+
+        val infos = infoDao.allOrderedSnapshot()
+        assertEquals(
+            "concurrent createView calls clobbered each other; surviving rows: " +
+                infos.map { "${it.id}:${it.name}" },
+            3,
+            infos.size
+        )
+        assertEquals(
+            "concurrent createView calls minted duplicate ids: ${infos.map { it.id }}",
+            3,
+            infos.map { it.id }.toSet().size
+        )
+        assertEquals(
+            "data_views rows were clobbered by concurrent createView calls",
+            3,
+            countDataViews()
+        )
+        // Every info row must still have its matching view row: a REPLACE that lands on an existing
+        // id destroys the pair, not just one side of it.
+        infos.forEach { info ->
+            assertTrue(
+                "view row missing for info id ${info.id}",
+                viewDao.getById(info.id) != null
+            )
+        }
     }
 
     @Test

@@ -48,6 +48,14 @@ interface DataViewInfoDao {
     @Query("SELECT MAX(ordering) FROM data_view_info")
     suspend fun maxOrdering(): Int?
 
+    // The id space and the ordering space are independent: the legacy DataStore migration
+    // preserves legacy ids but renumbers ordering, so MAX(ordering) can in principle sit below
+    // MAX(id). (Defensive, not observed: the legacy writer had no delete path, so legacy ids were
+    // contiguous 1..n and the migration produced ordering == id.) A new id must be minted from
+    // this, never from maxOrdering — see issue #82.
+    @Query("SELECT MAX(id) FROM data_view_info")
+    suspend fun maxId(): Int?
+
     @Query("SELECT COUNT(*) FROM data_view_info")
     suspend fun count(): Int
 
