@@ -295,6 +295,73 @@ class DataViewAdapterViewModelTest {
         assertTrue(isLegacyMigrationComplete())
     }
 
+    /**
+     * Regression for #82: `createView` used to mint the new id from `MAX(ordering)`, which is only
+     * correct while `id == ordering` for every row. The legacy migration deliberately breaks that
+     * — it preserves the legacy `id` but renumbers `ordering` to `index + 1` — so after migrating a
+     * single legacy view at id 11 the ordering counter sits at 1. Successive creates then mint
+     * 2, 3, 4 … and the tenth create mints id 11, whose `OnConflictStrategy.REPLACE` insert
+     * silently DELETEs + re-INSERTs the migrated row, destroying its name, records and settings.
+     */
+    @Test
+    fun `createView does not clobber a migrated view whose id exceeds max ordering`() = runBlocking {
+        val migratedId = 11
+        val migratedInfo = DataViewInfo(migratedId, "Migrated Weight")
+        val migratedView = DataView(
+            id = migratedId,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(WeightRecord::class)),
+            chartSettings = ChartSettings(timeWindow = TimeWindow.YEAR_1)
+        )
+
+        app.dataViewInfoDataStore.updateData {
+            DataViewInfoList(dataViews = mapOf(migratedId to migratedInfo), ordering = listOf(migratedId))
+        }
+        app.dataViewDataStore.updateData { DataViewList(views = mapOf(migratedId to migratedView)) }
+        app.migrationStateDataStore.edit { it.clear() }
+
+        val viewModel = dataViewAdapterViewModel(runLegacyMigrationOnInit = false)
+        viewModel.migrateLegacyDataStoreIfNeededForTest()
+
+        // Post-migration the row is (id = 11, ordering = 1): the id space and the ordering space
+        // have diverged.
+        assertEquals(migratedId, infoDao.getById(migratedId)?.id)
+        assertEquals(1, infoDao.getById(migratedId)?.ordering)
+
+        // Ten creates walk the ordering counter 2 → 11. The tenth is the one that collides.
+        repeat(10) {
+            viewModel.createView(DistanceRecord::class)
+        }
+
+        val survivingInfo = infoDao.getById(migratedId)
+        assertEquals(
+            "migrated view at id $migratedId was overwritten by createView",
+            "Migrated Weight",
+            survivingInfo?.name
+        )
+
+        val survivingEntity = viewDao.getById(migratedId)
+        assertTrue(
+            "migrated view row at id $migratedId is missing",
+            survivingEntity != null
+        )
+        val decoded = decodeDataViewEntity(survivingEntity!!)
+        assertEquals(
+            "migrated view's records were overwritten by createView",
+            WeightRecord::class.qualifiedName,
+            decoded.records.single().fqn
+        )
+        assertEquals(
+            "migrated view's chart settings were overwritten by createView",
+            ChartSettings(timeWindow = TimeWindow.YEAR_1),
+            decoded.chartSettings
+        )
+
+        // Nothing was lost: the migrated view plus ten new ones.
+        assertEquals(11, infoDao.count())
+        assertEquals(11, countDataViews())
+    }
+
     @Test
     fun `legacy migration repairs mismatched room rows before completion`() = runBlocking {
         val id = 22

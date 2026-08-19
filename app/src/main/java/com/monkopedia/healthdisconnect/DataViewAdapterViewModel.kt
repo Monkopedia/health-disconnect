@@ -206,8 +206,14 @@ class DataViewAdapterViewModel(
         name: String
     ) {
         val maxOrdering = dataViewInfoDao.maxOrdering() ?: 0
+        val maxId = dataViewInfoDao.maxId() ?: 0
         val nextOrder = maxOrdering + 1
-        val newId = nextOrder
+        // Mint the id from the id space, not from ordering. id and ordering are only equal on
+        // installs that never went through migrateLegacyDataStoreIntoRoom, which preserves legacy
+        // ids while renumbering ordering to index + 1. Deriving the id from ordering there mints an
+        // id that already exists, and both DAOs insert with OnConflictStrategy.REPLACE (DELETE +
+        // INSERT), so it silently destroys the existing saved view. See issue #82.
+        val newId = maxOf(maxId, maxOrdering) + 1
         val recordsJson = json.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.monkopedia.healthdisconnect.model.RecordSelection.serializer()), listOf(selection))
         val settingsJson = json.encodeToString(ChartSettings.serializer(), ChartSettings())
         appDatabase.withTransaction {
