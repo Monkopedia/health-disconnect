@@ -76,6 +76,29 @@ class HealthDataWidgetProvider : AppWidgetProvider() {
         }
     }
 
+    /**
+     * `onDisabled` fires when the last widget instance for this provider goes away. Pending pin
+     * requests are only ever claimed by an *unbound widget id* in [onUpdate], so with zero
+     * instances left nothing can legitimately claim them — anything still queued is an orphan
+     * from a pin the user dismissed or a callback that never arrived (issue #85). Drain it here
+     * rather than letting it sit until some future widget pops it off the head and binds itself
+     * to a view the user never chose.
+     */
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        logWidgetFlow("HealthDataWidgetProvider.onDisabled")
+        val pendingResult = goAsync()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                context.clearPendingWidgetRequests()
+            } catch (exception: Exception) {
+                logWidgetFlowError("HealthDataWidgetProvider.onDisabled failed", exception)
+            } finally {
+                pendingResult.finish()
+            }
+        }
+    }
+
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         logWidgetFlow("HealthDataWidgetProvider.onEnabled")
