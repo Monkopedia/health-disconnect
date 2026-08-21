@@ -15,7 +15,7 @@ plugins {
 
 android {
     namespace = "com.monkopedia.healthdisconnect"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.monkopedia.healthdisconnect"
@@ -158,6 +158,24 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.androidx.ui.test.junit4)
     testImplementation(libs.androidx.ui.test.manifest)
+    // Pulls the unit-test classpath up to the espresso-core 3.7.0 that androidTest already
+    // declares. NOT a new dependency -- ui-test-junit4 drags espresso-core in transitively and was
+    // resolving 3.5.1 here; this is the version alignment, nothing more.
+    //
+    // Honest status at the CURRENT targetSdk (36): this line is NOT load-bearing. Measured on this
+    // branch -- remove it, and prodDebugUnitTestRuntimeClasspath falls back to espresso-core 3.5.1
+    // and all 352 unit tests still pass. Do not read a live breakage into it.
+    //
+    // Why keep it anyway. Compose's Robolectric idling strategy routes through Espresso.onIdle,
+    // which builds Espresso's InputManagerEventInjectionStrategy; that reflects for
+    // android.hardware.input.InputManager#getInstance(), a hidden static the platform REMOVED in
+    // API 37 (present in android-all-instrumented-16, absent in -17). Robolectric picks its
+    // android-all jar from targetSdk, so at 36 the method is still there and eager 3.5.1 resolves
+    // it fine; at targetSdk 37 it is gone and 18 Compose UI tests die at Espresso.onIdle. 3.7.0
+    // wraps the lookup in a lazy ReflectiveMethod and tolerates its absence. Keeping the alignment
+    // costs nothing, matches androidTest, and is a precondition for the targetSdk 37 work
+    // (see #91) rather than a fix for anything currently broken.
+    testImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -431,4 +449,30 @@ ksp {
 // breaks F-Droid reproducible builds.
 tasks.matching { it.name.contains("ArtProfile") }.configureEach {
     enabled = false
+}
+
+// REQUIRED BY ROBOLECTRIC 4.17 AT EVERY targetSdk — DO NOT DELETE.
+//
+// This has nothing to do with the SDK level. It was first hit while targetSdk was 37, but it was
+// measured directly at targetSdk 36 as well: deleting these two lines on Robolectric 4.17-beta-3
+// with targetSdk = 36 fails 307 of the 352 unit tests -- every Robolectric-backed test -- with
+//   java.lang.RuntimeException: Failed to interact with raw FileDescriptor internals;
+//                               perhaps JRE has changed?
+//     at AndroidInterceptors$FileDescriptorInterceptor.setInt(AndroidInterceptors.java:88)
+//   Caused by: java.lang.IllegalAccessException: ... cannot access class
+//     jdk.internal.access.SharedSecrets (in module java.base) because module java.base does not
+//     export jdk.internal.access to unnamed module
+//
+// Cause: 4.17's AndroidTestEnvironment boots through
+// com.android.internal.os.ApplicationSharedMemory (referenced 3x in 4.17-beta-3, 0x in 4.16.1),
+// whose create() path drives Robolectric's FileDescriptorInterceptor, which reflects into
+// jdk.internal.access.SharedSecrets — a package java.base does not export to the unnamed module
+// under JDK 21's default module policy. Opening the package is the documented fix. It is a JVM
+// module-access requirement of Robolectric 4.17 itself, so it stands or falls with the
+// Robolectric version, never with compileSdk/targetSdk.
+//
+// Applied to every Test task because the four screenshot subsets are separate Test tasks and
+// inherit nothing from the base one.
+tasks.withType<Test>().configureEach {
+    jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
 }
