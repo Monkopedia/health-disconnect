@@ -15,12 +15,12 @@ plugins {
 
 android {
     namespace = "com.monkopedia.healthdisconnect"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.monkopedia.healthdisconnect"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 12
         versionName = "1.2.2"
 
@@ -158,6 +158,17 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.androidx.ui.test.junit4)
     testImplementation(libs.androidx.ui.test.manifest)
+    // Compose's Robolectric idling strategy routes through Espresso.onIdle, which builds
+    // Espresso's InputManagerEventInjectionStrategy. That reflects for
+    // android.hardware.input.InputManager#getInstance(), a hidden static the platform REMOVED in
+    // API 37 (present in android-all 16, absent in 17). ui-test-junit4 drags in espresso-core
+    // 3.5.1 transitively and 3.5.1 calls it eagerly, so every Compose UI test died at
+    // Espresso.onIdle once targetSdk hit 37. We already declare espresso-core 3.7.0, but only for
+    // androidTest, so the unit-test classpath never saw it; 3.7.0 makes the lookup lazy and
+    // tolerates its absence. Declared here to pull the unit-test classpath up to the same
+    // version androidTest already uses -- NOT a new dependency, just the one we have applied
+    // where it was missing.
+    testImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -431,4 +442,16 @@ ksp {
 // breaks F-Droid reproducible builds.
 tasks.matching { it.name.contains("ArtProfile") }.configureEach {
     enabled = false
+}
+
+// Robolectric 4.17 boots API 37 through com.android.internal.os.ApplicationSharedMemory, whose
+// create() path drives Robolectric's FileDescriptorInterceptor. That interceptor reflects into
+// jdk.internal.access.SharedSecrets, which java.base does not export to the unnamed module under
+// JDK 21's default module policy — so every Robolectric test failed at setUpApplicationState with
+// "Failed to interact with raw FileDescriptor internals; perhaps JRE has changed?" the moment
+// targetSdk moved to 37. This is a JVM module-access requirement of the newer Robolectric, not a
+// version incompatibility: opening the package is the documented fix and it applies to every Test
+// task (the screenshot subsets are separate Test tasks and inherit nothing from the base one).
+tasks.withType<Test>().configureEach {
+    jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
 }
