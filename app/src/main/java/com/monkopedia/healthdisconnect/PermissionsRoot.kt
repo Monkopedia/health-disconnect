@@ -72,6 +72,8 @@ internal fun PermissionsGatedRoot(
         }
     } else {
         LaunchedEffect(Unit) {
+            // refreshMetricsWithData() logs and returns on failure rather than throwing; an
+            // exception escaping this LaunchedEffect kills the process (issue #89).
             healthDataModel.refreshMetricsWithData()
         }
         permittedContent()

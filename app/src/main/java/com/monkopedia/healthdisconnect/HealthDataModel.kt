@@ -156,12 +156,34 @@ class HealthDataModel @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Reloads which metrics have data and publishes the result. **Never throws for a failed read**
+     * — a failure is logged and the previously published list is kept.
+     *
+     * Both UI callers invoke this straight from a coroutine whose failure would take the process
+     * down: the `LaunchedEffect` that runs on the first composition of [PermissionsGatedRoot], and
+     * pull-to-refresh in `DataViewView`. Neither had error handling of its own, so an escaping
+     * exception was a crash — issue #89, a launch crash for anyone whose Health Connect store makes
+     * one of the 38 reads fail. The guard lives here rather than at the call sites so a third
+     * caller cannot reintroduce it; [scheduleMetricsRefresh] applies the same policy.
+     */
     suspend fun refreshMetricsWithData() {
-        val values = loadMetricsWithData()
-        synchronized(metricsLock) {
-            metricsWithData.value = values
-            metricsLastRefreshTick = maxOf(metricsLastRefreshTick, 0)
-            metricsLoading = false
+        try {
+            val values = loadMetricsWithData()
+            synchronized(metricsLock) {
+                metricsWithData.value = values
+                metricsLastRefreshTick = maxOf(metricsLastRefreshTick, 0)
+            }
+        } catch (exception: Exception) {
+            if (exception is CancellationException) {
+                throw exception
+            }
+            // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
+            Log.w(LOG_TAG, "Failed to refresh metrics with data (${exception.errorLabel()})")
+        } finally {
+            synchronized(metricsLock) {
+                metricsLoading = false
+            }
         }
     }
 
@@ -187,7 +209,8 @@ class HealthDataModel @JvmOverloads constructor(
                 if (exception is CancellationException) {
                     throw exception
                 }
-                Log.w(LOG_TAG, "Failed to refresh metrics with data", exception)
+                // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
+                Log.w(LOG_TAG, "Failed to refresh metrics with data (${exception.errorLabel()})")
             } finally {
                 synchronized(metricsLock) {
                     metricsLoading = false
@@ -196,15 +219,41 @@ class HealthDataModel @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Probes all 38 record types concurrently for "does this metric have any data?".
+     *
+     * Each probe is isolated: a type whose read fails degrades to "no data for this metric" instead
+     * of failing the surrounding [coroutineScope] and, with it, the other 37 probes. Health Connect
+     * makes single-type failures ordinary — a read permission that was never granted throws
+     * SecurityException, and a record the library refuses to reconstruct (one stored with
+     * `startTime == endTime`, say) throws IllegalArgumentException — and one such record used to
+     * make the app permanently unlaunchable. See issue #89.
+     */
     private suspend fun loadMetricsWithData(): List<KClass<out Record>> {
         val counts = withContext(ioDispatcher) {
             coroutineScope {
                 PermissionsViewModel.CLASSES.map {
                     async {
-                        val hasRecords = gateway.hasRecordsForType(
-                            cls = it,
-                            now = timeProvider.now()
-                        )
+                        val hasRecords = try {
+                            gateway.hasRecordsForType(
+                                cls = it,
+                                now = timeProvider.now()
+                            )
+                        } catch (exception: Exception) {
+                            if (exception is CancellationException) {
+                                throw exception
+                            }
+                            // Log the kind of failure, never the throwable: Health Connect messages
+                            // quote the offending record. See errorLabel in StorageJson.kt. The
+                            // record class name is safe — it is a type, not user data, and
+                            // proguard-rules.pro keeps these names on release builds.
+                            Log.w(
+                                LOG_TAG,
+                                "No data reported for ${it.simpleName} " +
+                                    "(${exception.errorLabel()}); other metrics are unaffected"
+                            )
+                            false
+                        }
                         it to hasRecords
                     }
                 }.awaitAll()
