@@ -174,7 +174,7 @@ dependencies {
     // it fine; at targetSdk 37 it is gone and 18 Compose UI tests die at Espresso.onIdle. 3.7.0
     // wraps the lookup in a lazy ReflectiveMethod and tolerates its absence. Keeping the alignment
     // costs nothing, matches androidTest, and is a precondition for the targetSdk 37 work
-    // (see #67) rather than a fix for anything currently broken.
+    // (see #91) rather than a fix for anything currently broken.
     testImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
