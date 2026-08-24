@@ -31,3 +31,5 @@ Other: Body Temperature, Basal Body Temperature, Respiratory Rate, Sleep, Menstr
 
 PRIVACY FIRST
 Health Disconnect includes zero network permissions. Your health data is read from Health Connect, displayed on screen, and never leaves your device unless you explicitly choose to export or share.
+
+One thing worth knowing: the app takes part in Android's standard backup, so if you have device backup switched on, your saved views — their names, chart settings, and which record types each one charts — are included in it. No health measurements are stored by the app or backed up; those stay in Health Connect. You can turn this off in your device's backup settings.

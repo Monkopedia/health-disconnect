@@ -35,8 +35,9 @@
 
 ## Current Tradeoffs / Tech Debt
 
-- Mapping/normalization logic is centralized in `HealthDataModel`, but remaining cleanup is
-  tracked in `TODO.md` under architecture tasks.
+- Mapping/normalization logic is centralized in `HealthDataModel`, but cleanup there is still
+  outstanding. It is not tracked in `TODO.md` — that file has no architecture section and every
+  item in it is checked off — so file a GitHub issue for anything picked up here.
 - `DataViewView` is large and due for decomposition by screen section.
 - Room/DataStore cache and health record mapping lifecycles should be constrained by explicit
   invalidation policies as data windows change.
@@ -44,8 +45,13 @@
 ## Screenshot Notes
 
 - Screenshots are generated with Roborazzi into:
-  - `app/build/outputs/roborazzi/screens`
+  - `app/src/test/screenshots` — the committed golden baselines, written directly by the
+    `captureRoboImage("src/test/screenshots/...")` call in `ScreenRoborazziTest`. This is the
+    source of truth; anything under `app/build/outputs/roborazzi` is scratch output.
   - side-by-side dashboard in `app/build/reports/roborazzi/debug/index.html`
 - If outputs appear stale in a browser, hard-refresh and clear cache.
 - If a screenshot appears empty, rerun `./gradlew :app:roborazziGate` to regenerate.
+- CI records baselines and commits them back to the PR (`.github/workflows/ci.yml`); the PNG diff
+  in the PR is the review. There is no CI step that verifies renders against the baselines.
+  `./gradlew :app:verifyRoborazziGate` does compare, but it is a local diagnostic only.
 

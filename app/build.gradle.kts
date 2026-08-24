@@ -107,13 +107,26 @@ android {
     }
 }
 
-// Turn off the Compose compiler's group-mapping file. Under AGP 9 this feature makes the
-// build resolve org.jetbrains.kotlin:compose-group-mapping at AGP's built-in Kotlin version
-// (2.2.x) — an artifact only published for Kotlin 2.4.0+ — so it fails on our Kotlin 2.3.x and
-// broke the release AAB (packageProdReleaseBundle wants outputs/mapping/prodRelease/mapping.txt,
-// which the compose-mapping merge would have produced). The mapping only deobfuscates Compose
-// group keys in stack traces (optional diagnostics), so disabling it is behavior-neutral and
-// lets the plain R8 mapping flow feed both the APK and AAB.
+// Turn off the Compose compiler's group-mapping file. Under AGP 9 this feature makes the build
+// resolve org.jetbrains.kotlin:compose-group-mapping at AGP's OWN bundled Kotlin version — not the
+// version this project pins as `kotlin` in gradle/libs.versions.toml.
+//
+// Measured 2026-08-23, on AGP 9.2.1, by flipping this flag to true: :app:bundleProdRelease fails at
+// :app:produceProdReleaseComposeMapping with "Could not find
+// org.jetbrains.kotlin:compose-group-mapping:2.2.10" — that 2.2.10 is AGP's bundled Kotlin, not
+// ours. On the same date Maven Central's earliest published version of the artifact was 2.3.0-Beta1,
+// so no 2.2.x coordinate resolves at all. Neither number is derivable from this build, so treat both
+// as observations with that date attached and re-measure rather than trusting them.
+//
+// DO NOT re-enable this on the reasoning that a Kotlin bump fixes it. The artifact IS published for
+// the Kotlin version we pin — the resolution above simply does not use our version, so raising it
+// changes nothing. The first attempt at a workaround disabled the ComposeMapping tasks wholesale,
+// which also killed mergeProdReleaseComposeMapping and left packageProdReleaseBundle without the
+// outputs/mapping/prodRelease/mapping.txt it consumes; that is what broke the release AAB in the
+// v1.2.1 cycle (#60).
+//
+// The mapping only deobfuscates Compose group keys in stack traces (optional diagnostics), so
+// disabling it is behavior-neutral and lets the plain R8 mapping flow feed both the APK and AAB.
 composeCompiler {
     includeComposeMappingFile.set(false)
 }
@@ -304,8 +317,14 @@ fun configureRoborazziForkingDefaults(task: Test) {
 }
 
 // mode is "record" (regenerate committed baselines) or "verify" (compare renders against the
-// committed baselines and fail on an unexpected pixel change). Verify is the CI regression guard;
-// record is the developer workflow for intentionally updating baselines.
+// committed baselines and fail on an unexpected pixel change).
+//
+// Record is what actually runs. CI runs recordRoborazziTableDebug and auto-commits any changed
+// baselines back onto the PR branch (.github/workflows/ci.yml:99-113), so the reviewer reads the
+// PNG diff in the PR — that is the review, and it is the owner's standing decision (#64). The
+// verify tasks are registered but nothing in CI, allTests, or roborazziGate depends on them: they
+// exist as a LOCAL diagnostic, the only way to make the suite compare instead of record. Keep
+// them; #73 and #91 use them. Nothing here gates a build on pixel equality.
 fun registerRoborazziSubsetTask(name: String, filter: String, mode: String) {
     tasks.register<Test>(name) {
         group = "verification"
@@ -374,9 +393,12 @@ tasks.register("roborazziGate") {
     )
 }
 
+// Local diagnostic, not a gate: no CI job and no other task depends on this. Run it by hand to
+// make the screenshot suite compare against the committed baselines instead of rewriting them.
 tasks.register("verifyRoborazziGate") {
     group = "verification"
-    description = "Verifies rendered screenshots against the committed baselines (CI regression guard)."
+    description =
+        "Verifies rendered screenshots against the committed baselines (local diagnostic, not run by CI)."
     dependsOn(
         "verifyRoborazziPhoneDebug",
         "verifyRoborazziSmallPhoneDebug",
@@ -431,11 +453,22 @@ tasks.matching { it.name == "testProdDebugUnitTest" }.configureEach {
     }
 }
 
+// Ordering only, and currently unexercised: recordRoborazziProdDebug is the Roborazzi plugin's own
+// per-variant task, and no documented workflow runs it — roborazziGate and allTests drive the
+// recordRoborazzi*Debug subset tasks registered above instead. mustRunAfter only applies when both
+// tasks are in the same invocation, so this constrains nothing today. Left in place because it is
+// the right ordering if that task is ever run alongside unitTestGate.
 tasks.matching { it.name == "recordRoborazziProdDebug" }.configureEach {
     // Prevent running screenshot tests concurrently with unit tests and keep memory usage stable.
     mustRunAfter("unitTestGate")
 }
 
+// This exclusion has never applied: there is no testProdReleaseUnitTest task. `:app:tasks --all`
+// registers only testProdDebugUnitTest and testDemoDebugUnitTest — unit tests run on debug
+// variants only — so tasks.matching finds nothing here and silently succeeds. Kept rather than
+// deleted so the intent survives if release unit tests are ever enabled; do not read it as an
+// active exclusion of DataViewHeaderInteractionTest, which runs in full under
+// testProdDebugUnitTest.
 tasks.matching { it.name == "testProdReleaseUnitTest" }.configureEach {
     (this as? Test)?.exclude("**/DataViewHeaderInteractionTest.class")
 }
