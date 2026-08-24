@@ -2,13 +2,20 @@
 
 ## Baselines vs. verify
 - **Golden baselines are committed** under `app/src/test/screenshots` (git-tracked). They are the
-  source of truth the CI verify step compares against.
+  source of truth, and they are what CI *records into*: there is no CI step that compares renders
+  against them.
 - Renders are frozen to a fixed clock (`LocalClock`, set to `FIXED_CLOCK` in the screenshot tests)
   so the chart's time axis and the "Last refreshed" header are deterministic run-to-run.
 - **Record** (`./gradlew :app:roborazziGate`) regenerates the committed baselines — do this
   intentionally when a UI change is expected, then review the diff and commit the new PNGs.
+- **CI records, it does not gate.** On a same-repo pull request, `.github/workflows/ci.yml` runs
+  `recordRoborazziTableDebug` and commits any changed baselines back onto the PR branch, so the
+  PNG diff in the PR is the review. Nothing fails a build on a pixel change, and there is no
+  comparison threshold or pixel tolerance anywhere in the build.
 - **Verify** (`./gradlew :app:verifyRoborazziGate`) compares fresh renders against the committed
-  baselines and fails on an unexpected pixel change. This runs in CI (report-only for now).
+  baselines and fails on an unexpected pixel change. It is a **local diagnostic you run by hand** —
+  no CI job and no other Gradle task depends on it. It is the only way to make the suite compare
+  rather than record, which is what makes it useful when chasing baseline drift.
 
 ## Where outputs are written
 - Committed golden baselines: `app/src/test/screenshots`
