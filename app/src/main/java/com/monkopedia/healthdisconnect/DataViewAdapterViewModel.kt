@@ -134,9 +134,22 @@ class DataViewAdapterViewModel(
         try {
             // Read both legacy blobs BEFORE opening the transaction. These are DataStore file
             // reads, and a Room write transaction serialises every other writer for as long as it
-            // is held — so doing them inside it would make unrelated writes wait on filesystem I/O.
-            // The reads stay inside the try: a corrupt legacy store still lands in the same catch,
-            // it just no longer opens a transaction and rolls it back to get there.
+            // is held — reading them inside it put filesystem I/O under the write lock.
+            //
+            // This is NOT a pure hoist, and the difference is worth stating: the reads used to
+            // happen only on the two branches that were about to write, so they are now
+            // unconditional whenever the completion flag is unset. One state diverges — Room
+            // already populated, info and view ids consistent, flag unset, legacy blob corrupt.
+            // Previously nothing read the blob, so the transaction succeeded and the migration
+            // latched legacyMigrationCompleteKey and retired; now the read throws, the flag is
+            // never latched, and the migration retries (and logs) on every launch. That is the
+            // fail-safe side of the trade — it never records a migration as complete on the
+            // strength of a blob it could not read — and it is unreachable in any case: the
+            // AppDatabase commit predates v1.0, so no released version can have a legacy
+            // DataStore to be corrupt.
+            //
+            // The reads stay inside the try, so a corrupt store still lands in the same catch,
+            // logged via errorLabel() and never as a throwable.
             val legacyInfo = context.dataViewInfoDataStore.data.first()
             val legacyViews = context.dataViewDataStore.data.first()
             appDatabase.withTransaction {
