@@ -17,6 +17,7 @@ import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataViewInfo
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
+import com.monkopedia.healthdisconnect.model.DataViewList
 import com.monkopedia.healthdisconnect.room.AppDatabase
 import com.monkopedia.healthdisconnect.room.DataViewDao
 import com.monkopedia.healthdisconnect.room.DataViewInfoDao
@@ -131,18 +132,25 @@ class DataViewAdapterViewModel(
             return
         }
         try {
+            // Read both legacy blobs BEFORE opening the transaction. These are DataStore file
+            // reads, and a Room write transaction serialises every other writer for as long as it
+            // is held — so doing them inside it would make unrelated writes wait on filesystem I/O.
+            // The reads stay inside the try: a corrupt legacy store still lands in the same catch,
+            // it just no longer opens a transaction and rolls it back to get there.
+            val legacyInfo = context.dataViewInfoDataStore.data.first()
+            val legacyViews = context.dataViewDataStore.data.first()
             appDatabase.withTransaction {
                 val infoCount = dataViewInfoDao.count()
                 val viewCount = dataViewInfoDao.viewCount()
                 if (infoCount == 0 && viewCount == 0) {
-                    migrateLegacyDataStoreIntoRoom()
+                    migrateLegacyDataStoreIntoRoom(legacyInfo, legacyViews)
                 } else {
                     val infoIds = dataViewInfoDao.allOrderedSnapshot().map { it.id }.toSet()
                     val viewIds = dataViewDao.allIdsSnapshot().toSet()
                     if (infoIds != viewIds) {
                         dataViewInfoDao.deleteAll()
                         dataViewDao.deleteAll()
-                        migrateLegacyDataStoreIntoRoom()
+                        migrateLegacyDataStoreIntoRoom(legacyInfo, legacyViews)
                     }
                 }
             }
@@ -166,9 +174,14 @@ class DataViewAdapterViewModel(
         }
     }
 
-    private suspend fun migrateLegacyDataStoreIntoRoom() {
-        val legacyInfo = context.dataViewInfoDataStore.data.first()
-        val legacyViews = context.dataViewDataStore.data.first()
+    /**
+     * Writes the already-read legacy blobs into Room. Called from inside a write transaction, so
+     * the body must stay Room-only: the blobs arrive as parameters rather than being read here.
+     */
+    private suspend fun migrateLegacyDataStoreIntoRoom(
+        legacyInfo: DataViewInfoList,
+        legacyViews: DataViewList
+    ) {
         val orderedIds = buildList {
             addAll(legacyInfo.ordering.filter { id -> legacyViews.views.containsKey(id) })
             addAll(legacyViews.views.keys.filter { id -> id !in legacyInfo.ordering }.sorted())
