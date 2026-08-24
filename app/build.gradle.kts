@@ -108,18 +108,22 @@ android {
 }
 
 // Turn off the Compose compiler's group-mapping file. Under AGP 9 this feature makes the build
-// resolve org.jetbrains.kotlin:compose-group-mapping at AGP's OWN bundled Kotlin version — not
-// the version this project pins in libs.versions.toml. Measured on AGP 9.2.1 by flipping this
-// flag to true: :app:bundleProdRelease fails at :app:produceProdReleaseComposeMapping with
-// "Could not find org.jetbrains.kotlin:compose-group-mapping:2.2.10". Maven Central's earliest
-// published version of that artifact is 2.3.0-Beta1, so no 2.2.x coordinate resolves at all.
+// resolve org.jetbrains.kotlin:compose-group-mapping at AGP's OWN bundled Kotlin version — not the
+// version this project pins as `kotlin` in gradle/libs.versions.toml.
 //
-// DO NOT re-enable this on the reasoning that a Kotlin bump fixes it. The artifact IS published
-// for our pinned Kotlin (2.3.21) — the resolution above simply does not use our version, so
-// raising it changes nothing. The first attempt at a workaround disabled the ComposeMapping
-// tasks wholesale, which also killed mergeProdReleaseComposeMapping and left
-// packageProdReleaseBundle without the outputs/mapping/prodRelease/mapping.txt it consumes;
-// that is what broke the release AAB in the v1.2.1 cycle (#60).
+// Measured 2026-08-23, on AGP 9.2.1, by flipping this flag to true: :app:bundleProdRelease fails at
+// :app:produceProdReleaseComposeMapping with "Could not find
+// org.jetbrains.kotlin:compose-group-mapping:2.2.10" — that 2.2.10 is AGP's bundled Kotlin, not
+// ours. On the same date Maven Central's earliest published version of the artifact was 2.3.0-Beta1,
+// so no 2.2.x coordinate resolves at all. Neither number is derivable from this build, so treat both
+// as observations with that date attached and re-measure rather than trusting them.
+//
+// DO NOT re-enable this on the reasoning that a Kotlin bump fixes it. The artifact IS published for
+// the Kotlin version we pin — the resolution above simply does not use our version, so raising it
+// changes nothing. The first attempt at a workaround disabled the ComposeMapping tasks wholesale,
+// which also killed mergeProdReleaseComposeMapping and left packageProdReleaseBundle without the
+// outputs/mapping/prodRelease/mapping.txt it consumes; that is what broke the release AAB in the
+// v1.2.1 cycle (#60).
 //
 // The mapping only deobfuscates Compose group keys in stack traces (optional diagnostics), so
 // disabling it is behavior-neutral and lets the plain R8 mapping flow feed both the APK and AAB.
