@@ -17,6 +17,7 @@ import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataViewInfo
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
+import com.monkopedia.healthdisconnect.model.DataViewList
 import com.monkopedia.healthdisconnect.room.AppDatabase
 import com.monkopedia.healthdisconnect.room.DataViewDao
 import com.monkopedia.healthdisconnect.room.DataViewInfoDao
@@ -131,18 +132,38 @@ class DataViewAdapterViewModel(
             return
         }
         try {
+            // Read both legacy blobs BEFORE opening the transaction. These are DataStore file
+            // reads, and a Room write transaction serialises every other writer for as long as it
+            // is held — reading them inside it put filesystem I/O under the write lock.
+            //
+            // This is NOT a pure hoist, and the difference is worth stating: the reads used to
+            // happen only on the two branches that were about to write, so they are now
+            // unconditional whenever the completion flag is unset. One state diverges — Room
+            // already populated, info and view ids consistent, flag unset, legacy blob corrupt.
+            // Previously nothing read the blob, so the transaction succeeded and the migration
+            // latched legacyMigrationCompleteKey and retired; now the read throws, the flag is
+            // never latched, and the migration retries (and logs) on every launch. That is the
+            // fail-safe side of the trade — it never records a migration as complete on the
+            // strength of a blob it could not read — and it is unreachable in any case: the
+            // AppDatabase commit predates v1.0, so no released version can have a legacy
+            // DataStore to be corrupt.
+            //
+            // The reads stay inside the try, so a corrupt store still lands in the same catch,
+            // logged via errorLabel() and never as a throwable.
+            val legacyInfo = context.dataViewInfoDataStore.data.first()
+            val legacyViews = context.dataViewDataStore.data.first()
             appDatabase.withTransaction {
                 val infoCount = dataViewInfoDao.count()
                 val viewCount = dataViewInfoDao.viewCount()
                 if (infoCount == 0 && viewCount == 0) {
-                    migrateLegacyDataStoreIntoRoom()
+                    migrateLegacyDataStoreIntoRoom(legacyInfo, legacyViews)
                 } else {
                     val infoIds = dataViewInfoDao.allOrderedSnapshot().map { it.id }.toSet()
                     val viewIds = dataViewDao.allIdsSnapshot().toSet()
                     if (infoIds != viewIds) {
                         dataViewInfoDao.deleteAll()
                         dataViewDao.deleteAll()
-                        migrateLegacyDataStoreIntoRoom()
+                        migrateLegacyDataStoreIntoRoom(legacyInfo, legacyViews)
                     }
                 }
             }
@@ -166,9 +187,14 @@ class DataViewAdapterViewModel(
         }
     }
 
-    private suspend fun migrateLegacyDataStoreIntoRoom() {
-        val legacyInfo = context.dataViewInfoDataStore.data.first()
-        val legacyViews = context.dataViewDataStore.data.first()
+    /**
+     * Writes the already-read legacy blobs into Room. Called from inside a write transaction, so
+     * the body must stay Room-only: the blobs arrive as parameters rather than being read here.
+     */
+    private suspend fun migrateLegacyDataStoreIntoRoom(
+        legacyInfo: DataViewInfoList,
+        legacyViews: DataViewList
+    ) {
         val orderedIds = buildList {
             addAll(legacyInfo.ordering.filter { id -> legacyViews.views.containsKey(id) })
             addAll(legacyViews.views.keys.filter { id -> id !in legacyInfo.ordering }.sorted())
