@@ -53,10 +53,31 @@ jobs:
       # while verifying nothing. Deleting the unpacked distributions forces a real download and
       # therefore a real verification on every run.
       #
-      # Cost is one distribution download (~1-2 min) that would otherwise be restored from
-      # cache at similar cost, since the cache holds the same bytes.
+      # Cost, measured on this workflow rather than estimated: the rm completes within the same
+      # second, and the forced download-and-unpack it causes takes 2-3s (1.9s / 2.8s / 3.2s
+      # across runs 32686033239 attempt 1, 32686103506, and 32686033239 attempt 2). Against a
+      # ~7min job that is noise. An earlier draft of this comment guessed "~1-2 min", a number
+      # borrowed from another repo's issue and about 20x too high — recorded here because an
+      # inflated cost is exactly what later gets cited as a reason to delete the step.
       - name: Force the wrapper to re-download and verify the distribution
-        run: rm -rf "${GRADLE_USER_HOME:-$HOME/.gradle}/wrapper/dists"
+        run: |
+          # distributionBase/distributionPath below must match gradle-wrapper.properties. If
+          # either is changed there and not here, this purge silently stops matching anything,
+          # the `.ok` short-circuit returns, and the checksum pin goes inert with NO signal —
+          # a green build that verifies nothing, i.e. precisely the failure this step exists to
+          # prevent. Assert rather than trust, so the break is loud instead of invisible.
+          EXPECTED_BASE='GRADLE_USER_HOME'
+          EXPECTED_PATH='wrapper/dists'
+          PROPS='gradle/wrapper/gradle-wrapper.properties'
+          ACTUAL_BASE=$(sed -n 's/^distributionBase=//p' "$PROPS")
+          ACTUAL_PATH=$(sed -n 's/^distributionPath=//p' "$PROPS")
+          if [ "$ACTUAL_BASE" != "$EXPECTED_BASE" ] || [ "$ACTUAL_PATH" != "$EXPECTED_PATH" ]; then
+            echo "::error::$PROPS says distributionBase=$ACTUAL_BASE distributionPath=$ACTUAL_PATH,"
+            echo "::error::but this step purges \$GRADLE_USER_HOME/$EXPECTED_PATH. Update this step to"
+            echo "::error::match, or distributionSha256Sum stops being verified on every run."
+            exit 1
+          fi
+          rm -rf "${GRADLE_USER_HOME:-$HOME/.gradle}/$EXPECTED_PATH"
 
       - uses: android-actions/setup-android@v3
 
