@@ -94,6 +94,23 @@ class WidgetBindingStoreTest {
         assertEquals(0, app.pendingWidgetRequestCount())
     }
 
+    /**
+     * Pins the ruled TTL itself. Every other assertion here is expressed relative to
+     * [PENDING_WIDGET_REQUEST_TTL_MILLIS], so the suite would stay green if the constant were
+     * widened — which is exactly the regression the owner's ruling forbids: "do not 'be safe' by
+     * lengthening it."
+     *
+     * Widening buys legitimate pins nothing. `res/xml/health_graph_widget_info.xml` sets
+     * `android:updatePeriodMillis="0"`, so no periodic update is scheduled and the legitimate path
+     * (accept the pin, widget created, `onUpdate` consumes the entry) completes in seconds. A longer
+     * window only lengthens the period in which an unrelated widget from the launcher's picker can
+     * pick up a stale entry, so this is a deliberate guard rather than a redundant restatement.
+     */
+    @Test
+    fun pendingWidgetRequestTtl_isTheRuledFiveMinutes() {
+        assertEquals(300_000L, PENDING_WIDGET_REQUEST_TTL_MILLIS)
+    }
+
     @Test
     fun consumePendingWidgetRequest_returnsEntryJustInsideTtl() = runBlocking {
         app.enqueuePendingWidgetRequest(
