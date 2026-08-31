@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
@@ -17,9 +18,12 @@ import com.monkopedia.healthdisconnect.model.ChartType
 import java.io.File
 import java.time.LocalDate
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -394,23 +398,152 @@ class GraphShareImageRendererTest {
         file.delete()
     }
 
+    // ---------------------------------------------------------------------------------------
+    // A lone data point (#83). One point gives the line Path a single `moveTo` and no `lineTo`,
+    // and `drawPath` paints nothing for such a path, so the marker is the only thing that can
+    // carry the value on these two bitmap surfaces. The on-screen chart already draws it
+    // unconditionally; these tests hold the bitmaps to the same contract, in both settings of
+    // `showDataPoints` — false is the ChartSettings default and the configuration users hit.
+    //
+    // The assertion is a position property, not an ink floor: the mark has to sit on the lone
+    // point's own coordinates and nowhere else, so a renderer that paints something plentiful
+    // but wrong fails just as a blank one does.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    fun renderGraphBitmap_marksALonePointWithDataPointsHidden() {
+        assertShareMarksLonePoint(showDataPoints = false)
+    }
+
+    @Test
+    fun renderGraphBitmap_marksALonePointWithDataPointsShown() {
+        assertShareMarksLonePoint(showDataPoints = true)
+    }
+
+    @Test
+    fun renderWidgetGraphBitmap_marksALonePointWithDataPointsHidden() {
+        assertWidgetMarksLonePoint(showDataPoints = false)
+    }
+
+    @Test
+    fun renderWidgetGraphBitmap_marksALonePointWithDataPointsShown() {
+        assertWidgetMarksLonePoint(showDataPoints = true)
+    }
+
+    private fun assertShareMarksLonePoint(showDataPoints: Boolean) {
+        val bitmap = renderShareBitmap(
+            seriesList = listOf(lonePointSeries()),
+            theme = GraphShareTheme.DARK,
+            showDataPoints = showDataPoints
+        )
+        val plot = computeGraphShareLayout(SHARE_WIDTH, SHARE_HEIGHT, seriesCount = 1)
+        val seriesColor = defaultChartSeriesColors(GraphShareTheme.DARK).first()
+
+        assertLonePointMark(
+            bitmap = bitmap,
+            area = plot.chartRect(),
+            // The single bucket is the discrete axis' only slot, so it sits on the plot's left
+            // edge; its value is the only one in range, so it normalizes to the vertical middle.
+            expectedX = plot.chartLeft,
+            expectedY = (plot.chartTop + plot.chartBottom) / 2f,
+            tolerancePx = SHARE_MARKER_TOLERANCE_PX,
+            what = "share PNG (showDataPoints=$showDataPoints)",
+            predicate = { it == seriesColor }
+        )
+        bitmap.recycle()
+    }
+
+    private fun assertWidgetMarksLonePoint(showDataPoints: Boolean) {
+        val bitmap = renderWidgetGraphBitmap(
+            title = "Weight",
+            seriesList = listOf(lonePointSeries()),
+            settings = ChartSettings(
+                chartType = ChartType.LINE,
+                backgroundStyle = ChartBackgroundStyle.HORIZONTAL_LINES,
+                showDataPoints = showDataPoints
+            ),
+            theme = GraphShareTheme.DARK,
+            width = WIDGET_WIDTH,
+            height = WIDGET_HEIGHT
+        )
+        val seriesColor = defaultChartSeriesColors(GraphShareTheme.DARK).first()
+
+        assertLonePointMark(
+            bitmap = bitmap,
+            area = Rect(0, 0, bitmap.width, bitmap.height),
+            // The widget's panel inset, and the same centered normalization as the share render.
+            expectedX = WIDGET_WIDTH * 0.01f,
+            expectedY = WIDGET_HEIGHT / 2f,
+            tolerancePx = WIDGET_MARKER_TOLERANCE_PX,
+            what = "widget (showDataPoints=$showDataPoints)",
+            // The widget fills its markers at 95% alpha, so the painted pixels are the series
+            // color blended into the panel rather than an exact match.
+            predicate = { it.isNear(seriesColor) }
+        )
+        bitmap.recycle()
+    }
+
+    /**
+     * Asserts [bitmap] carries a mark for a lone data point at ([expectedX], [expectedY]): some
+     * matching pixels exist, they bracket the point's value, and none of them stray further than
+     * [tolerancePx] from it.
+     */
+    private fun assertLonePointMark(
+        bitmap: Bitmap,
+        area: Rect,
+        expectedX: Float,
+        expectedY: Float,
+        tolerancePx: Float,
+        what: String,
+        predicate: (Int) -> Boolean
+    ) {
+        val ink = bitmap.inkBounds(area, predicate)
+        assertNotNull("$what drew no series ink at all for a single-point line chart", ink)
+        checkNotNull(ink)
+        val allowed = InkBounds(
+            left = (expectedX - tolerancePx).roundToInt(),
+            top = (expectedY - tolerancePx).roundToInt(),
+            right = (expectedX + tolerancePx).roundToInt(),
+            bottom = (expectedY + tolerancePx).roundToInt()
+        )
+        assertTrue(
+            "$what painted series ink at $ink, which strays outside $allowed around the lone point",
+            ink.left >= allowed.left && ink.top >= allowed.top &&
+                ink.right <= allowed.right && ink.bottom <= allowed.bottom
+        )
+        assertTrue(
+            "$what marked $ink, which does not span the lone point's value at y=$expectedY",
+            ink.top <= expectedY && ink.bottom >= expectedY
+        )
+    }
+
     private fun renderShareBitmap(
         seriesList: List<HealthDataModel.MetricSeries>,
         theme: GraphShareTheme,
-        chartType: ChartType = ChartType.LINE
+        chartType: ChartType = ChartType.LINE,
+        showDataPoints: Boolean = false
     ): Bitmap = renderGraphBitmap(
         title = "Weight",
         seriesList = seriesList,
-        settings = shareSettings(chartType),
+        settings = shareSettings(chartType, showDataPoints),
         theme = theme,
         width = SHARE_WIDTH,
         height = SHARE_HEIGHT
     )
 
-    private fun shareSettings(chartType: ChartType) = ChartSettings(
+    private fun shareSettings(chartType: ChartType, showDataPoints: Boolean = false) = ChartSettings(
         chartType = chartType,
         backgroundStyle = ChartBackgroundStyle.HORIZONTAL_LINES,
-        showDataPoints = false
+        showDataPoints = showDataPoints
+    )
+
+    /** A series with exactly one point — the case that has no line segment to draw. */
+    private fun lonePointSeries(
+        today: LocalDate = LocalDate.of(2026, 2, 22)
+    ): HealthDataModel.MetricSeries = HealthDataModel.MetricSeries(
+        label = "Weight",
+        unit = "lb",
+        points = listOf(HealthDataModel.MetricPoint(today, 200.0))
     )
 
     /** Seven strictly increasing points, so the drawn line has a known start and end position. */
@@ -559,6 +692,41 @@ class GraphShareImageRendererTest {
         return pixels.count(predicate)
     }
 
+    /** Inclusive bounding box of matching pixels. */
+    private data class InkBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
+
+    /** Bounding box of the pixels inside [area] matching [predicate], or null when none match. */
+    private fun Bitmap.inkBounds(area: Rect, predicate: (Int) -> Boolean): InkBounds? {
+        var left = Int.MAX_VALUE
+        var top = Int.MAX_VALUE
+        var right = Int.MIN_VALUE
+        var bottom = Int.MIN_VALUE
+        for (y in area.top until area.bottom) {
+            for (x in area.left until area.right) {
+                if (!predicate(getPixel(x, y))) continue
+                left = min(left, x)
+                top = min(top, y)
+                right = max(right, x)
+                bottom = max(bottom, y)
+            }
+        }
+        return if (right < left) null else InkBounds(left, top, right, bottom)
+    }
+
+    /** The plot rect this layout describes, rounded to whole pixels. */
+    private fun GraphShareLayout.chartRect(): Rect = Rect(
+        chartLeft.roundToInt(),
+        chartTop.roundToInt(),
+        chartRight.roundToInt(),
+        chartBottom.roundToInt()
+    )
+
+    /** True when every channel is within [tolerance] of [target]'s — for blended, non-exact paint. */
+    private fun Int.isNear(target: Int, tolerance: Int = CHANNEL_TOLERANCE): Boolean =
+        (0..24 step 8).all { shift ->
+            abs(((this ushr shift) and 0xFF) - ((target ushr shift) and 0xFF)) <= tolerance
+        }
+
     /** Topmost Y inside [plot] on column [x] matching [predicate], or -1 if the column is bare. */
     private fun Bitmap.firstInkYInColumn(
         x: Int,
@@ -589,8 +757,22 @@ class GraphShareImageRendererTest {
         const val SHARE_WIDTH = 1600
         const val SHARE_HEIGHT = 1000
 
+        const val WIDGET_WIDTH = 800
+        const val WIDGET_HEIGHT = 220
+
         /** `ss(4f)` in [renderGraphBitmap] at the baseline 1600x1000 size. */
         const val SHARE_LINE_STROKE_PX = 4f
+
+        /**
+         * How far a lone point's marker may reach from the point itself: the marker radius plus
+         * its stroke, rounded up. `ss(5f)` + `ss(3f)` in the share render at the baseline size;
+         * `min(w, h) * 0.011` filled in the widget render.
+         */
+        const val SHARE_MARKER_TOLERANCE_PX = 8f
+        const val WIDGET_MARKER_TOLERANCE_PX = 6f
+
+        /** Per-channel slack for paint composited at less than full alpha. */
+        const val CHANNEL_TOLERANCE = 16
 
         val DARK_SHARE_BACKGROUND = 0xFF1C1B1F.toInt()
         val LIGHT_SHARE_BACKGROUND = 0xFFFFFFFF.toInt()
