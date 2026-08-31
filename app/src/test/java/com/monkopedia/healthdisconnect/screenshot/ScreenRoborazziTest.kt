@@ -43,6 +43,7 @@ import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.LocalClock
+import com.monkopedia.healthdisconnect.ui.LocalPagerCameraDistance
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import androidx.compose.runtime.CompositionLocalProvider
@@ -75,6 +76,18 @@ abstract class BaseScreenRoborazziTest {
         // — but that lives in app/build.gradle.kts, and someone debugging a baseline diff will be
         // reading THIS line. Stating it here too costs nothing and changes no baseline.
         val FIXED_CLOCK: Clock = Clock.fixed(FIXED_NOW, ZoneId.of("UTC"))
+
+        // An infinitely distant camera: the pager page tilt still rotates, but it is projected
+        // affinely, so Skia never takes its perspective stage and the RCPPS reciprocal that made
+        // these baselines oscillate between two CPU-dependent states never executes. Issue #73.
+        //
+        // Infinity is not an approximation here, it is the exact limit -- and it has to be, because
+        // a large finite distance does NOT work. The perspective row of the layer matrix is
+        // proportional to 1/cameraDistance, and no finite float32 makes it underflow to zero:
+        // measured with the rcpps-trap harness from #73, cameraDistance = 1e9 x density still
+        // SIGTRAPs, and Float.MAX_VALUE overflows RenderNode.setCameraDistance. Only the closed
+        // form of the limit -- rotationY of t becomes a horizontal scale of cos(t) -- clears it.
+        const val RENDER_CAMERA_DISTANCE = Float.POSITIVE_INFINITY
     }
 
     @Test
@@ -1004,7 +1017,10 @@ abstract class BaseScreenRoborazziTest {
 
     private fun captureScreen(name: String, darkTheme: Boolean = false, content: @Composable () -> Unit) {
         captureRoboImage("src/test/screenshots/${name}_$sizeBucket.png") {
-            CompositionLocalProvider(LocalClock provides FIXED_CLOCK) {
+            CompositionLocalProvider(
+                LocalClock provides FIXED_CLOCK,
+                LocalPagerCameraDistance provides RENDER_CAMERA_DISTANCE
+            ) {
                 HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
                     Surface {
                         content()
