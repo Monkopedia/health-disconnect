@@ -262,7 +262,9 @@ fun renderGraphBitmap(
                 } else {
                     path.lineTo(x, y)
                 }
-                if (settings.showDataPoints) {
+                // A lone point has no segment to draw, so always render it as a dot;
+                // otherwise honor the "show data points" setting.
+                if (settings.showDataPoints || series.points.size == 1) {
                     canvas.drawCircle(x, y, ss(5f), pointPaint)
                 }
             }
@@ -511,7 +513,9 @@ fun renderWidgetGraphBitmap(
                 }
             }
             canvas.drawPath(path, linePaint)
-            if (settings.showDataPoints) {
+            // A lone point has no segment to draw, so always render it as a dot; otherwise
+            // honor the "show data points" setting.
+            if (settings.showDataPoints || series.points.size == 1) {
                 val pointFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     this.color = withAlpha(color, 0.95f)
                     style = Paint.Style.FILL
