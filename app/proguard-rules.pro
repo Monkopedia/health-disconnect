@@ -27,4 +27,4 @@
 # simpleName return unstable per-build names (e.g. "i5.y1"), which (a) breaks the
 # fqn->class registry after any app update — the stored name no longer matches —
 # and (b) surfaces obfuscated labels in the UI. Keep the record class NAMES stable.
--keepnames class androidx.health.connect.client.records.** { *; }
+# [control] keep rule removed on purpose
