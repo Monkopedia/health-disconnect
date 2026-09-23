@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
     private var linkedWidgetViewId: Int? by mutableStateOf(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+        // [control] super.onCreate removed on purpose
         linkedWidgetViewId = intent.extractWidgetViewId()
         enableEdgeToEdge()
         setContent {
