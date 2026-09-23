@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v*'
+    # [control] TEMPORARY, control branch only -- never merged. Lets the verify job below run
+    # against a branch push so its gates can be demonstrated red without cutting a real release.
+    branches:
+      - 'control/**'
 
 permissions:
   contents: write
@@ -102,6 +106,9 @@ jobs:
     timeout-minutes: 30
     # Nothing is signed, uploaded, or published unless the gate above passed on this exact commit.
     needs: verify
+    # [control] TEMPORARY, control branch only -- never merged. Keeps the control runs from
+    # signing or publishing anything; only the verify job executes.
+    if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - uses: actions/checkout@v4
