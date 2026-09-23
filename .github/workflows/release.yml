@@ -9,20 +9,104 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  # A v* tag used to go straight to `build`, so the artifact that ships to GitHub Releases — and
+  # from there to F-Droid — was the only build in this repo that no gate had ever run against.
+  # Nothing guaranteed the tagged commit had ever seen CI: tags can be cut from any commit, main
+  # is not protected, and a green PR check pins a SHA that the tag need not match. This job is
+  # what `build` now waits on. See #68.
+  #
+  # It runs on its own runner and shares no state with `build`, deliberately: F-Droid rebuilds
+  # this repo and byte-compares the result against the uploaded APK, so nothing here is allowed
+  # to touch the workspace that produces that APK.
+  verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Generous next to ci.yml's 20, because allTests runs the full six-task screenshot gate on
+    # top of what CI does. Still a backstop: a hung run fails and frees the runner.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
+      - uses: ./.github/actions/gradle-setup
 
-      - uses: android-actions/setup-android@v3
+      # First because it is the gate in this repo with a demonstrated production catch, and a
+      # release should not spend half an hour finding out it reintroduced #56.
+      #
+      # The app identifies Health Connect record types by KClass.qualifiedName (persisted in saved
+      # views) and labels them by simpleName, so if R8 obfuscates
+      # androidx.health.connect.client.records.** those names go unstable and every saved view
+      # breaks after an update. Unit tests run against un-minified classes and can't see this, so
+      # we run R8 for the release variant and assert the record classes keep their real names in
+      # the mapping. This is what makes the proguard-rules keep rule enforceable.
+      - name: Verify Health Connect record classes are not obfuscated
+        run: |
+          ./gradlew :app:minifyProdReleaseWithR8
+          # The minify task alone writes the mapping under intermediates/ (the outputs/mapping
+          # copy is only produced by a later assemble step, which we don't run here since it
+          # would need release signing). Locate it wherever AGP puts it rather than hardcode.
+          MAP=$(find app/build -type f -name mapping.txt -path '*prodRelease*' | head -1)
+          if [ -z "$MAP" ]; then
+            echo "::error::R8 mapping.txt not produced by minifyProdReleaseWithR8"
+            find app/build -name mapping.txt || true
+            exit 1
+          fi
+          echo "Using R8 mapping: $MAP"
+          # Class-level lines look like "orig.Name -> target:"; for HC record classes the target
+          # must remain the identical real name. Any other target means it was obfuscated.
+          BAD=$(grep -E '^androidx\.health\.connect\.client\.records\.[A-Za-z0-9]+ -> ' "$MAP" \
+                | grep -vE ' -> androidx\.health\.connect\.client\.records\.' || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::Health Connect record classes are obfuscated by R8 — saved views will"
+            echo "::error::break on update (issue #56). Ensure the -keepnames rule in"
+            echo "::error::app/proguard-rules.pro covers androidx.health.connect.client.records.**"
+            echo "$BAD"
+            exit 1
+          fi
+          echo "OK: Health Connect record classes retain their real names in the R8 mapping."
+
+      # The task README calls full local verification, run here for the first time in CI of any
+      # kind: unitTestGate, roborazziGate, lintProdDebug, compileProdDebugAndroidTestKotlin,
+      # compileDemoDebugSources. Two of those have never run on any runner in this repo's history.
+      #
+      # Named as the aggregate task rather than spelled out as a step list so it cannot drift from
+      # app/build.gradle.kts — a gate added to allTests is a gate the release path gets for free.
+      #
+      # Note what roborazziGate inside it does and does not do: it runs the screenshot tasks in
+      # RECORD mode, so it catches a render that throws, not a render that changed. There is
+      # deliberately no pixel-comparison gate in this repo (#73), and this does not add one.
+      - name: Run the full verification gate
+        run: ./gradlew :app:allTests
+
+      # So a failed release verification is diagnosable without a local checkout at the tagged
+      # commit. `warn` rather than `error` because a failure before the tests run (compile error,
+      # or the #18 task-timeout hard-kill) leaves this directory absent, and stacking a second
+      # upload failure onto that would just be misleading.
+      - name: Upload test results
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verification-test-results
+          path: app/build/reports/tests/testProdDebugUnitTest/
+          if-no-files-found: warn
+
+      - name: Upload lint report
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-verification-lint-report
+          path: app/build/reports/lint-results-prodDebug.*
+          if-no-files-found: warn
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Nothing is signed, uploaded, or published unless the gate above passed on this exact commit.
+    needs: verify
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/gradle-setup
 
       - name: Decode keystore
         run: echo "${{ secrets.RELEASE_KEYSTORE }}" | base64 -d > /tmp/release.keystore
