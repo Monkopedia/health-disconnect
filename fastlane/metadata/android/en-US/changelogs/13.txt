@@ -1,0 +1,4 @@
+• Fixes a crash on launch when some Health Connect permissions are turned off. Data types you have not allowed are now skipped instead of stopping the app.
+• Charts with a single data point now show it in shared images and on the home-screen widget.
+• An abandoned "add widget" request now expires after five minutes, so a widget added much later no longer attaches to that old view.
+• Saved views are more resilient to data format changes between versions.
