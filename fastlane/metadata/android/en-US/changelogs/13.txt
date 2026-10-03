@@ -1,0 +1,4 @@
+• Fixes a crash on launch when some Health Connect permissions are turned off. Data types you have not allowed are now skipped instead of stopping the app.
+• Charts with a single data point now show it in shared images and on the home-screen widget.
+• Fixes a newly added home-screen widget sometimes attaching to a view you had not picked.
+• Saved views are more resilient to data format changes between versions.
