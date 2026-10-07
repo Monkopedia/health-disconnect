@@ -84,6 +84,7 @@ import com.monkopedia.healthdisconnect.model.isConfigValid
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import kotlin.math.abs
 import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
@@ -180,8 +181,8 @@ fun DataViewView(
     ) { healthDataModel.collectAggregatedSeries(view!!) }
     val recordCount by recordCountFlow.collectAsState(initial = null)
     val metricSeriesList by metricSeriesFlow.collectAsState(initial = null)
-    val chartReadFailedFlow = remember(view!!.id) { healthDataModel.collectChartReadFailed(view!!.id) }
-    val chartReadFailed by chartReadFailedFlow.collectAsState(initial = false)
+    val chartLoadIssuesFlow = remember(view!!.id) { healthDataModel.collectChartLoadIssues(view!!.id) }
+    val chartLoadIssues by chartLoadIssuesFlow.collectAsState(initial = HealthDataModel.ChartLoadIssues())
     val isShowingChart = rememberSaveable(view!!.id) { mutableStateOf(true) }
     val isEditing =
         rememberSaveable(view!!.id) { mutableStateOf(!info.isConfigValid || !view.isConfigValid) }
@@ -573,28 +574,21 @@ fun DataViewView(
                                     reserveLegendRows = view!!.records.size.coerceIn(1, HealthDataModel.MAX_CHART_SERIES)
                                 )
                             } else if (metricSeriesList!!.isEmpty()) {
-                                val hasAnyEntries = (recordCount ?: 0) > 0
+                                val hasAnyEntries = (recordCount?.count ?: 0) > 0
                                 GraphStatePlaceholder(
                                     isLoading = false,
                                     message = stringResource(
-                                        if (chartReadFailed) {
-                                            R.string.data_view_chart_read_failed
-                                        } else if (hasAnyEntries) {
-                                            R.string.data_view_no_graphable_with_hint
-                                        } else {
-                                            R.string.data_view_no_graphable
-                                        }
+                                        chartLoadIssues.readFailure?.messageRes()
+                                            ?: if (hasAnyEntries) {
+                                                R.string.data_view_no_graphable_with_hint
+                                            } else {
+                                                R.string.data_view_no_graphable
+                                            }
                                     ),
                                     reserveLegendRows = view!!.records.size.coerceIn(1, HealthDataModel.MAX_CHART_SERIES)
                                 )
                             } else {
-                                if (chartReadFailed) {
-                                    Text(
-                                        stringResource(R.string.data_view_chart_read_failed),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
+                                ChartLoadIssueNotices(chartLoadIssues)
                                 if (view!!.records.size > HealthDataModel.MAX_CHART_SERIES) {
                                     Text(
                                         stringResource(
@@ -972,6 +966,32 @@ fun DataViewView(
                     Text(stringResource(R.string.data_view_close))
                 }
             }
+        )
+    }
+}
+
+private fun HealthDataModel.ReadFailure.messageRes(): Int = when (this) {
+    HealthDataModel.ReadFailure.RATE_LIMITED -> R.string.data_view_chart_rate_limited
+    HealthDataModel.ReadFailure.OTHER -> R.string.data_view_chart_read_failed
+}
+
+/** Says why a drawn chart may show less than the data Health Connect holds (issue #112). */
+@Composable
+private fun ChartLoadIssueNotices(issues: HealthDataModel.ChartLoadIssues) {
+    issues.readFailure?.let { failure ->
+        Text(
+            stringResource(failure.messageRes()),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+    issues.truncatedSince?.let { since ->
+        val date = since.atZone(ZoneId.systemDefault()).toLocalDate()
+            .format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+        Text(
+            stringResource(R.string.data_view_chart_truncated, date),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
 }

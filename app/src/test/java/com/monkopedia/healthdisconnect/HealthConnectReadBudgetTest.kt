@@ -1,17 +1,21 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import android.health.connect.HealthConnectException
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.aggregate.AggregationResult
 import androidx.health.connect.client.aggregate.AggregationResultGroupedByPeriod
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.response.ReadRecordsResponse
 import androidx.health.connect.client.time.TimeRangeFilter
+import androidx.health.connect.client.units.Mass
 import androidx.test.core.app.ApplicationProvider
+import com.monkopedia.healthdisconnect.HealthDataModel.ReadFailure
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartSettings
@@ -28,11 +32,13 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.Period
 import java.time.ZoneOffset
+import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,13 +62,17 @@ class HealthConnectReadBudgetTest {
      * call counts against [quota]; past it, a call throws what connect-client 1.1.0 throws for
      * the platform's ERROR_RATE_LIMIT_EXCEEDED: `ExceptionConverter.toKtException` has no case for
      * that code, so it becomes an IllegalStateException wrapping the HealthConnectException.
+     * It also holds [WEIGHT_RECORDS] weight records, read in one page.
      */
     private class FakeStepsStore(
         private val days: Int = 3 * 365,
         private val recordsPerDay: Int = 1_000,
         private val quota: Int = Int.MAX_VALUE,
         private val overQuota: () -> Exception = {
-            IllegalStateException("android.health.connect.HealthConnectException: API call quota exceeded")
+            val rateLimit = mockk<HealthConnectException> {
+                every { errorCode } returns HealthConnectException.ERROR_RATE_LIMIT_EXCEEDED
+            }
+            IllegalStateException(rateLimit)
         }
     ) {
         val total = days * recordsPerDay
@@ -94,6 +104,17 @@ class HealthConnectReadBudgetTest {
 
         private fun readPage(request: ReadRecordsRequest<Record>): ReadRecordsResponse<Record> {
             spend()
+            if (request.recordType == WeightRecord::class) {
+                val weights = (1..WEIGHT_RECORDS).map { daysAgo ->
+                    WeightRecord(
+                        time = Instant.now().minus(Duration.ofDays(daysAgo.toLong())),
+                        zoneOffset = ZoneOffset.UTC,
+                        weight = Mass.kilograms(70.0),
+                        metadata = metadata
+                    )
+                }
+                return ReadRecordsResponse(weights, null)
+            }
             val offset = request.pageToken?.toInt() ?: 0
             val size = minOf(request.pageSize, total - offset)
             val records = (offset until offset + size).map { position ->
@@ -135,25 +156,28 @@ class HealthConnectReadBudgetTest {
         healthConnectGateway = DefaultHealthConnectGateway(store.client)
     )
 
-    private fun stepsView(aggregation: AggregationMode) = DataView(
-        id = 112,
-        type = ViewType.CHART,
-        records = listOf(
-            RecordSelection(
-                fqn = StepsRecord::class.qualifiedName!!,
-                metricSettings = MetricChartSettings(
-                    aggregation = aggregation,
-                    timeWindow = TimeWindow.ALL,
-                    bucketSize = BucketSize.DAY
-                )
-            )
-        ),
-        chartSettings = ChartSettings(
+    private fun stepsView(
+        aggregation: AggregationMode,
+        bucketSize: BucketSize = BucketSize.DAY,
+        alsoWeight: Boolean = false
+    ): DataView {
+        val settings = MetricChartSettings(
             aggregation = aggregation,
             timeWindow = TimeWindow.ALL,
-            bucketSize = BucketSize.DAY
+            bucketSize = bucketSize
         )
-    )
+        val types = listOfNotNull(StepsRecord::class, WeightRecord::class.takeIf { alsoWeight })
+        return DataView(
+            id = 112,
+            type = ViewType.CHART,
+            records = types.map { RecordSelection(fqn = it.qualifiedName!!, metricSettings = settings) },
+            chartSettings = ChartSettings(
+                aggregation = aggregation,
+                timeWindow = TimeWindow.ALL,
+                bucketSize = bucketSize
+            )
+        )
+    }
 
     @Test
     fun `a three-year daily step total chart takes a handful of Health Connect calls`() = runBlocking {
@@ -174,16 +198,46 @@ class HealthConnectReadBudgetTest {
     }
 
     @Test
-    fun `a three-year step chart that needs raw records stops at the chart cap`() = runBlocking {
+    fun `a three-year average-steps chart is served from daily totals too`() = runBlocking {
+        for (bucketSize in listOf(BucketSize.DAY, BucketSize.WEEK)) {
+            val store = FakeStepsStore()
+
+            val series = model(store).collectAggregatedSeries(stepsView(AggregationMode.AVERAGE, bucketSize))
+                .toList().last().single()
+
+            // Average used to read every raw record; now it averages the days in each bucket.
+            assertTrue("$bucketSize: expected ≤ 5 calls, made ${store.calls}", store.calls <= 5)
+            assertEquals(AGGREGATED_STEPS_PER_PERIOD.toDouble(), series.points.first().value, 0.0)
+            // Nothing was cut short: the chart reaches back to the first day of data.
+            assertTrue(Duration.between(series.points.first().instant, Instant.now()) > Duration.ofDays(3 * 365 - 7))
+        }
+    }
+
+    @Test
+    fun `a chart that needs raw records stops at the cap and says where it starts`() = runBlocking {
+        // Hourly buckets cannot come from daily totals, so this one reads raw records.
         val store = FakeStepsStore()
+        val model = model(store)
 
-        val series = model(store).collectAggregatedSeries(stepsView(AggregationMode.AVERAGE)).toList().last()
+        val series = model.collectAggregatedSeries(stepsView(AggregationMode.SUM, BucketSize.HOUR))
+            .toList().last().single()
 
-        val maxCalls = HealthDataModel.MAX_CHART_RECORDS / 500
-        assertTrue("expected ≤ $maxCalls calls, made ${store.calls}", store.calls <= maxCalls)
-        // The cap keeps the newest records, so the chart still reaches today.
-        val newestDay = series.single().points.last().instant
-        assertTrue(Duration.between(newestDay, Instant.now()) < Duration.ofDays(2))
+        // 100,001 newest records (one past the cap, to tell "more exist") at 500 a page.
+        assertTrue("expected ≤ 201 calls, made ${store.calls}", store.calls <= 201)
+        // The cap keeps the newest 100,000 records — 100 days at this density — and says so.
+        val since = model.collectChartLoadIssues(112).first().truncatedSince!!
+        val shownDays = Duration.between(since, Instant.now()).toDays()
+        assertTrue("truncated at $shownDays days", shownDays in 99..100)
+        assertEquals(since.truncatedTo(ChronoUnit.HOURS), series.points.first().instant.truncatedTo(ChronoUnit.HOURS))
+    }
+
+    @Test
+    fun `a complete raw chart reports no truncation`() = runBlocking {
+        val model = model(FakeStepsStore(days = 30))
+
+        model.collectAggregatedSeries(stepsView(AggregationMode.SUM, BucketSize.HOUR)).toList()
+
+        assertEquals(HealthDataModel.ChartLoadIssues(), model.collectChartLoadIssues(112).first())
     }
 
     @Test
@@ -192,18 +246,33 @@ class HealthConnectReadBudgetTest {
 
         val count = model(store).collectRecordCount(stepsView(AggregationMode.SUM)).toList().last()
 
-        assertEquals(HealthDataModel.MAX_LISTED_RECORDS, count)
-        val maxCalls = HealthDataModel.MAX_LISTED_RECORDS / 500
-        assertTrue("expected ≤ $maxCalls calls, made ${store.calls}", store.calls <= maxCalls)
+        assertEquals(HealthDataModel.RecordCount(10_000, atLeast = true), count)
+        // 10,001 newest records (one past the cap) at 500 a page.
+        assertTrue("expected ≤ 21 calls, made ${store.calls}", store.calls <= 21)
     }
 
     @Test
-    fun `an exhausted read quota ends the step chart load instead of failing it`() = runBlocking {
+    fun `a capped type does not crowd another out of the entries list or count`() = runBlocking {
+        val model = model(FakeStepsStore())
+        val view = stepsView(AggregationMode.SUM, alsoWeight = true)
+
+        val count = model.collectRecordCount(view).toList().last()
+        val entries = withTimeout(60_000) {
+            model.collectData(view).first { list -> list.count { it is WeightRecord } == WEIGHT_RECORDS }
+        }
+
+        // Every weight entry is listed next to the 10,000 newest steps, and the header agrees.
+        assertEquals(HealthDataModel.RecordCount(10_000 + WEIGHT_RECORDS, atLeast = true), count)
+        assertEquals(10_000, entries.count { it is StepsRecord })
+    }
+
+    @Test
+    fun `an exhausted read quota ends the chart load instead of failing it`() = runBlocking {
         // Quota for one call: the oldest-record probe, or the first raw page. The next call throws.
         val totals = model(FakeStepsStore(quota = 1))
             .collectAggregatedSeries(stepsView(AggregationMode.SUM)).toList().last()
         val raw = model(FakeStepsStore(quota = 1))
-            .collectAggregatedSeries(stepsView(AggregationMode.AVERAGE)).toList().last()
+            .collectAggregatedSeries(stepsView(AggregationMode.SUM, BucketSize.HOUR)).toList().last()
 
         // No totals were read, so no series; the raw chart keeps the page it read before the limit.
         assertTrue(totals.isEmpty())
@@ -247,14 +316,17 @@ class HealthConnectReadBudgetTest {
     }
 
     @Test
-    fun `a failed chart read is reported so the chart can say so`() = runBlocking {
-        val failing = model(FakeStepsStore(quota = 1))
-        failing.collectAggregatedSeries(stepsView(AggregationMode.SUM)).toList()
+    fun `a failed chart read is reported so the chart can say why`() = runBlocking {
+        val rateLimited = model(FakeStepsStore(quota = 1))
+        rateLimited.collectAggregatedSeries(stepsView(AggregationMode.SUM)).toList()
+        val otherFailure = model(FakeStepsStore(quota = 1, overQuota = { IllegalStateException("broken") }))
+        otherFailure.collectAggregatedSeries(stepsView(AggregationMode.SUM)).toList()
         val healthy = model(FakeStepsStore())
         healthy.collectAggregatedSeries(stepsView(AggregationMode.SUM)).toList()
 
-        assertTrue(failing.collectChartReadFailed(112).first())
-        assertFalse(healthy.collectChartReadFailed(112).first())
+        assertEquals(ReadFailure.RATE_LIMITED, rateLimited.collectChartLoadIssues(112).first().readFailure)
+        assertEquals(ReadFailure.OTHER, otherFailure.collectChartLoadIssues(112).first().readFailure)
+        assertNull(healthy.collectChartLoadIssues(112).first().readFailure)
     }
 
     @Test
@@ -271,5 +343,6 @@ class HealthConnectReadBudgetTest {
         const val STEPS_PER_RECORD = 10L
         const val AGGREGATED_STEPS_PER_PERIOD = 4_321L
         const val IN_PROGRESS_STEPS = 7L
+        const val WEIGHT_RECORDS = 3
     }
 }

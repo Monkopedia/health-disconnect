@@ -81,7 +81,7 @@ class DataViewGraphSpanLabelTest {
         every { viewModel.dataView(1) } returns MutableStateFlow(dataView)
 
         val healthDataModel = mockk<HealthDataModel>(relaxed = true)
-        every { healthDataModel.collectRecordCount(any()) } returns flowOf(bucketStarts.size)
+        every { healthDataModel.collectRecordCount(any()) } returns flowOf(HealthDataModel.RecordCount(bucketStarts.size))
         every { healthDataModel.collectAggregatedSeries(any()) } returns flowOf(
             listOf(
                 HealthDataModel.MetricSeries(

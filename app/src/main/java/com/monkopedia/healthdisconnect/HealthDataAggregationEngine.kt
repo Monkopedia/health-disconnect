@@ -38,16 +38,16 @@ interface HealthDataAggregationEngine {
             end: Instant,
             onPage: (List<Record>) -> Unit
         ) -> Unit,
-        bucketTotalsReader: BucketTotalsReader? = null
+        dailyTotalsReader: DailyTotalsReader? = null
     ): Flow<List<HealthDataModel.MetricSeries>>
 }
 
 /**
- * Health Connect's own per-bucket totals for a [AggregationMode.SUM] series, one measurement per
- * bucket stamped at the bucket's start. Returns null when it cannot serve this record type or bucket
- * size, and the engine reads raw records instead.
+ * Health Connect's own daily totals for a cumulative metric (steps), one measurement per local day
+ * stamped at the day's start, for charts bucketed by day, week or month. Returns null when it
+ * cannot serve this record type or bucket size, and the engine reads raw records instead.
  */
-typealias BucketTotalsReader = suspend (
+typealias DailyTotalsReader = suspend (
     cls: KClass<out Record>,
     start: Instant,
     end: Instant,
@@ -169,7 +169,7 @@ class DefaultHealthDataAggregationEngine(
             end: Instant,
             onPage: (List<Record>) -> Unit
         ) -> Unit,
-        bucketTotalsReader: BucketTotalsReader?
+        dailyTotalsReader: DailyTotalsReader?
     ): Flow<List<HealthDataModel.MetricSeries>> = channelFlow {
         val zoneId = ZoneId.systemDefault()
         val viewWindowStart = windowStart(view.chartSettings.timeWindow, now)
@@ -207,31 +207,30 @@ class DefaultHealthDataAggregationEngine(
         }
 
         /**
-         * Serves a SUM series from Health Connect's per-bucket totals when [bucketTotalsReader] can,
-         * returning false when the series still needs raw records. Totals are stamped at their
-         * bucket's start, which may precede [viewWindowStart], so they are not window-filtered:
-         * the first bucket is a whole bucket. Max/min are then bucket totals rather than single
-         * records, and min skips the bucket still in progress, whose total is partial. A failed
-         * read counts as served (an empty series) — retrying it as a full raw scan would spend far
-         * more of the same read quota.
+         * Serves a series from Health Connect's daily totals when [dailyTotalsReader] can,
+         * returning false when the series still needs raw records. Each day's total is one value
+         * in its chart bucket, so SUM charts the bucket's total and AVERAGE/MIN/MAX the average,
+         * smallest and largest day in it. Days are stamped at local midnight, which may precede
+         * [viewWindowStart], so they are not window-filtered: the first day is a whole day.
+         *
+         * Max/min are the highest and lowest plotted bucket — single records do not exist here —
+         * and min skips the bucket still in progress, whose total is partial. A failed read counts
+         * as served (an empty series): retrying it as a full raw scan would spend far more of the
+         * same read quota.
          */
-        suspend fun foldBucketTotals(metricState: StreamingMetricState): Boolean {
-            if (bucketTotalsReader == null || metricState.metricSettings.aggregation != AggregationMode.SUM) {
-                return false
-            }
+        suspend fun foldDailyTotals(metricState: StreamingMetricState): Boolean {
+            if (dailyTotalsReader == null) return false
             try {
                 val bucketSize = metricState.metricSettings.bucketSize
-                val totals = bucketTotalsReader(
-                    metricState.recordClass,
-                    queryStart,
-                    now,
-                    bucketSize
-                ) ?: return false
+                val totals = dailyTotalsReader(metricState.recordClass, queryStart, now, bucketSize)
+                    ?: return false
                 totals.forEach { fold(metricState, it) }
+                val mode = metricState.metricSettings.aggregation
+                val plotted = metricState.buckets.mapValues { (_, bucket) -> bucket.aggregated(mode) }
                 val inProgress = toBucketInstant(now, bucketSize, zoneId)
-                totals.filter { toBucketInstant(it.timestamp, bucketSize, zoneId) != inProgress }
-                    .minOfOrNull { it.value }
-                    ?.let { metricState.minValue = it }
+                metricState.peakValue = plotted.values.maxOrNull()
+                metricState.minValue = plotted.filterKeys { it != inProgress }.values.minOrNull()
+                    ?: plotted.values.minOrNull()
             } catch (exception: Exception) {
                 if (exception is CancellationException) {
                     throw exception
@@ -247,7 +246,7 @@ class DefaultHealthDataAggregationEngine(
         }
 
         selectedByType.groupBy { it.recordClass }.forEach { (recordClass, statesForClass) ->
-            val rawStates = statesForClass.filterNot { foldBucketTotals(it) }
+            val rawStates = statesForClass.filterNot { foldDailyTotals(it) }
             if (rawStates.isEmpty()) return@forEach
             try {
                 pageReader(recordClass, queryStart, now) { pageRecords ->

@@ -1,5 +1,7 @@
 package com.monkopedia.healthdisconnect
 
+import android.health.connect.HealthConnectException
+import android.os.Build
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
@@ -176,3 +178,13 @@ class DefaultHealthConnectGateway(
         }
     }
 }
+
+/**
+ * True when Health Connect refused a call because this app exhausted its rate limit. connect-client
+ * 1.1.0 has no exception type for it: its platform `toKtException` maps the codes it knows
+ * (invalid argument, IO, security, remote) and wraps anything else, ERROR_RATE_LIMIT_EXCEEDED
+ * included, in an IllegalStateException whose cause is the platform exception.
+ */
+internal fun Exception.isHealthConnectRateLimit(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+        (cause as? HealthConnectException)?.errorCode == HealthConnectException.ERROR_RATE_LIMIT_EXCEEDED

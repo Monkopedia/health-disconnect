@@ -82,7 +82,7 @@ import org.koin.androidx.compose.koinViewModel
 
 fun entriesSection(
     scope: LazyListScope,
-    recordCount: Int?,
+    recordCount: HealthDataModel.RecordCount?,
     onOpenEntries: () -> Unit
 ) {
     scope.item {
@@ -95,11 +95,11 @@ fun entriesSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val countText = if ((recordCount ?: 0) >= HealthDataModel.MAX_LISTED_RECORDS) {
-                // The count stops reading at the cap, so a capped count is a lower bound.
-                stringResource(R.string.data_view_entries_count_at_least, recordCount ?: 0)
+            val count = recordCount?.count ?: 0
+            val countText = if (recordCount?.atLeast == true) {
+                stringResource(R.string.data_view_entries_count_at_least, count)
             } else {
-                stringResource(R.string.data_view_entries_count, recordCount ?: 0)
+                stringResource(R.string.data_view_entries_count, count)
             }
             Text(
                 text = countText,

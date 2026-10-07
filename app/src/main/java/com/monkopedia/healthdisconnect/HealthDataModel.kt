@@ -77,14 +77,14 @@ class HealthDataModel @JvmOverloads constructor(
          * Most raw records a chart reads per record type, newest first. Every 500 records is one
          * Health Connect read, and Health Connect rate-limits an app's reads: years of
          * per-minute wearable steps were thousands of reads per chart (issue #112). Past this a
-         * chart shows its most recent records only. Step SUM charts skip raw records entirely —
-         * see [stepTotals].
+         * chart draws its most recent records only and says so ([ChartLoadIssues.truncatedSince]).
+         * Day/week/month step charts read no raw records at all — see [dailyStepTotals].
          */
         const val MAX_CHART_RECORDS = 100_000
 
         /**
-         * Most raw records the entries count and entries list read across a view, newest first.
-         * A count that reaches this is shown as "at least" this many.
+         * Most raw records the entries count and entries list read per record type, newest first.
+         * A count that stops here is shown as "at least" ([RecordCount.atLeast]).
          */
         const val MAX_LISTED_RECORDS = 10_000
 
@@ -97,9 +97,25 @@ class HealthDataModel @JvmOverloads constructor(
         val label: String
     )
 
+    /** A view's entry count; [atLeast] when a record type had more than [MAX_LISTED_RECORDS]. */
+    data class RecordCount(val count: Int, val atLeast: Boolean = false)
+
+    /** Why a chart may show less than the data Health Connect holds. */
+    data class ChartLoadIssues(
+        val readFailure: ReadFailure? = null,
+        /** Start of the data drawn, when a series stopped at [MAX_CHART_RECORDS]. */
+        val truncatedSince: Instant? = null
+    )
+
+    enum class ReadFailure {
+        /** Health Connect refused reads because this app exhausted its read quota. */
+        RATE_LIMITED,
+        OTHER
+    }
+
     private val metricsLock = Any()
     private val metricsWithData: MutableStateFlow<List<KClass<out Record>>?> = MutableStateFlow(null)
-    private val chartReadFailures = MutableStateFlow<Set<Int>>(emptySet())
+    private val chartLoadIssues = MutableStateFlow<Map<Int, ChartLoadIssues>>(emptyMap())
     private var metricsLoading = false
     private var metricsLastRefreshTick = Int.MIN_VALUE
 
@@ -117,18 +133,18 @@ class HealthDataModel @JvmOverloads constructor(
     private val listedRecordLoader: suspend (DataView, ((List<Record>) -> Unit)?) -> List<Record> =
         { view, onPartial ->
             recordLoaderOverride?.invoke(view, onPartial)
-                ?: loadRecordsForView(view, onPartial, maxRecords = MAX_LISTED_RECORDS)
+                ?: loadRecordsForView(view, onPartial, maxRecordsPerType = MAX_LISTED_RECORDS)
         }
+
+    /** Pages the records counted as entries; true when older records were left unread. */
     private val pageReader: suspend (
         cls: KClass<out Record>,
         start: Instant,
         end: Instant,
         onPage: (List<Record>) -> Unit
-    ) -> Unit = { cls, start, end, onPage ->
-        pageReaderOverride?.invoke(cls, start, end, onPage)
-            ?: run {
-                readRecordsInRange(cls, start, end, onPage, maxRecords = MAX_LISTED_RECORDS)
-            }
+    ) -> Boolean = { cls, start, end, onPage ->
+        pageReaderOverride?.invoke(cls, start, end, onPage)?.let { false }
+            ?: readNewestRecords(cls, start, end, MAX_LISTED_RECORDS, onPage)
     }
 
     fun collectMetricsWithData(refreshTick: Int = 0): Flow<List<KClass<out Record>>> {
@@ -329,7 +345,7 @@ class HealthDataModel @JvmOverloads constructor(
 
     /** The view's series exactly as its chart draws them — see [chartSeries]. */
     suspend fun loadAggregatedSeriesForExport(view: DataView): List<MetricSeries> {
-        return chartSeries(view) { _, _ -> }.last()
+        return chartSeries(view, onReadFailure = { _, _ -> }, onTruncated = {}).last()
     }
 
     /**
@@ -339,11 +355,15 @@ class HealthDataModel @JvmOverloads constructor(
      */
     suspend fun loadAggregatedSeriesForWidget(view: DataView): List<MetricSeries> {
         val deniedRecordTypes = mutableSetOf<String>()
-        val series = chartSeries(view) { cls, exception ->
-            if (exception is SecurityException) {
-                deniedRecordTypes.add(cls.qualifiedName ?: cls.simpleName.orEmpty())
-            }
-        }.last()
+        val series = chartSeries(
+            view = view,
+            onReadFailure = { cls, exception ->
+                if (exception is SecurityException) {
+                    deniedRecordTypes.add(cls.qualifiedName ?: cls.simpleName.orEmpty())
+                }
+            },
+            onTruncated = {}
+        ).last()
         if (series.isEmpty() && deniedRecordTypes.isNotEmpty()) {
             throw HealthDataPermissionDeniedException(deniedRecordTypes)
         }
@@ -354,7 +374,7 @@ class HealthDataModel @JvmOverloads constructor(
         view: DataView,
         onPartialUpdate: ((List<Record>) -> Unit)? = null,
         throwOnPermissionDenied: Boolean = false,
-        maxRecords: Int = Int.MAX_VALUE
+        maxRecordsPerType: Int = Int.MAX_VALUE
     ): List<Record> {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
@@ -366,13 +386,12 @@ class HealthDataModel @JvmOverloads constructor(
         val all = mutableListOf<Record>()
         val deniedRecordTypes = mutableSetOf<String>()
         for (cls in selections) {
-            if (all.size >= maxRecords) break
             try {
                 readRecordsInRange(
                     cls = cls,
                     start = queryStart,
                     end = now,
-                    maxRecords = maxRecords - all.size,
+                    maxRecords = maxRecordsPerType,
                     onPage = { pageRecords ->
                         all.addAll(pageRecords)
                         onPartialUpdate?.invoke(
@@ -427,38 +446,55 @@ class HealthDataModel @JvmOverloads constructor(
     }
 
     /**
-     * Daily, weekly or monthly step totals for [start]..[end] from Health Connect's aggregation
-     * API rather than its raw records: one read to find the oldest record, then one read per
-     * [MAX_PERIODS_PER_AGGREGATE] buckets — a handful of reads for years of data, where raw
-     * records took one read per 500 (issue #112). Health Connect deduplicates steps that several
-     * apps recorded for the same time, so a phone-plus-watch user's totals here are lower than
-     * the raw sum this replaced, and match what Health Connect itself reports.
+     * Reads the newest [limit] records of [cls] into [onPage]. Returns true when older records
+     * were left unread — one record past [limit] is requested to tell "exactly [limit]" apart.
+     */
+    private suspend fun readNewestRecords(
+        cls: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+        limit: Int,
+        onPage: (List<Record>) -> Unit
+    ): Boolean {
+        var delivered = 0
+        var truncated = false
+        readRecordsInRange(cls, start, end, maxRecords = limit + 1, onPage = { page ->
+            val kept = page.take(limit - delivered)
+            if (kept.size < page.size) truncated = true
+            delivered += kept.size
+            if (kept.isNotEmpty()) onPage(kept)
+        })
+        return truncated
+    }
+
+    /**
+     * Daily step totals for [start]..[end] from Health Connect's aggregation API rather than its
+     * raw records, for charts bucketed by day, week or month: one read to find the oldest record,
+     * then one read per [MAX_PERIODS_PER_AGGREGATE] days — a handful of reads for years of data,
+     * where raw records took one read per 500 (issue #112). Health Connect deduplicates steps
+     * that several apps recorded for the same time, so a phone-plus-watch user's totals here are
+     * lower than the raw sum this replaced, and match what Health Connect itself reports.
      *
      * Null when this cannot serve the request (another record type, an intraday bucket, or a
      * gateway without aggregation), and the caller reads raw records instead.
      */
-    private suspend fun stepTotals(
+    private suspend fun dailyStepTotals(
         cls: KClass<out Record>,
         start: Instant,
         end: Instant,
         bucketSize: BucketSize
     ): List<MetricMeasurement>? {
         if (cls != StepsRecord::class) return null
-        val period = when (bucketSize) {
-            BucketSize.DAY -> Period.ofDays(1)
-            BucketSize.WEEK -> Period.ofWeeks(1)
-            BucketSize.MONTH -> Period.ofMonths(1)
-            BucketSize.MINUTE, BucketSize.HOUR -> return null
-        }
+        if (bucketSize == BucketSize.MINUTE || bucketSize == BucketSize.HOUR) return null
+        val day = Period.ofDays(1)
         val zoneId = ZoneId.systemDefault()
         val oldest = gateway.oldestRecordTime(cls, start, end) ?: return emptyList()
-        var from = aggregationEngine.toBucketInstant(oldest, bucketSize, zoneId)
-            .atZone(zoneId).toLocalDateTime()
+        var from = oldest.atZone(zoneId).toLocalDate().atStartOfDay()
         val until = end.atZone(zoneId).toLocalDateTime()
         val totals = mutableListOf<MetricMeasurement>()
         while (from < until) {
-            val to = minOf(from.plus(period.multipliedBy(MAX_PERIODS_PER_AGGREGATE)), until)
-            val slices = gateway.stepTotalsByPeriod(from, to, period) ?: return null
+            val to = minOf(from.plus(day.multipliedBy(MAX_PERIODS_PER_AGGREGATE)), until)
+            val slices = gateway.stepTotalsByPeriod(from, to, day) ?: return null
             slices.mapTo(totals) { (sliceStart, steps) ->
                 MetricMeasurement(
                     timestamp = sliceStart.atZone(zoneId).toInstant(),
@@ -483,27 +519,26 @@ class HealthDataModel @JvmOverloads constructor(
 
     /**
      * Counts the view's entries as pages arrive. Reads at most [MAX_LISTED_RECORDS] raw records per
-     * record type, newest first, so a count of [MAX_LISTED_RECORDS] or more means "at least".
+     * record type, newest first, and marks the final count [RecordCount.atLeast] when a type had
+     * more — the same records the entries list shows.
      */
-    fun collectRecordCount(view: DataView): Flow<Int> = channelFlow {
+    fun collectRecordCount(view: DataView): Flow<RecordCount> = channelFlow {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
         val selections: List<KClass<out Record>> = view.records.mapNotNull { sel ->
             typeMap[sel.fqn]
         }.distinctBy { it.qualifiedName.orEmpty() }
-        if (selections.isEmpty()) {
-            trySend(0)
-            return@channelFlow
-        }
         val now = timeProvider.now()
         val queryStart = windowStart(view.chartSettings.timeWindow) ?: Instant.EPOCH
         var count = 0
+        var atLeast = false
         selections.forEach { cls ->
             try {
-                pageReader(cls, queryStart, now) { pageRecords ->
+                val truncated = pageReader(cls, queryStart, now) { pageRecords ->
                     count += pageRecords.count { recordHasSelectedMetric(view, it) }
-                    trySend(count)
+                    trySend(RecordCount(count))
                 }
+                atLeast = atLeast || truncated
             } catch (exception: Exception) {
                 if (exception is CancellationException) {
                     throw exception
@@ -512,29 +547,45 @@ class HealthDataModel @JvmOverloads constructor(
                 Log.w(LOG_TAG, "Failed to read record count for ${cls.simpleName} (${exception.errorLabel()})")
             }
         }
-        if (count == 0) trySend(0)
+        send(RecordCount(count, atLeast))
     }.flowOn(ioDispatcher)
 
-    /**
-     * Whether the latest load of view [viewId]'s chart had a Health Connect read fail — an
-     * exhausted read quota, say — so the chart may be empty or partial although data exists.
-     */
-    fun collectChartReadFailed(viewId: Int): Flow<Boolean> =
-        chartReadFailures.map { viewId in it }.distinctUntilChanged()
+    /** What the latest load of view [viewId]'s chart could not show — see [ChartLoadIssues]. */
+    fun collectChartLoadIssues(viewId: Int): Flow<ChartLoadIssues> =
+        chartLoadIssues.map { it[viewId] ?: ChartLoadIssues() }.distinctUntilChanged()
 
-    fun collectAggregatedSeries(view: DataView): Flow<List<MetricSeries>> =
-        chartSeries(view) { _, _ -> chartReadFailures.update { it + view.id } }
-            .onStart { chartReadFailures.update { it - view.id } }
+    fun collectAggregatedSeries(view: DataView): Flow<List<MetricSeries>> {
+        fun note(change: (ChartLoadIssues) -> ChartLoadIssues) = chartLoadIssues.update {
+            it + (view.id to change(it[view.id] ?: ChartLoadIssues()))
+        }
+        return chartSeries(
+            view = view,
+            onReadFailure = { _, exception ->
+                val failure = if (exception.isHealthConnectRateLimit()) {
+                    ReadFailure.RATE_LIMITED
+                } else {
+                    ReadFailure.OTHER
+                }
+                note { if (it.readFailure == ReadFailure.RATE_LIMITED) it else it.copy(readFailure = failure) }
+            },
+            onTruncated = { since ->
+                // With several truncated series, the chart is complete only from the latest start.
+                note { it.copy(truncatedSince = maxOf(it.truncatedSince ?: since, since)) }
+            }
+        ).onStart { chartLoadIssues.update { it - view.id } }
+    }
 
     /**
      * The view's chart series, shared by the chart, the widget and the CSV export so they agree:
-     * step SUM series from Health Connect's totals ([stepTotals]), everything else from at most
-     * [MAX_CHART_RECORDS] raw records per type. A failed read degrades that series to what was
+     * day/week/month step series from Health Connect's daily totals ([dailyStepTotals]),
+     * everything else from at most [MAX_CHART_RECORDS] raw records per type, reporting where that
+     * cap cut a series short to [onTruncated]. A failed read degrades that series to what was
      * read before it failed, and is reported to [onReadFailure].
      */
     private fun chartSeries(
         view: DataView,
-        onReadFailure: (KClass<out Record>, Exception) -> Unit
+        onReadFailure: (KClass<out Record>, Exception) -> Unit,
+        onTruncated: (Instant) -> Unit
     ): Flow<List<MetricSeries>> {
         suspend fun <T> reportingFailure(cls: KClass<out Record>, read: suspend () -> T): T = try {
             read()
@@ -544,12 +595,19 @@ class HealthDataModel @JvmOverloads constructor(
         }
         return collectAggregatedSeries(
             view = view,
-            bucketTotalsReader = { cls, start, end, bucketSize ->
-                reportingFailure(cls) { stepTotals(cls, start, end, bucketSize) }
+            dailyTotalsReader = { cls, start, end, bucketSize ->
+                reportingFailure(cls) { dailyStepTotals(cls, start, end, bucketSize) }
             },
             pageReader = { cls, start, end, onPage ->
                 reportingFailure(cls) {
-                    readRecordsInRange(cls, start, end, onPage, maxRecords = MAX_CHART_RECORDS)
+                    var oldest: Instant? = null
+                    val truncated = readNewestRecords(cls, start, end, MAX_CHART_RECORDS) { page ->
+                        page.mapNotNull(::recordTimestamp).minOrNull()?.let { pageOldest ->
+                            oldest = minOf(oldest ?: pageOldest, pageOldest)
+                        }
+                        onPage(page)
+                    }
+                    oldest?.takeIf { truncated }?.let(onTruncated)
                 }
             }
         )
@@ -557,7 +615,7 @@ class HealthDataModel @JvmOverloads constructor(
 
     internal fun collectAggregatedSeries(
         view: DataView,
-        bucketTotalsReader: BucketTotalsReader? = null,
+        dailyTotalsReader: DailyTotalsReader? = null,
         pageReader: suspend (
             cls: KClass<out Record>,
             start: Instant,
@@ -570,7 +628,7 @@ class HealthDataModel @JvmOverloads constructor(
             now = timeProvider.now(),
             maxSeries = MAX_CHART_SERIES,
             pageReader = pageReader,
-            bucketTotalsReader = bucketTotalsReader
+            dailyTotalsReader = dailyTotalsReader
         ).flowOn(ioDispatcher)
     }
 
