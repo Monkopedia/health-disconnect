@@ -4,8 +4,10 @@ import android.app.Application
 import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.StepsRecord
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
 import com.monkopedia.healthdisconnect.model.RecordSelection
@@ -14,6 +16,7 @@ import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.YAxisMode
 import java.time.Instant
 import java.time.LocalDate
+import java.time.Period
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import kotlin.reflect.KClass
@@ -64,6 +67,24 @@ class HealthDataModel @JvmOverloads constructor(
         const val MAX_CHART_SERIES = 3
         const val LOG_TAG = "HealthDataModel"
         const val RECENT_METRIC_LOOKBACK_DAYS = 90L
+
+        /**
+         * Most raw records a chart reads per record type, newest first. Every 500 records is one
+         * Health Connect read, and Health Connect rate-limits an app's reads: years of
+         * per-minute wearable steps were thousands of reads per chart (issue #112). Past this a
+         * chart shows its most recent records only. Step SUM charts skip raw records entirely —
+         * see [stepTotals].
+         */
+        const val MAX_CHART_RECORDS = 100_000
+
+        /**
+         * Most raw records the entries count and entries list read across a view, newest first.
+         * A count that reaches this is shown as "at least" this many.
+         */
+        const val MAX_LISTED_RECORDS = 10_000
+
+        /** Periods per Health Connect aggregate request, so a request never spans unbounded groups. */
+        const val MAX_PERIODS_PER_AGGREGATE = 365
     }
 
     data class RecordSelectionOption(
@@ -87,6 +108,11 @@ class HealthDataModel @JvmOverloads constructor(
     private val recordLoader: suspend (DataView, ((List<Record>) -> Unit)?) -> List<Record> = { view, onPartial ->
         recordLoaderOverride?.invoke(view, onPartial) ?: loadRecordsForView(view, onPartial)
     }
+    private val listedRecordLoader: suspend (DataView, ((List<Record>) -> Unit)?) -> List<Record> =
+        { view, onPartial ->
+            recordLoaderOverride?.invoke(view, onPartial)
+                ?: loadRecordsForView(view, onPartial, maxRecords = MAX_LISTED_RECORDS)
+        }
     private val pageReader: suspend (
         cls: KClass<out Record>,
         start: Instant,
@@ -95,7 +121,7 @@ class HealthDataModel @JvmOverloads constructor(
     ) -> Unit = { cls, start, end, onPage ->
         pageReaderOverride?.invoke(cls, start, end, onPage)
             ?: run {
-                readRecordsInRange(cls, start, end, onPage)
+                readRecordsInRange(cls, start, end, onPage, maxRecords = MAX_LISTED_RECORDS)
             }
     }
 
@@ -151,8 +177,19 @@ class HealthDataModel @JvmOverloads constructor(
     ): Boolean = withContext(ioDispatcher) {
         val now = timeProvider.now()
         val start = now.minus(lookbackDays, ChronoUnit.DAYS)
-        gateway.anyRecordInRange(recordClass, start, now) { record ->
-            measurementExtractor.extractMeasurement(record, UnitPreference.METRIC, metricKey) != null
+        try {
+            gateway.anyRecordInRange(recordClass, start, now) { record ->
+                measurementExtractor.extractMeasurement(record, UnitPreference.METRIC, metricKey) != null
+            }
+        } catch (exception: Exception) {
+            if (exception is CancellationException) {
+                throw exception
+            }
+            // Both callers launch this with no handler of their own, so a failed read (an exhausted
+            // Health Connect read quota, say) was a crash. Unknown is reported as "has data": the
+            // warning is advisory, and a false one is worse than a missing one.
+            Log.w(LOG_TAG, "Failed to probe recent data (${exception.errorLabel()})")
+            true
         }
     }
 
@@ -268,7 +305,7 @@ class HealthDataModel @JvmOverloads constructor(
             refreshTick = refreshTick,
             ioScope = viewModelScope,
             ioDispatcher = ioDispatcher,
-            recordLoader = recordLoader
+            recordLoader = listedRecordLoader
         )
     }
 
@@ -305,7 +342,8 @@ class HealthDataModel @JvmOverloads constructor(
     private suspend fun loadRecordsForView(
         view: DataView,
         onPartialUpdate: ((List<Record>) -> Unit)? = null,
-        throwOnPermissionDenied: Boolean = false
+        throwOnPermissionDenied: Boolean = false,
+        maxRecords: Int = Int.MAX_VALUE
     ): List<Record> {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
@@ -317,11 +355,13 @@ class HealthDataModel @JvmOverloads constructor(
         val all = mutableListOf<Record>()
         val deniedRecordTypes = mutableSetOf<String>()
         for (cls in selections) {
+            if (all.size >= maxRecords) break
             try {
                 readRecordsInRange(
                     cls = cls,
                     start = queryStart,
                     end = now,
+                    maxRecords = maxRecords - all.size,
                     onPage = { pageRecords ->
                         all.addAll(pageRecords)
                         onPartialUpdate?.invoke(
@@ -336,10 +376,11 @@ class HealthDataModel @JvmOverloads constructor(
                 if (exception is SecurityException) {
                     deniedRecordTypes.add(cls.qualifiedName ?: cls.simpleName.orEmpty())
                 }
+                // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
                 Log.w(
                     LOG_TAG,
-                    "Failed to load records for ${cls.qualifiedName}, continuing with partial dataset",
-                    exception
+                    "Failed to load records for ${cls.simpleName} (${exception.errorLabel()}), " +
+                        "continuing with partial dataset"
                 )
             }
         }
@@ -363,15 +404,61 @@ class HealthDataModel @JvmOverloads constructor(
         start: Instant,
         end: Instant,
         onPage: (List<Record>) -> Unit,
-        pageSize: Int = 500
+        maxRecords: Int = Int.MAX_VALUE
     ) {
         gateway.readRecordsInRange(
             cls = cls,
             start = start,
             end = end,
-            pageSize = pageSize,
+            maxRecords = maxRecords,
             onPage = onPage
         )
+    }
+
+    /**
+     * Daily, weekly or monthly step totals for [start]..[end] from Health Connect's aggregation
+     * API rather than its raw records: one read to find the oldest record, then one read per
+     * [MAX_PERIODS_PER_AGGREGATE] buckets — a handful of reads for years of data, where raw
+     * records took one read per 500 (issue #112). Health Connect deduplicates steps that several
+     * apps recorded for the same time, so a phone-plus-watch user's totals here are lower than
+     * the raw sum this replaced, and match what Health Connect itself reports.
+     *
+     * Null when this cannot serve the request (another record type, an intraday bucket, or a
+     * gateway without aggregation), and the caller reads raw records instead.
+     */
+    private suspend fun stepTotals(
+        cls: KClass<out Record>,
+        start: Instant,
+        end: Instant,
+        bucketSize: BucketSize
+    ): List<MetricMeasurement>? {
+        if (cls != StepsRecord::class) return null
+        val period = when (bucketSize) {
+            BucketSize.DAY -> Period.ofDays(1)
+            BucketSize.WEEK -> Period.ofWeeks(1)
+            BucketSize.MONTH -> Period.ofMonths(1)
+            BucketSize.MINUTE, BucketSize.HOUR -> return null
+        }
+        val zoneId = ZoneId.systemDefault()
+        val oldest = gateway.oldestRecordTime(cls, start, end) ?: return emptyList()
+        var from = aggregationEngine.toBucketInstant(oldest, bucketSize, zoneId)
+            .atZone(zoneId).toLocalDateTime()
+        val until = end.atZone(zoneId).toLocalDateTime()
+        val totals = mutableListOf<MetricMeasurement>()
+        while (from < until) {
+            val to = minOf(from.plus(period.multipliedBy(MAX_PERIODS_PER_AGGREGATE)), until)
+            val slices = gateway.stepTotalsByPeriod(from, to, period) ?: return null
+            slices.mapTo(totals) { (sliceStart, steps) ->
+                MetricMeasurement(
+                    timestamp = sliceStart.atZone(zoneId).toInstant(),
+                    value = steps.toDouble(),
+                    unitLabel = "count",
+                    sourceField = "Count"
+                )
+            }
+            from = to
+        }
+        return totals
     }
 
     /** True when [record] yields a value for at least one of the view's selected metrics. */
@@ -383,6 +470,10 @@ class HealthDataModel @JvmOverloads constructor(
         }
     }
 
+    /**
+     * Counts the view's entries as pages arrive. Reads at most [MAX_LISTED_RECORDS] raw records per
+     * record type, newest first, so a count of [MAX_LISTED_RECORDS] or more means "at least".
+     */
     fun collectRecordCount(view: DataView): Flow<Int> = channelFlow {
         val typeMap: Map<String, KClass<out Record>> =
             PermissionsViewModel.CLASSES.associateBy { it.qualifiedName ?: "" }
@@ -406,28 +497,25 @@ class HealthDataModel @JvmOverloads constructor(
                 if (exception is CancellationException) {
                     throw exception
                 }
-                Log.w(
-                    LOG_TAG,
-                    "Failed to read record count for ${cls.qualifiedName}",
-                    exception
-                )
+                // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
+                Log.w(LOG_TAG, "Failed to read record count for ${cls.simpleName} (${exception.errorLabel()})")
             }
         }
         if (count == 0) trySend(0)
     }.flowOn(ioDispatcher)
 
     fun collectAggregatedSeries(view: DataView): Flow<List<MetricSeries>> =
-        collectAggregatedSeries(view) { cls, start, end, onPage ->
-            readRecordsInRange(
-                cls = cls,
-                start = start,
-                end = end,
-                onPage = { page -> onPage(page) }
-            )
-        }
+        collectAggregatedSeries(
+            view = view,
+            bucketTotalsReader = ::stepTotals,
+            pageReader = { cls, start, end, onPage ->
+                readRecordsInRange(cls, start, end, onPage, maxRecords = MAX_CHART_RECORDS)
+            }
+        )
 
     internal fun collectAggregatedSeries(
         view: DataView,
+        bucketTotalsReader: BucketTotalsReader? = null,
         pageReader: suspend (
             cls: KClass<out Record>,
             start: Instant,
@@ -439,7 +527,8 @@ class HealthDataModel @JvmOverloads constructor(
             view = view,
             now = timeProvider.now(),
             maxSeries = MAX_CHART_SERIES,
-            pageReader = pageReader
+            pageReader = pageReader,
+            bucketTotalsReader = bucketTotalsReader
         ).flowOn(ioDispatcher)
     }
 

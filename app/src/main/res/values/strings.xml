@@ -54,6 +54,7 @@
     <string name="data_view_no_graphable_with_hint">No graphable values in the current filters. Try setting Time window to All.</string>
     <string name="data_view_showing_first_metrics">Showing first %1$d selected metrics.</string>
     <string name="data_view_entries_count">Entries (%1$d)</string>
+    <string name="data_view_entries_count_at_least">Entries (%1$d+)</string>
     <string name="data_view_view_entries">View entries</string>
     <string name="data_view_back">Back</string>
     <string name="data_view_entries_for">Entries - %1$s</string>

@@ -37,9 +37,22 @@ interface HealthDataAggregationEngine {
             start: Instant,
             end: Instant,
             onPage: (List<Record>) -> Unit
-        ) -> Unit
+        ) -> Unit,
+        bucketTotalsReader: BucketTotalsReader? = null
     ): Flow<List<HealthDataModel.MetricSeries>>
 }
+
+/**
+ * Health Connect's own per-bucket totals for a [AggregationMode.SUM] series, one measurement per
+ * bucket stamped at the bucket's start. Returns null when it cannot serve this record type or bucket
+ * size, and the engine reads raw records instead.
+ */
+typealias BucketTotalsReader = suspend (
+    cls: KClass<out Record>,
+    start: Instant,
+    end: Instant,
+    bucketSize: BucketSize
+) -> List<MetricMeasurement>?
 
 class DefaultHealthDataAggregationEngine(
     private val measurementExtractor: HealthRecordMeasurementExtractor
@@ -155,7 +168,8 @@ class DefaultHealthDataAggregationEngine(
             start: Instant,
             end: Instant,
             onPage: (List<Record>) -> Unit
-        ) -> Unit
+        ) -> Unit,
+        bucketTotalsReader: BucketTotalsReader?
     ): Flow<List<HealthDataModel.MetricSeries>> = channelFlow {
         val zoneId = ZoneId.systemDefault()
         val viewWindowStart = windowStart(view.chartSettings.timeWindow, now)
@@ -178,11 +192,60 @@ class DefaultHealthDataAggregationEngine(
         }
 
         val queryStart = viewWindowStart ?: Instant.EPOCH
+        fun fold(metricState: StreamingMetricState, measurement: MetricMeasurement) {
+            if (metricState.unit == null && !measurement.unitLabel.isNullOrBlank()) {
+                metricState.unit = measurement.unitLabel
+            }
+            metricState.peakValue = max(metricState.peakValue ?: measurement.value, measurement.value)
+            metricState.minValue = min(metricState.minValue ?: measurement.value, measurement.value)
+            val bucketInstant = toBucketInstant(
+                measurement.timestamp,
+                metricState.metricSettings.bucketSize,
+                zoneId
+            )
+            metricState.buckets.getOrPut(bucketInstant) { BucketAccumulator() }.add(measurement.value)
+        }
+
+        /**
+         * Serves a SUM series from Health Connect's per-bucket totals when [bucketTotalsReader] can,
+         * returning false when the series still needs raw records. Totals are stamped at their
+         * bucket's start, which may precede [viewWindowStart], so they are not window-filtered:
+         * the first bucket is a whole bucket. A failed read counts as served (an empty series) —
+         * retrying it as a full raw scan would spend far more of the same read quota.
+         */
+        suspend fun foldBucketTotals(metricState: StreamingMetricState): Boolean {
+            if (bucketTotalsReader == null || metricState.metricSettings.aggregation != AggregationMode.SUM) {
+                return false
+            }
+            try {
+                val totals = bucketTotalsReader(
+                    metricState.recordClass,
+                    queryStart,
+                    now,
+                    metricState.metricSettings.bucketSize
+                ) ?: return false
+                totals.forEach { fold(metricState, it) }
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
+                Log.w(
+                    LOG_TAG,
+                    "Failed to read totals for ${metricState.recordClass.simpleName} (${exception.errorLabel()})"
+                )
+            }
+            trySend(buildStreamingSeries(selectedByType))
+            return true
+        }
+
         selectedByType.groupBy { it.recordClass }.forEach { (recordClass, statesForClass) ->
+            val rawStates = statesForClass.filterNot { foldBucketTotals(it) }
+            if (rawStates.isEmpty()) return@forEach
             try {
                 pageReader(recordClass, queryStart, now) { pageRecords ->
                     pageRecords.forEach { record ->
-                        statesForClass.forEach { metricState ->
+                        rawStates.forEach { metricState ->
                             val measurement = extractMeasurement(
                                 record = record,
                                 unitPreference = metricState.metricSettings.unitPreference,
@@ -191,24 +254,7 @@ class DefaultHealthDataAggregationEngine(
                             if (viewWindowStart != null && measurement.timestamp.isBefore(viewWindowStart)) {
                                 return@forEach
                             }
-                            if (metricState.unit == null && !measurement.unitLabel.isNullOrBlank()) {
-                                metricState.unit = measurement.unitLabel
-                            }
-                            metricState.peakValue = when (val current = metricState.peakValue) {
-                                null -> measurement.value
-                                else -> kotlin.math.max(current, measurement.value)
-                            }
-                            metricState.minValue = when (val current = metricState.minValue) {
-                                null -> measurement.value
-                                else -> kotlin.math.min(current, measurement.value)
-                            }
-                            val bucketInstant = toBucketInstant(
-                                measurement.timestamp,
-                                metricState.metricSettings.bucketSize,
-                                zoneId
-                            )
-                            val bucket = metricState.buckets.getOrPut(bucketInstant) { BucketAccumulator() }
-                            bucket.add(measurement.value)
+                            fold(metricState, measurement)
                         }
                     }
                     trySend(buildStreamingSeries(selectedByType))
@@ -217,10 +263,10 @@ class DefaultHealthDataAggregationEngine(
                 if (exception is CancellationException) {
                     throw exception
                 }
+                // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
                 Log.w(
                     LOG_TAG,
-                    "Failed to read aggregation data for ${recordClass.qualifiedName}",
-                    exception
+                    "Failed to read aggregation data for ${recordClass.simpleName} (${exception.errorLabel()})"
                 )
             }
         }

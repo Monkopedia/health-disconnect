@@ -2,9 +2,13 @@ package com.monkopedia.healthdisconnect
 
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.Instant
+import java.time.LocalDateTime
+import java.time.Period
 import kotlin.reflect.KClass
 
 interface HealthConnectGateway {
@@ -14,11 +18,17 @@ interface HealthConnectGateway {
         pageSize: Int = 1
     ): Boolean
 
+    /**
+     * Pages the records of [cls] in [start]..[end] into [onPage], newest first, stopping once
+     * [maxRecords] have been delivered. Every page is one Health Connect read, and Health Connect
+     * rate-limits reads per app, so a caller that does not need everything should pass a bound.
+     */
     suspend fun readRecordsInRange(
         cls: KClass<out Record>,
         start: Instant,
         end: Instant,
         pageSize: Int = 500,
+        maxRecords: Int = Int.MAX_VALUE,
         onPage: (List<Record>) -> Unit
     )
 
@@ -41,6 +51,34 @@ interface HealthConnectGateway {
         }
         return found
     }
+
+    /**
+     * The timestamp of the oldest record of [cls] in [start]..[end], or null when there is none.
+     * The default scans the range; [DefaultHealthConnectGateway] answers with a single read.
+     */
+    suspend fun oldestRecordTime(cls: KClass<out Record>, start: Instant, end: Instant): Instant? {
+        var oldest: Instant? = null
+        readRecordsInRange(cls, start, end) { page ->
+            page.forEach { record ->
+                val time = recordTimestamp(record) ?: return@forEach
+                if (oldest?.isAfter(time) != false) oldest = time
+            }
+        }
+        return oldest
+    }
+
+    /**
+     * Total steps in each [period]-long slice of [start]..[end] (local time), as Health Connect
+     * aggregates them: one read per call however many records the range holds, and deduplicated
+     * across apps that record the same steps. Slices with no steps are omitted.
+     *
+     * Null means this gateway cannot aggregate, and callers fall back to [readRecordsInRange].
+     */
+    suspend fun stepTotalsByPeriod(
+        start: LocalDateTime,
+        end: LocalDateTime,
+        period: Period
+    ): List<Pair<LocalDateTime, Long>>? = null
 }
 
 class DefaultHealthConnectGateway(
@@ -62,8 +100,10 @@ class DefaultHealthConnectGateway(
         start: Instant,
         end: Instant,
         pageSize: Int,
+        maxRecords: Int,
         onPage: (List<Record>) -> Unit
     ) {
+        var remaining = maxRecords
         var pageToken: String? = null
         do {
             val response = healthConnectClient.readRecords(
@@ -71,12 +111,15 @@ class DefaultHealthConnectGateway(
                     recordType = cls,
                     timeRangeFilter = TimeRangeFilter.between(start, end),
                     pageSize = pageSize,
-                    pageToken = pageToken
+                    pageToken = pageToken,
+                    ascendingOrder = false
                 )
             )
-            onPage(response.records)
+            val page = response.records.take(remaining)
+            onPage(page)
+            remaining -= page.size
             pageToken = response.pageToken
-        } while (pageToken != null)
+        } while (pageToken != null && remaining > 0)
     }
 
     override suspend fun anyRecordInRange(
@@ -104,5 +147,32 @@ class DefaultHealthConnectGateway(
         } while (pageToken != null)
         return false
     }
-}
 
+    override suspend fun oldestRecordTime(cls: KClass<out Record>, start: Instant, end: Instant): Instant? {
+        val response = healthConnectClient.readRecords(
+            ReadRecordsRequest(
+                recordType = cls,
+                timeRangeFilter = TimeRangeFilter.between(start, end),
+                pageSize = 1,
+                ascendingOrder = true
+            )
+        )
+        return response.records.firstOrNull()?.let(::recordTimestamp)
+    }
+
+    override suspend fun stepTotalsByPeriod(
+        start: LocalDateTime,
+        end: LocalDateTime,
+        period: Period
+    ): List<Pair<LocalDateTime, Long>> {
+        return healthConnectClient.aggregateGroupByPeriod(
+            AggregateGroupByPeriodRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(start, end),
+                timeRangeSlicer = period
+            )
+        ).mapNotNull { slice ->
+            slice.result[StepsRecord.COUNT_TOTAL]?.let { slice.startTime to it }
+        }
+    }
+}

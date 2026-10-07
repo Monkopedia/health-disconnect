@@ -95,8 +95,14 @@ fun entriesSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val countText = if ((recordCount ?: 0) >= HealthDataModel.MAX_LISTED_RECORDS) {
+                // The count stops reading at the cap, so a capped count is a lower bound.
+                stringResource(R.string.data_view_entries_count_at_least, recordCount ?: 0)
+            } else {
+                stringResource(R.string.data_view_entries_count, recordCount ?: 0)
+            }
             Text(
-                text = stringResource(R.string.data_view_entries_count, recordCount ?: 0),
+                text = countText,
                 style = MaterialTheme.typography.titleMedium
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
