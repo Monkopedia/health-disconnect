@@ -28,9 +28,11 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.Period
 import java.time.ZoneOffset
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -58,7 +60,10 @@ class HealthConnectReadBudgetTest {
     private class FakeStepsStore(
         private val days: Int = 3 * 365,
         private val recordsPerDay: Int = 1_000,
-        private val quota: Int = Int.MAX_VALUE
+        private val quota: Int = Int.MAX_VALUE,
+        private val overQuota: () -> Exception = {
+            IllegalStateException("android.health.connect.HealthConnectException: API call quota exceeded")
+        }
     ) {
         val total = days * recordsPerDay
         var calls = 0
@@ -72,11 +77,7 @@ class HealthConnectReadBudgetTest {
         }
 
         private fun spend() {
-            if (++calls > quota) {
-                throw IllegalStateException(
-                    "android.health.connect.HealthConnectException: API call quota exceeded"
-                )
-            }
+            if (++calls > quota) throw overQuota()
         }
 
         private fun record(index: Int): StepsRecord {
@@ -109,13 +110,18 @@ class HealthConnectReadBudgetTest {
                 .invoke(request) as TimeRangeFilter
             val period = request.javaClass.getMethod("getTimeRangeSlicer\$connect_client_release")
                 .invoke(request) as Period
-            val result = mockk<AggregationResult> {
+            val whole = mockk<AggregationResult> {
                 every { get(StepsRecord.COUNT_TOTAL) } returns AGGREGATED_STEPS_PER_PERIOD
+            }
+            val inProgress = mockk<AggregationResult> {
+                every { get(StepsRecord.COUNT_TOTAL) } returns IN_PROGRESS_STEPS
             }
             val slices = mutableListOf<AggregationResultGroupedByPeriod>()
             var sliceStart: LocalDateTime = filter.localStartTime!!
             while (sliceStart < filter.localEndTime!!) {
                 val sliceEnd = sliceStart.plus(period)
+                // A slice running past the request's end is the period still in progress.
+                val result = if (sliceEnd > filter.localEndTime!!) inProgress else whole
                 slices += AggregationResultGroupedByPeriod(result, sliceStart, sliceEnd)
                 sliceStart = sliceEnd
             }
@@ -161,8 +167,10 @@ class HealthConnectReadBudgetTest {
         val points = series.single().points
         // 1,095 days ending now span 1,096 calendar days: partial first and last.
         assertEquals(3 * 365 + 1, points.size)
-        // The chart shows Health Connect's own (deduplicated) totals, not the raw-record sum.
-        assertTrue(points.all { it.value == AGGREGATED_STEPS_PER_PERIOD.toDouble() })
+        // The chart shows what Health Connect aggregated (a fixed value here), not the raw-record
+        // sum of 10,000 a day. This proves the routing; the fake does not model deduplication.
+        assertTrue(points.dropLast(1).all { it.value == AGGREGATED_STEPS_PER_PERIOD.toDouble() })
+        assertEquals(IN_PROGRESS_STEPS.toDouble(), points.last().value, 0.0)
     }
 
     @Test
@@ -211,8 +219,57 @@ class HealthConnectReadBudgetTest {
         assertTrue(model(store).hasRecentMetricData(StepsRecord::class, metricKey = null))
     }
 
+    @Test
+    fun `the widget and the CSV export show the chart's step totals`() = runBlocking {
+        val view = stepsView(AggregationMode.SUM)
+        val chart = model(FakeStepsStore()).collectAggregatedSeries(view).toList().last()
+        val widgetStore = FakeStepsStore()
+        val widget = model(widgetStore).loadAggregatedSeriesForWidget(view)
+        val exportStore = FakeStepsStore()
+        val export = model(exportStore).loadAggregatedSeriesForExport(view)
+
+        // One view, one total: a widget or export summing raw records would show double-counted
+        // totals beside a deduplicated chart, and read all 2,190 pages to do it.
+        assertEquals(chart.single().points, widget.single().points)
+        assertEquals(chart.single().points, export.single().points)
+        assertTrue("widget made ${widgetStore.calls} calls", widgetStore.calls <= 5)
+        assertTrue("export made ${exportStore.calls} calls", exportStore.calls <= 5)
+    }
+
+    @Test
+    fun `step totals Min skips the bucket still in progress`() = runBlocking {
+        val series = model(FakeStepsStore()).collectAggregatedSeries(stepsView(AggregationMode.SUM))
+            .toList().last().single()
+
+        // Today's partial total (IN_PROGRESS_STEPS) is drawn but is not the window's minimum.
+        assertEquals(AGGREGATED_STEPS_PER_PERIOD.toDouble(), series.minValueInWindow, 0.0)
+        assertEquals(AGGREGATED_STEPS_PER_PERIOD.toDouble(), series.peakValueInWindow, 0.0)
+    }
+
+    @Test
+    fun `a failed chart read is reported so the chart can say so`() = runBlocking {
+        val failing = model(FakeStepsStore(quota = 1))
+        failing.collectAggregatedSeries(stepsView(AggregationMode.SUM)).toList()
+        val healthy = model(FakeStepsStore())
+        healthy.collectAggregatedSeries(stepsView(AggregationMode.SUM)).toList()
+
+        assertTrue(failing.collectChartReadFailed(112).first())
+        assertFalse(healthy.collectChartReadFailed(112).first())
+    }
+
+    @Test
+    fun `the widget still reports a missing read permission`() = runBlocking {
+        val store = FakeStepsStore(quota = 0, overQuota = { SecurityException("no read permission") })
+
+        val failure = runCatching { model(store).loadAggregatedSeriesForWidget(stepsView(AggregationMode.SUM)) }
+
+        val denied = failure.exceptionOrNull() as HealthDataPermissionDeniedException
+        assertEquals(setOf(StepsRecord::class.qualifiedName), denied.deniedRecordTypes)
+    }
+
     private companion object {
         const val STEPS_PER_RECORD = 10L
         const val AGGREGATED_STEPS_PER_PERIOD = 4_321L
+        const val IN_PROGRESS_STEPS = 7L
     }
 }

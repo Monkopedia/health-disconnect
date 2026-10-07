@@ -1062,6 +1062,7 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectData(any(), any()) } returns flowOf(emptyList<Record>())
         every { healthDataModel.collectRecordCount(any()) } returns flowOf(0)
         every { healthDataModel.collectAggregatedSeries(any()) } returns flowOf(emptyList())
+        every { healthDataModel.collectChartReadFailed(any()) } returns flowOf(false)
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
         every { healthDataModel.aggregateMetricSeries(any(), any()) } returns null
         every { healthDataModel.recordSelectionLabel(any()) } returns "Metric"

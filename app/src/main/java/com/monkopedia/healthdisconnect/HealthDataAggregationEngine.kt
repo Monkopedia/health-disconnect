@@ -210,21 +210,28 @@ class DefaultHealthDataAggregationEngine(
          * Serves a SUM series from Health Connect's per-bucket totals when [bucketTotalsReader] can,
          * returning false when the series still needs raw records. Totals are stamped at their
          * bucket's start, which may precede [viewWindowStart], so they are not window-filtered:
-         * the first bucket is a whole bucket. A failed read counts as served (an empty series) —
-         * retrying it as a full raw scan would spend far more of the same read quota.
+         * the first bucket is a whole bucket. Max/min are then bucket totals rather than single
+         * records, and min skips the bucket still in progress, whose total is partial. A failed
+         * read counts as served (an empty series) — retrying it as a full raw scan would spend far
+         * more of the same read quota.
          */
         suspend fun foldBucketTotals(metricState: StreamingMetricState): Boolean {
             if (bucketTotalsReader == null || metricState.metricSettings.aggregation != AggregationMode.SUM) {
                 return false
             }
             try {
+                val bucketSize = metricState.metricSettings.bucketSize
                 val totals = bucketTotalsReader(
                     metricState.recordClass,
                     queryStart,
                     now,
-                    metricState.metricSettings.bucketSize
+                    bucketSize
                 ) ?: return false
                 totals.forEach { fold(metricState, it) }
+                val inProgress = toBucketInstant(now, bucketSize, zoneId)
+                totals.filter { toBucketInstant(it.timestamp, bucketSize, zoneId) != inProgress }
+                    .minOfOrNull { it.value }
+                    ?.let { metricState.minValue = it }
             } catch (exception: Exception) {
                 if (exception is CancellationException) {
                     throw exception
@@ -270,7 +277,7 @@ class DefaultHealthDataAggregationEngine(
                 )
             }
         }
-        trySend(buildStreamingSeries(selectedByType))
+        send(buildStreamingSeries(selectedByType))
     }
 
     companion object {

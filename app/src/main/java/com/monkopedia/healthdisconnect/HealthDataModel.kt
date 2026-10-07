@@ -27,8 +27,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.last
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -94,6 +99,7 @@ class HealthDataModel @JvmOverloads constructor(
 
     private val metricsLock = Any()
     private val metricsWithData: MutableStateFlow<List<KClass<out Record>>?> = MutableStateFlow(null)
+    private val chartReadFailures = MutableStateFlow<Set<Int>>(emptySet())
     private var metricsLoading = false
     private var metricsLastRefreshTick = Int.MIN_VALUE
 
@@ -321,22 +327,27 @@ class HealthDataModel @JvmOverloads constructor(
         }
     }
 
+    /** The view's series exactly as its chart draws them — see [chartSeries]. */
     suspend fun loadAggregatedSeriesForExport(view: DataView): List<MetricSeries> {
-        return withContext(ioDispatcher) {
-            val records = recordLoader(view, null)
-            aggregationEngine.aggregateMetricSeriesList(view, records)
-        }
+        return chartSeries(view) { _, _ -> }.last()
     }
 
+    /**
+     * The view's series exactly as its chart draws them — see [chartSeries] — so a widget never
+     * shows a different total from the app. Throws [HealthDataPermissionDeniedException] when
+     * nothing could be drawn because a read permission is missing.
+     */
     suspend fun loadAggregatedSeriesForWidget(view: DataView): List<MetricSeries> {
-        return withContext(ioDispatcher) {
-            val records = loadRecordsForView(
-                view = view,
-                onPartialUpdate = null,
-                throwOnPermissionDenied = true
-            )
-            aggregationEngine.aggregateMetricSeriesList(view, records)
+        val deniedRecordTypes = mutableSetOf<String>()
+        val series = chartSeries(view) { cls, exception ->
+            if (exception is SecurityException) {
+                deniedRecordTypes.add(cls.qualifiedName ?: cls.simpleName.orEmpty())
+            }
+        }.last()
+        if (series.isEmpty() && deniedRecordTypes.isNotEmpty()) {
+            throw HealthDataPermissionDeniedException(deniedRecordTypes)
         }
+        return series
     }
 
     private suspend fun loadRecordsForView(
@@ -504,14 +515,45 @@ class HealthDataModel @JvmOverloads constructor(
         if (count == 0) trySend(0)
     }.flowOn(ioDispatcher)
 
+    /**
+     * Whether the latest load of view [viewId]'s chart had a Health Connect read fail — an
+     * exhausted read quota, say — so the chart may be empty or partial although data exists.
+     */
+    fun collectChartReadFailed(viewId: Int): Flow<Boolean> =
+        chartReadFailures.map { viewId in it }.distinctUntilChanged()
+
     fun collectAggregatedSeries(view: DataView): Flow<List<MetricSeries>> =
-        collectAggregatedSeries(
+        chartSeries(view) { _, _ -> chartReadFailures.update { it + view.id } }
+            .onStart { chartReadFailures.update { it - view.id } }
+
+    /**
+     * The view's chart series, shared by the chart, the widget and the CSV export so they agree:
+     * step SUM series from Health Connect's totals ([stepTotals]), everything else from at most
+     * [MAX_CHART_RECORDS] raw records per type. A failed read degrades that series to what was
+     * read before it failed, and is reported to [onReadFailure].
+     */
+    private fun chartSeries(
+        view: DataView,
+        onReadFailure: (KClass<out Record>, Exception) -> Unit
+    ): Flow<List<MetricSeries>> {
+        suspend fun <T> reportingFailure(cls: KClass<out Record>, read: suspend () -> T): T = try {
+            read()
+        } catch (exception: Exception) {
+            if (exception !is CancellationException) onReadFailure(cls, exception)
+            throw exception
+        }
+        return collectAggregatedSeries(
             view = view,
-            bucketTotalsReader = ::stepTotals,
+            bucketTotalsReader = { cls, start, end, bucketSize ->
+                reportingFailure(cls) { stepTotals(cls, start, end, bucketSize) }
+            },
             pageReader = { cls, start, end, onPage ->
-                readRecordsInRange(cls, start, end, onPage, maxRecords = MAX_CHART_RECORDS)
+                reportingFailure(cls) {
+                    readRecordsInRange(cls, start, end, onPage, maxRecords = MAX_CHART_RECORDS)
+                }
             }
         )
+    }
 
     internal fun collectAggregatedSeries(
         view: DataView,

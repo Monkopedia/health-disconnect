@@ -51,6 +51,7 @@
         <item quantity="other">Graph (%1$d months)</item>
     </plurals>
     <string name="data_view_no_graphable">No graphable metric values available yet.</string>
+    <string name="data_view_chart_read_failed">Health Connect did not return all of this data. It may be limiting how often apps can read; pull to refresh later to try again.</string>
     <string name="data_view_no_graphable_with_hint">No graphable values in the current filters. Try setting Time window to All.</string>
     <string name="data_view_showing_first_metrics">Showing first %1$d selected metrics.</string>
     <string name="data_view_entries_count">Entries (%1$d)</string>

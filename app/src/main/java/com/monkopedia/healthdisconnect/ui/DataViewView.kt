@@ -180,6 +180,8 @@ fun DataViewView(
     ) { healthDataModel.collectAggregatedSeries(view!!) }
     val recordCount by recordCountFlow.collectAsState(initial = null)
     val metricSeriesList by metricSeriesFlow.collectAsState(initial = null)
+    val chartReadFailedFlow = remember(view!!.id) { healthDataModel.collectChartReadFailed(view!!.id) }
+    val chartReadFailed by chartReadFailedFlow.collectAsState(initial = false)
     val isShowingChart = rememberSaveable(view!!.id) { mutableStateOf(true) }
     val isEditing =
         rememberSaveable(view!!.id) { mutableStateOf(!info.isConfigValid || !view.isConfigValid) }
@@ -575,7 +577,9 @@ fun DataViewView(
                                 GraphStatePlaceholder(
                                     isLoading = false,
                                     message = stringResource(
-                                        if (hasAnyEntries) {
+                                        if (chartReadFailed) {
+                                            R.string.data_view_chart_read_failed
+                                        } else if (hasAnyEntries) {
                                             R.string.data_view_no_graphable_with_hint
                                         } else {
                                             R.string.data_view_no_graphable
@@ -584,6 +588,13 @@ fun DataViewView(
                                     reserveLegendRows = view!!.records.size.coerceIn(1, HealthDataModel.MAX_CHART_SERIES)
                                 )
                             } else {
+                                if (chartReadFailed) {
+                                    Text(
+                                        stringResource(R.string.data_view_chart_read_failed),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                                 if (view!!.records.size > HealthDataModel.MAX_CHART_SERIES) {
                                     Text(
                                         stringResource(
