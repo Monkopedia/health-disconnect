@@ -14,6 +14,7 @@ import com.monkopedia.healthdisconnect.model.DataViewInfoList
 import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.ViewType
 import com.monkopedia.healthdisconnect.ui.DataViewView
+import com.monkopedia.healthdisconnect.ui.ExportIncompleteDialog
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import io.mockk.every
 import io.mockk.mockk
@@ -68,6 +69,26 @@ class DataViewChartReadFailedTest {
 
         val date = since.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
         composeRule.onNodeWithText("Showing data since $date", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun anIncompleteExportSaysWhereItStartsAndWhy() {
+        val since = LocalDate.of(2026, 7, 12)
+        composeRule.setContent {
+            HealthDisconnectTheme(dynamicColor = false) {
+                ExportIncompleteDialog(
+                    issues = ChartLoadIssues(
+                        readFailure = ReadFailure.RATE_LIMITED,
+                        truncatedSince = since.atStartOfDay(ZoneId.systemDefault()).toInstant()
+                    ),
+                    onDismiss = {}
+                )
+            }
+        }
+
+        val date = since.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+        composeRule.onNodeWithText("This export includes data since $date", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithText("some data is missing from this export", substring = true).assertIsDisplayed()
     }
 
     private fun setViewContent(series: List<HealthDataModel.MetricSeries>, issues: ChartLoadIssues) {

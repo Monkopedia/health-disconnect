@@ -54,6 +54,10 @@
     <string name="data_view_chart_rate_limited">Health Connect is temporarily limiting how often this app can read, so some of this data could not be loaded. Pull to refresh later to try again.</string>
     <string name="data_view_chart_read_failed">Some of this data could not be read from Health Connect, so this chart may be incomplete.</string>
     <string name="data_view_chart_truncated">Showing data since %1$s. Older history was not loaded.</string>
+    <string name="data_view_export_incomplete_title">Export is incomplete</string>
+    <string name="data_view_export_truncated">This export includes data since %1$s. Older history was not loaded.</string>
+    <string name="data_view_export_rate_limited">Health Connect is temporarily limiting how often this app can read, so some data is missing from this export. Try again later.</string>
+    <string name="data_view_export_read_failed">Some data could not be read from Health Connect, so this export may be incomplete.</string>
     <string name="data_view_no_graphable_with_hint">No graphable values in the current filters. Try setting Time window to All.</string>
     <string name="data_view_showing_first_metrics">Showing first %1$d selected metrics.</string>
     <string name="data_view_entries_count">Entries (%1$d)</string>

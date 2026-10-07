@@ -206,6 +206,7 @@ fun DataViewView(
     }
     var isEntriesExporting by rememberSaveable(view!!.id) { mutableStateOf(false) }
     var entriesExportError by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
+    var entriesExportIssues by remember(view!!.id) { mutableStateOf<HealthDataModel.ChartLoadIssues?>(null) }
     var addWidgetError by rememberSaveable(view!!.id) { mutableStateOf<String?>(null) }
     val actionScope = rememberCoroutineScope()
     val refreshLabelFormatter = remember { DateTimeFormatter.ofPattern("h:mm:ss a") }
@@ -332,8 +333,9 @@ fun DataViewView(
                 val currentView = view!!
                 val csvText = when (mode) {
                     EntriesExportMode.AGGREGATED -> {
-                        val series = healthDataModel.loadAggregatedSeriesForExport(currentView)
-                        buildAggregatedEntriesCsv(currentView, series)
+                        val exported = healthDataModel.loadAggregatedSeriesForExport(currentView)
+                        entriesExportIssues = exported.issues.takeUnless { it.isComplete }
+                        buildAggregatedEntriesCsv(currentView, exported.series, exported.issues.truncatedSince)
                     }
 
                     EntriesExportMode.RAW -> {
@@ -854,6 +856,10 @@ fun DataViewView(
                 launchEntriesExport(mode)
             }
         )
+    }
+
+    entriesExportIssues?.let { issues ->
+        ExportIncompleteDialog(issues, onDismiss = { entriesExportIssues = null })
     }
 
     entriesExportError?.let { message ->

@@ -232,6 +232,27 @@ class HealthConnectReadBudgetTest {
     }
 
     @Test
+    fun `an export cut short by the cap says where it starts`() = runBlocking {
+        val export = model(FakeStepsStore())
+            .loadAggregatedSeriesForExport(stepsView(AggregationMode.SUM, BucketSize.HOUR))
+
+        // The export used to read every record; it now shares the chart's cap, so it must carry
+        // the same "since" the chart shows rather than silently starting later.
+        val shownDays = Duration.between(export.issues.truncatedSince!!, Instant.now()).toDays()
+        assertTrue("truncated at $shownDays days", shownDays in 99..100)
+    }
+
+    @Test
+    fun `exactly the capped number of records is not reported as truncated`() = runBlocking {
+        // 100 days × 1,000 = exactly 100,000 records: all of them fit.
+        val model = model(FakeStepsStore(days = 100))
+
+        model.collectAggregatedSeries(stepsView(AggregationMode.SUM, BucketSize.HOUR)).toList()
+
+        assertNull(model.collectChartLoadIssues(112).first().truncatedSince)
+    }
+
+    @Test
     fun `a complete raw chart reports no truncation`() = runBlocking {
         val model = model(FakeStepsStore(days = 30))
 
@@ -300,7 +321,8 @@ class HealthConnectReadBudgetTest {
         // One view, one total: a widget or export summing raw records would show double-counted
         // totals beside a deduplicated chart, and read all 2,190 pages to do it.
         assertEquals(chart.single().points, widget.single().points)
-        assertEquals(chart.single().points, export.single().points)
+        assertEquals(chart.single().points, export.series.single().points)
+        assertTrue(export.issues.isComplete)
         assertTrue("widget made ${widgetStore.calls} calls", widgetStore.calls <= 5)
         assertTrue("export made ${exportStore.calls} calls", exportStore.calls <= 5)
     }

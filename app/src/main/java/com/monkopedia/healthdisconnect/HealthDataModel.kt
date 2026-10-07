@@ -100,12 +100,28 @@ class HealthDataModel @JvmOverloads constructor(
     /** A view's entry count; [atLeast] when a record type had more than [MAX_LISTED_RECORDS]. */
     data class RecordCount(val count: Int, val atLeast: Boolean = false)
 
-    /** Why a chart may show less than the data Health Connect holds. */
+    /** Why a chart (or its export) may show less than the data Health Connect holds. */
     data class ChartLoadIssues(
         val readFailure: ReadFailure? = null,
         /** Start of the data drawn, when a series stopped at [MAX_CHART_RECORDS]. */
         val truncatedSince: Instant? = null
-    )
+    ) {
+        /** A rate limit outranks any other failure: it is the one the user can wait out. */
+        fun withFailure(exception: Exception): ChartLoadIssues = when {
+            readFailure == ReadFailure.RATE_LIMITED -> this
+            exception.isHealthConnectRateLimit() -> copy(readFailure = ReadFailure.RATE_LIMITED)
+            else -> copy(readFailure = ReadFailure.OTHER)
+        }
+
+        /** With several truncated series, the data is complete only from the latest start. */
+        fun withTruncation(since: Instant): ChartLoadIssues =
+            copy(truncatedSince = maxOf(truncatedSince ?: since, since))
+
+        val isComplete: Boolean get() = readFailure == null && truncatedSince == null
+    }
+
+    /** An aggregated export: the chart's series, and what they could not include. */
+    data class ExportedSeries(val series: List<MetricSeries>, val issues: ChartLoadIssues)
 
     enum class ReadFailure {
         /** Health Connect refused reads because this app exhausted its read quota. */
@@ -343,15 +359,29 @@ class HealthDataModel @JvmOverloads constructor(
         }
     }
 
-    /** The view's series exactly as its chart draws them — see [chartSeries]. */
-    suspend fun loadAggregatedSeriesForExport(view: DataView): List<MetricSeries> {
-        return chartSeries(view, onReadFailure = { _, _ -> }, onTruncated = {}).last()
+    /**
+     * The view's series exactly as its chart draws them — see [chartSeries] — with what they could
+     * not include, so the export can tell the user it is incomplete rather than silently starting
+     * later than the window they chose.
+     */
+    suspend fun loadAggregatedSeriesForExport(view: DataView): ExportedSeries {
+        var issues = ChartLoadIssues()
+        val series = chartSeries(
+            view = view,
+            onReadFailure = { _, exception -> issues = issues.withFailure(exception) },
+            onTruncated = { since -> issues = issues.withTruncation(since) }
+        ).last()
+        return ExportedSeries(series, issues)
     }
 
     /**
      * The view's series exactly as its chart draws them — see [chartSeries] — so a widget never
      * shows a different total from the app. Throws [HealthDataPermissionDeniedException] when
      * nothing could be drawn because a read permission is missing.
+     *
+     * Unlike the chart and the export, the widget does not say when a series was cut short by
+     * [MAX_CHART_RECORDS] or a read failed for any other reason: it is a small background-refreshed
+     * surface, and the app's chart for the same view says so.
      */
     suspend fun loadAggregatedSeriesForWidget(view: DataView): List<MetricSeries> {
         val deniedRecordTypes = mutableSetOf<String>()
@@ -560,18 +590,8 @@ class HealthDataModel @JvmOverloads constructor(
         }
         return chartSeries(
             view = view,
-            onReadFailure = { _, exception ->
-                val failure = if (exception.isHealthConnectRateLimit()) {
-                    ReadFailure.RATE_LIMITED
-                } else {
-                    ReadFailure.OTHER
-                }
-                note { if (it.readFailure == ReadFailure.RATE_LIMITED) it else it.copy(readFailure = failure) }
-            },
-            onTruncated = { since ->
-                // With several truncated series, the chart is complete only from the latest start.
-                note { it.copy(truncatedSince = maxOf(it.truncatedSince ?: since, since)) }
-            }
+            onReadFailure = { _, exception -> note { it.withFailure(exception) } },
+            onTruncated = { since -> note { it.withTruncation(since) } }
         ).onStart { chartLoadIssues.update { it - view.id } }
     }
 
