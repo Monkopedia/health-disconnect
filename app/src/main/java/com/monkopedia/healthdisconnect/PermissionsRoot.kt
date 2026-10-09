@@ -31,7 +31,7 @@ import com.monkopedia.healthdisconnect.ui.theme.DarkOrange
 import com.monkopedia.healthdisconnect.ui.theme.Typography
 import org.koin.androidx.compose.koinViewModel
 
-private const val PERMISSIONS_TAG = "HealthDisconnectPermissions"
+internal const val PERMISSIONS_TAG = "HealthDisconnectPermissions"
 
 @Composable
 fun PermissionsRoot(
@@ -62,7 +62,8 @@ internal fun PermissionsGatedRoot(
     if (availabilityStatus == HealthConnectClient.SDK_UNAVAILABLE) {
         NoSdkAvailable()
     } else if (availabilityStatus == HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED) {
-        UpdateRequired {
+        val updateUnavailable by permissionsViewModel.updateUnavailable.collectAsStateWithLifecycle()
+        UpdateRequired(updateUnavailable = updateUnavailable) {
             permissionsViewModel.launchUpdate()
         }
     } else if (needsPermissions) {
@@ -106,7 +107,7 @@ fun NoSdkAvailable() {
 
 @Preview(showBackground = true)
 @Composable
-fun UpdateRequired(onClick: () -> Unit = {}) {
+fun UpdateRequired(updateUnavailable: Boolean = false, onClick: () -> Unit = {}) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -122,6 +123,13 @@ fun UpdateRequired(onClick: () -> Unit = {}) {
         )
         Button(onClick = onClick, modifier = Modifier.padding(top = 32.dp)) {
             Text(stringResource(R.string.permissions_launch_update))
+        }
+        if (updateUnavailable) {
+            Text(
+                text = stringResource(R.string.permissions_update_unavailable),
+                modifier = Modifier.padding(top = 16.dp),
+                textAlign = TextAlign.Center
+            )
         }
     }
 }

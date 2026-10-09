@@ -29,6 +29,7 @@
     <string name="permissions_no_sdk_body">It appears this device cannot store Health Connect data. Without this, Health Disconnect is not useful on this device.</string>
     <string name="permissions_update_required_title">Health Connect Requires an Update</string>
     <string name="permissions_launch_update">Launch Update</string>
+    <string name="permissions_update_unavailable">No app store or browser could open Health Connect. Install or update Health Connect, then reopen Health Disconnect.</string>
     <string name="permissions_grant">Grant Permissions</string>
     <string name="permissions_ignore">Ignore</string>
     <string name="permissions_rationale_emphasis">Health data</string>
