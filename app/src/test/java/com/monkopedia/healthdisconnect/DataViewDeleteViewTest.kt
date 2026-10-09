@@ -20,6 +20,7 @@ import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -71,7 +72,7 @@ class DataViewDeleteViewTest {
         runBlocking { viewModel.createView(WeightRecord::class) }
 
         val healthDataModel = mockk<HealthDataModel>(relaxed = true)
-        every { healthDataModel.collectRecordCount(any()) } returns flowOf(0)
+        every { healthDataModel.collectRecordCount(any()) } returns emptyFlow()
         every { healthDataModel.collectAggregatedSeries(any()) } returns flowOf(emptyList())
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
         val permissionsViewModel = mockk<PermissionsViewModel>(relaxed = true)
