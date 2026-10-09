@@ -25,6 +25,7 @@ import kotlin.reflect.KClass
 import androidx.room.withTransaction
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.updateAndGet
@@ -287,8 +288,10 @@ class DataViewAdapterViewModel(
         flows.value = flows.value - id
     }
 
+    // A deleted row emits null; drop it so collectors keep their last view until they are disposed
+    // instead of failing (#115). Not completing lets the flow resume if the row is written again.
     private fun createDataView(id: Int): Flow<DataView> =
-        dataViewDao.dataView(id).map { entity ->
+        dataViewDao.dataView(id).filterNotNull().map { entity ->
             decodeDataViewEntity(entity, json)
         }
 
