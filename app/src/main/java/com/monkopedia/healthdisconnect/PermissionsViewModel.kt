@@ -3,8 +3,10 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
@@ -56,6 +58,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
@@ -75,18 +78,41 @@ class PermissionsViewModel(
     val requestPermissionActivityContract =
         PermissionController.createRequestPermissionResultContract()
 
+    private val _updateUnavailable = MutableStateFlow(false)
+
+    /** True once [launchUpdate] found nothing on the device able to open a Health Connect listing. */
+    val updateUnavailable: StateFlow<Boolean> = _updateUnavailable
+
+    /**
+     * Opens Health Connect's store listing: the Play Store if present, otherwise the web listing.
+     * Started from the Application context, so each intent needs [Intent.FLAG_ACTIVITY_NEW_TASK],
+     * and F-Droid / de-Googled devices may have no Play Store (issue #116). If nothing can open
+     * either, [updateUnavailable] is set so the screen can say so instead of crashing.
+     */
     fun launchUpdate() {
-        val uriString =
-            "market://details?id=$providerPackageName&url=healthconnect%3A%2F%2Fonboarding"
         val context = getApplication<Application>()
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW).apply {
-                setPackage("com.android.vending")
-                data = Uri.parse(uriString)
-                putExtra("overlay", true)
-                putExtra("callerId", context.packageName)
-            }
+        val playStore = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("market://details?id=$providerPackageName&url=healthconnect%3A%2F%2Fonboarding")
+        ).apply {
+            setPackage("com.android.vending")
+            putExtra("overlay", true)
+            putExtra("callerId", context.packageName)
+        }
+        val webListing = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://play.google.com/store/apps/details?id=$providerPackageName")
         )
+        val launched = listOf(playStore, webListing).any { intent ->
+            try {
+                context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                true
+            } catch (exception: ActivityNotFoundException) {
+                Log.w(PERMISSIONS_TAG, "Cannot open ${intent.data?.scheme} listing (${exception.errorLabel()})")
+                false
+            }
+        }
+        _updateUnavailable.value = !launched
     }
 
     private var ignoredPermissions = MutableStateFlow(false)
