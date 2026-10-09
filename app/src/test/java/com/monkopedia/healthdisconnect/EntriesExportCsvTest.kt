@@ -48,6 +48,28 @@ class EntriesExportCsvTest {
     }
 
     @Test
+    fun aggregatedCsvCarriesWhereATruncatedExportStarts() {
+        val view = DataView(id = 1, type = ViewType.CHART, records = listOf(RecordSelection(WeightRecord::class)))
+        val series = listOf(
+            HealthDataModel.MetricSeries(
+                label = "Weight",
+                unit = "kilograms",
+                points = listOf(HealthDataModel.MetricPoint(LocalDate.of(2026, 2, 1), 71.5))
+            )
+        )
+        val since = Instant.parse("2026-01-15T00:00:00Z")
+
+        val truncated = buildAggregatedEntriesCsv(view, series, dataSince = since).lines()
+        val complete = buildAggregatedEntriesCsv(view, series).lines()
+
+        // Issue #112: an export cut short by the record cap says so in every row; a complete one
+        // leaves the column blank.
+        assertTrue(truncated.first().endsWith(",data_since"))
+        assertTrue(truncated[1].endsWith(",$since"))
+        assertTrue(complete[1].endsWith(","))
+    }
+
+    @Test
     fun aggregatedCsvHasBlankMinMaxColumnsForNonBandSeries() {
         val view = DataView(
             id = 1,

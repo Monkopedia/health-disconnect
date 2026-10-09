@@ -53,6 +53,7 @@ private class OneFailingTypeGateway(
         start: Instant,
         end: Instant,
         pageSize: Int,
+        maxRecords: Int,
         onPage: (List<Record>) -> Unit
     ) = Unit
 }
