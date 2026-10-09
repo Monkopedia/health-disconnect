@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface DataViewDao {
     @Query("SELECT * FROM data_views WHERE id = :id")
-    fun dataView(id: Int): Flow<DataViewEntity>
+    fun dataView(id: Int): Flow<DataViewEntity?>
 
     @Query("SELECT * FROM data_views WHERE id = :id LIMIT 1")
     suspend fun getById(id: Int): DataViewEntity?

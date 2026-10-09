@@ -154,7 +154,7 @@ class DataViewRoomTransactionTest {
         ).addMigrations(migrationFrom1To2).build()
         try {
             val migratedInfo = migratedDb.dataViewInfoDao().allOrdered().first()
-            val migratedView = migratedDb.dataViewDao().dataView(20).first()
+            val migratedView = checkNotNull(migratedDb.dataViewDao().dataView(20).first())
 
             assertEquals("Steps", migratedInfo.single().name)
             assertEquals(1, migratedInfo.single().ordering)
