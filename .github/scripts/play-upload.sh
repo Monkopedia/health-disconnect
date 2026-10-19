@@ -7,14 +7,22 @@
 # Flow: insert an edit -> list tracks -> upload bundle -> assign to track -> validate ->
 #       commit (or, on a dry run, delete the edit so nothing is published).
 set -euo pipefail
+# Without this, `set -e` is off inside $(...), so a failed api call in VAR=$(api ...) would be ignored.
+shopt -s inherit_errexit
 
 AAB="${1:?usage: play-upload.sh <file.aab>}"
 [ -f "$AAB" ] || { echo "::error::AAB not found: $AAB"; exit 1; }
 : "${ACCESS_TOKEN:?}" "${PACKAGE:?}"
 TRACK="${TRACK:-}"
 RELEASE_STATUS="${RELEASE_STATUS:-completed}"
-DRY_RUN="${DRY_RUN:-true}"
+# Fail closed: anything other than exactly "false" is a dry run.
+[ "${DRY_RUN:-true}" = "false" ] && DRY_RUN=false || DRY_RUN=true
 SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+
+# Testing tracks only. The service account has no production grant either; this is a second lock.
+if [ "$TRACK" = "production" ]; then
+  echo "::error::Refusing to upload to the production track."; exit 1
+fi
 
 # PLAY_API_BASE exists only so the script can be exercised against a local mock.
 BASE="${PLAY_API_BASE:-https://androidpublisher.googleapis.com}"
@@ -27,9 +35,11 @@ api() {
   local method=$1 url=$2; shift 2
   local body code
   body=$(mktemp)
+  # `|| true`: a transport failure leaves code=000, which is handled below instead of aborting
+  # before the error is reported.
   code=$(curl -sS --max-time 600 -o "$body" -w '%{http_code}' -X "$method" \
-    -H "Authorization: Bearer $ACCESS_TOKEN" "$@" "$url")
-  if [ "$code" -ge 300 ]; then
+    -H "Authorization: Bearer $ACCESS_TOKEN" "$@" "$url" || true)
+  if [ "$code" = "000" ] || [ "$code" -ge 300 ]; then
     echo "::error::$method ${url#"$BASE"} -> HTTP $code" >&2
     cat "$body" >&2
     rm -f "$body"
@@ -49,13 +59,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-EDIT=$(api POST "$API/edits" -H 'Content-Type: application/json' -d '{}' | jq -r '.id')
+EDIT=$(api POST "$API/edits" -H 'Content-Type: application/json' -d '{}' | jq -er '.id')
 echo "Opened edit $EDIT for $PACKAGE"
 
+TRACKS_JSON=$(api GET "$API/edits/$EDIT/tracks")
 {
   echo "## Play tracks for \`$PACKAGE\`"
   echo
-  api GET "$API/edits/$EDIT/tracks" | jq -r '
+  jq -r <<<"$TRACKS_JSON" '
     .tracks[]? | "- **\(.track)**: " +
       ([.releases[]? | "\(.status) [\((.versionCodes // []) | join(","))]"] | join("; ")
        | if . == "" then "no releases" else . end)'
@@ -67,21 +78,28 @@ if [ -z "$TRACK" ]; then
   exit 0
 fi
 
-KNOWN=$(api GET "$API/edits/$EDIT/tracks" | jq -r '.tracks[]?.track')
-if ! grep -qx "$TRACK" <<<"$KNOWN"; then
+KNOWN=$(jq -r '.tracks[]?.track' <<<"$TRACKS_JSON")
+if ! grep -qFx -- "$TRACK" <<<"$KNOWN"; then
   echo "::error::Track '$TRACK' not found. Known tracks: $(tr '\n' ' ' <<<"$KNOWN")"
   exit 1
 fi
 
 echo "Uploading $(basename "$AAB") ($(stat -c%s "$AAB") bytes)..."
 VC=$(api POST "$UPLOAD/edits/$EDIT/bundles?uploadType=media" \
-  -H 'Content-Type: application/octet-stream' --data-binary @"$AAB" | jq -r '.versionCode')
+  -H 'Content-Type: application/octet-stream' --data-binary @"$AAB" | jq -er '.versionCode')
 echo "Uploaded bundle: versionCode $VC"
 
 # Release notes come from the fastlane changelog at the tag, the same text F-Droid shows.
 NOTES=""
 if [ -n "${TAG:-}" ]; then
   NOTES=$(git show "$TAG:fastlane/metadata/android/en-US/changelogs/$VC.txt" 2>/dev/null || true)
+fi
+if [ -n "$NOTES" ]; then
+  LEN=$(jq -rn --arg n "$NOTES" '$n | length')
+  if [ "$LEN" -gt 500 ]; then
+    echo "::error::Release notes for versionCode $VC are $LEN characters; Play's limit is 500. Shorten fastlane/metadata/android/en-US/changelogs/$VC.txt."
+    exit 1
+  fi
 fi
 [ -n "$NOTES" ] || echo "::warning::No fastlane changelog for versionCode $VC at ${TAG:-<no tag>}; releasing without notes."
 

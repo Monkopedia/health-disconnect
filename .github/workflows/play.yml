@@ -86,6 +86,8 @@ jobs:
           service_account: ${{ vars.PLAY_SERVICE_ACCOUNT }}
           token_format: access_token
           access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+          # Only the access token is used; don't leave a credentials file on the runner.
+          create_credentials_file: false
 
       - name: Upload to Play
         env:
