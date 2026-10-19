@@ -1,0 +1,98 @@
+name: Play Upload
+
+# Uploads a release's AAB to a Google Play testing track.
+#
+# Auth is keyless Workload Identity Federation: google-github-actions/auth mints a short-lived
+# access token for the service account in vars.PLAY_SERVICE_ACCOUNT. There is no JSON key and no
+# secret. OIDC tokens are never issued to fork PRs, and this workflow has no pull_request trigger.
+#
+# The service account can release to TESTING tracks only — not production.
+#
+# Two entry points:
+#   - workflow_dispatch: run by hand. dry_run defaults to true, which creates a Play edit, lists
+#     the tracks, uploads the bundle and validates it, then DELETES the edit, so nothing is
+#     published. Leave `track` empty to only list the tracks.
+#   - workflow_call from release.yml after a v* tag builds. That path runs only when
+#     vars.PLAY_TRACK is set, so automatic upload stays off until someone turns it on after a
+#     successful dry run.
+#
+# It reads the AAB from the GitHub Release and never touches the build workspace. F-Droid rebuilds
+# the APK from source and byte-compares it, so nothing here may influence that build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag whose AAB to upload (e.g. v1.2.3)"
+        required: true
+      track:
+        description: "Play track (e.g. internal, alpha). Empty = only list tracks."
+        required: false
+        default: ""
+      release_status:
+        description: "Release status on the track (draft is required while the app itself is a draft on Play)"
+        type: choice
+        options: [completed, draft]
+        default: completed
+      dry_run:
+        description: "Validate everything, then discard the edit instead of committing"
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      track:
+        type: string
+        required: true
+      release_status:
+        type: string
+        default: completed
+      dry_run:
+        type: boolean
+        default: false
+
+permissions: {}
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      # The workflow's own ref supplies the upload script; the tag supplies the changelog, which
+      # the script reads with `git show <tag>:...`. Checking out the tag instead would lose the
+      # script for any tag cut before this workflow existed.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download the release AAB
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          mkdir -p dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.aab' --dir dist
+          ls -l dist
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.PLAY_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+
+      - name: Upload to Play
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          PACKAGE: com.monkopedia.healthdisconnect
+          TRACK: ${{ inputs.track }}
+          RELEASE_STATUS: ${{ inputs.release_status }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          TAG: ${{ inputs.tag }}
+        run: .github/scripts/play-upload.sh dist/*.aab

@@ -159,3 +159,26 @@ jobs:
             health-disconnect-*.apk
             health-disconnect-*.aab
           generate_release_notes: true
+
+  # Upload the release AAB to a Google Play testing track (see play.yml).
+  #
+  # OFF until vars.PLAY_TRACK is set. Turn it on only after a workflow_dispatch dry run of
+  # play.yml has succeeded against that track; the dry run is what proves the keyless auth, the
+  # Play permission grant and the track name. Set vars.PLAY_RELEASE_STATUS to `draft` while the
+  # app itself is still a draft on Play.
+  #
+  # Runs after `build`, so it inherits the verify gate, and it reads the AAB from the GitHub
+  # Release that `build` created. It never touches the workspace that produces the APK F-Droid
+  # byte-compares.
+  play:
+    needs: build
+    if: ${{ vars.PLAY_TRACK != '' }}
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/play.yml
+    with:
+      tag: ${{ github.ref_name }}
+      track: ${{ vars.PLAY_TRACK }}
+      release_status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+      dry_run: false
