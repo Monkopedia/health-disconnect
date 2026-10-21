@@ -1,0 +1,3 @@
+• Fixes a crash when loading several years of data. Step charts by day, week or month now use Health Connect's daily totals, so steps recorded by two apps (e.g. phone and watch) are no longer counted twice, and Average/Min/Max are per day.
+• Charts and exports say when older history was not loaded or a read failed. Aggregated CSV exports gain a data_since column.
+• Fixes crashes when deleting an open view and when tapping Update on the Health Connect screen.
