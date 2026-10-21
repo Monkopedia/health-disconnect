@@ -43,10 +43,17 @@ enum class EntriesExportMode {
     RAW
 }
 
+/**
+ * [dataSince] is the start of the data the series hold when they were cut short of the view's time
+ * window (see [HealthDataModel.ChartLoadIssues.truncatedSince]); it fills the trailing `data_since`
+ * column of every row, which is blank for a complete export.
+ */
 fun buildAggregatedEntriesCsv(
     view: DataView,
-    seriesList: List<HealthDataModel.MetricSeries>
+    seriesList: List<HealthDataModel.MetricSeries>,
+    dataSince: java.time.Instant? = null
 ): String {
+    val dataSinceCell = dataSince?.toString().orEmpty()
     val rows = mutableListOf<List<String>>()
     rows += listOf(
         "view_id",
@@ -68,7 +75,8 @@ fun buildAggregatedEntriesCsv(
         "y_axis_mode",
         "smoothing",
         "unit_preference",
-        "show_data_points"
+        "show_data_points",
+        "data_since"
     )
 
     seriesList.forEachIndexed { index, series ->
@@ -95,7 +103,8 @@ fun buildAggregatedEntriesCsv(
                 settings.yAxisMode,
                 settings.smoothing,
                 settings.unitPreference,
-                view.chartSettings.showDataPoints.toString()
+                view.chartSettings.showDataPoints.toString(),
+                dataSinceCell
             )
         } else {
             series.points.forEachIndexed { pointIndex, point ->
@@ -123,7 +132,8 @@ fun buildAggregatedEntriesCsv(
                     settings.yAxisMode,
                     settings.smoothing,
                     settings.unitPreference,
-                    view.chartSettings.showDataPoints.toString()
+                    view.chartSettings.showDataPoints.toString(),
+                    dataSinceCell
                 )
             }
         }

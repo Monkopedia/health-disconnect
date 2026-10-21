@@ -74,6 +74,9 @@ import com.monkopedia.healthdisconnect.writeEntriesCsvToCache
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.UnitPreference
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -82,7 +85,7 @@ import org.koin.androidx.compose.koinViewModel
 
 fun entriesSection(
     scope: LazyListScope,
-    recordCount: Int?,
+    recordCount: HealthDataModel.RecordCount?,
     onOpenEntries: () -> Unit
 ) {
     scope.item {
@@ -95,8 +98,14 @@ fun entriesSection(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val count = recordCount?.count ?: 0
+            val countText = if (recordCount?.atLeast == true) {
+                stringResource(R.string.data_view_entries_count_at_least, count)
+            } else {
+                stringResource(R.string.data_view_entries_count, count)
+            }
             Text(
-                text = stringResource(R.string.data_view_entries_count, recordCount ?: 0),
+                text = countText,
                 style = MaterialTheme.typography.titleMedium
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -156,6 +165,7 @@ fun EntriesRouteScreen(
     var pendingWarningMode by rememberSaveable(viewId) { mutableStateOf<EntriesExportMode?>(null) }
     var isExporting by rememberSaveable(viewId) { mutableStateOf(false) }
     var exportErrorMessage by rememberSaveable(viewId) { mutableStateOf<String?>(null) }
+    var exportIssues by remember(viewId) { mutableStateOf<HealthDataModel.ChartLoadIssues?>(null) }
     val measurementExtractor = remember { DefaultHealthRecordMeasurementExtractor() }
     val filteredData = remember(data, view) {
         data?.filter { recordHasSelectedMetricValue(view!!, it, measurementExtractor) }
@@ -224,8 +234,9 @@ fun EntriesRouteScreen(
                         val currentView = view!!
                         val csvText = when (mode) {
                             EntriesExportMode.AGGREGATED -> {
-                                val series = healthDataModel.loadAggregatedSeriesForExport(currentView)
-                                buildAggregatedEntriesCsv(currentView, series)
+                                val exported = healthDataModel.loadAggregatedSeriesForExport(currentView)
+                                exportIssues = exported.issues.takeUnless { it.isComplete }
+                                buildAggregatedEntriesCsv(currentView, exported.series, exported.issues.truncatedSince)
                             }
 
                             EntriesExportMode.RAW -> {
@@ -255,6 +266,10 @@ fun EntriesRouteScreen(
                 }
             }
         )
+    }
+
+    exportIssues?.let { issues ->
+        ExportIncompleteDialog(issues, onDismiss = { exportIssues = null })
     }
 
     exportErrorMessage?.let {
@@ -492,4 +507,34 @@ private fun recordHasSelectedMetricValue(
                 selection.metricKey
             ) != null
     }
+}
+
+/**
+ * Tells the user an aggregated export is missing data — a series cut short by the raw-record cap,
+ * or a failed read — instead of letting it silently start later than their time window (#112).
+ */
+@Composable
+internal fun ExportIncompleteDialog(issues: HealthDataModel.ChartLoadIssues, onDismiss: () -> Unit) {
+    val lines = buildList {
+        when (issues.readFailure) {
+            HealthDataModel.ReadFailure.RATE_LIMITED -> add(stringResource(R.string.data_view_export_rate_limited))
+            HealthDataModel.ReadFailure.OTHER -> add(stringResource(R.string.data_view_export_read_failed))
+            null -> Unit
+        }
+        issues.truncatedSince?.let { since ->
+            val date = since.atZone(ZoneId.systemDefault()).toLocalDate()
+                .format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+            add(stringResource(R.string.data_view_export_truncated, date))
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.data_view_export_incomplete_title)) },
+        text = { Text(lines.joinToString("\n\n")) },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.data_view_close))
+            }
+        }
+    )
 }

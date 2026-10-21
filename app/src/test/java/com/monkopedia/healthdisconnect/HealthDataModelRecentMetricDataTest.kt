@@ -37,6 +37,7 @@ class HealthDataModelRecentMetricDataTest {
             start: Instant,
             end: Instant,
             pageSize: Int,
+            maxRecords: Int,
             onPage: (List<Record>) -> Unit
         ) {
             onPage(records.filter { cls.isInstance(it) })

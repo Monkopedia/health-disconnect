@@ -36,9 +36,10 @@ class DemoHealthConnectGateway : HealthConnectGateway {
         start: Instant,
         end: Instant,
         pageSize: Int,
+        maxRecords: Int,
         onPage: (List<Record>) -> Unit
     ) {
-        val records = DemoRecordFactory.generate(cls, start, end)
+        val records = DemoRecordFactory.generate(cls, start, end).take(maxRecords)
         if (records.isNotEmpty()) {
             onPage(records)
         }

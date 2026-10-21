@@ -202,7 +202,7 @@ class HealthDataModelStreamingTest {
             model.collectRecordCount(view).take(2).toList()
         }
 
-        assertEquals(listOf(1, 3), counts)
+        assertEquals(listOf(1, 3).map { HealthDataModel.RecordCount(it) }, counts)
     }
 
     @Test

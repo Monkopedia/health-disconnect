@@ -289,7 +289,7 @@ class DataViewViewEditFlowTest {
         }
 
         val healthDataModel = mockk<HealthDataModel>(relaxed = true)
-        every { healthDataModel.collectRecordCount(any()) } returns flowOf(12)
+        every { healthDataModel.collectRecordCount(any()) } returns flowOf(HealthDataModel.RecordCount(12))
         every { healthDataModel.collectAggregatedSeries(any()) } returns flowOf(
             if (withGraphData) {
                 listOf(
