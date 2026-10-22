@@ -8,7 +8,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.geometry.Rect
 import androidx.health.connect.client.HealthConnectClient
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.PermissionController
 import androidx.test.core.app.ApplicationProvider
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
@@ -151,6 +154,35 @@ class SettingsScreenTest {
 
         composeRule.onNodeWithText("System", useUnmergedTree = true).assertIsDisplayed()
         composeRule.onNodeWithText("Dark", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun everyDebugRangeRowCanBeScrolledIntoView() {
+        val stepsLabel = PermissionsViewModel.recordLabel(StepsRecord::class)
+        val rows = PermissionsViewModel.CLASSES
+            .map { PermissionsViewModel.recordLabel(it) }
+            .sorted()
+            .map { "$it: perm=yes, oldest=n/a, newest=n/a" }
+        val permissionsViewModel = mockPermissionsViewModel()
+        val appThemeViewModel = AppThemeViewModel(ApplicationProvider.getApplicationContext())
+
+        composeRule.setContent {
+            HealthDisconnectTheme(dynamicColor = false) {
+                SettingsScreen(
+                    onBack = {},
+                    permissionsViewModel = permissionsViewModel,
+                    appThemeViewModel = appThemeViewModel,
+                    initialDebugExpanded = true,
+                    previewDebugRows = rows
+                )
+            }
+        }
+
+        // Issue #122: the rows run far past the bottom of the screen, and Steps sorts near the end.
+        composeRule.onNodeWithText("$stepsLabel: perm=yes", substring = true)
+            .assertIsNotDisplayed()
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     private fun mockPermissionsViewModel(): PermissionsViewModel {

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.Button
@@ -38,11 +40,12 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
-import androidx.health.connect.client.records.Record
+import com.monkopedia.healthdisconnect.DefaultHealthConnectGateway
+import com.monkopedia.healthdisconnect.HealthConnectGateway
+import com.monkopedia.healthdisconnect.errorLabel
 import com.monkopedia.healthdisconnect.recordTimestamp
-import androidx.health.connect.client.request.ReadRecordsRequest
-import androidx.health.connect.client.time.TimeRangeFilter
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -56,16 +59,19 @@ import org.koin.androidx.compose.koinViewModel
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import kotlin.reflect.KClass
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private data class MetricDebugRange(
+private const val SETTINGS_TAG = "SettingsScreen"
+
+internal data class MetricDebugRange(
     val label: String,
     val permissionGranted: Boolean,
-    val oldest: Instant?,
-    val newest: Instant?
+    val oldest: Instant? = null,
+    val newest: Instant? = null,
+    val readFailed: Boolean = false
 )
 
 @Composable
@@ -130,6 +136,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         ) {
             Spacer(Modifier.height(8.dp))
@@ -288,10 +295,13 @@ fun SettingsScreen(
                 Column {
                     Button(
                         onClick = {
+                            val gateway = DefaultHealthConnectGateway(
+                                permissionsViewModel.healthConnectClient ?: return@Button
+                            )
                             scope.launch {
                                 debugLoading = true
                                 debugRows = withContext(Dispatchers.IO) {
-                                    loadMetricDebugRanges(permissionsViewModel, grantedPermissions)
+                                    loadMetricDebugRanges(gateway, grantedPermissions, Instant.now())
                                 }
                                 debugLoading = false
                             }
@@ -331,8 +341,13 @@ fun SettingsScreen(
                                     ?: "n/a"
                                 val newestText = row.newest?.atZone(ZoneId.systemDefault())?.format(dateFormatter)
                                     ?: "n/a"
+                                val perm = if (row.permissionGranted) "yes" else "no"
                                 Text(
-                                    text = "${row.label}: perm=${if (row.permissionGranted) "yes" else "no"}, oldest=$oldestText, newest=$newestText",
+                                    text = if (row.readFailed) {
+                                        "${row.label}: perm=$perm, read failed"
+                                    } else {
+                                        "${row.label}: perm=$perm, oldest=$oldestText, newest=$newestText"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -354,61 +369,41 @@ fun SettingsScreenPreview() {
     }
 }
 
-private suspend fun loadMetricDebugRanges(
-    permissionsViewModel: PermissionsViewModel,
-    grantedPermissions: Set<String>
-): List<MetricDebugRange> {
-    val now = Instant.now()
-    return PermissionsViewModel.CLASSES
+/**
+ * Each readable type's oldest and newest record time, from two single-record reads (#122). The
+ * range is all this screen shows, so reading every record would spend Health Connect's per-app
+ * read quota for nothing. A type whose reads fail is marked on its own row.
+ */
+internal suspend fun loadMetricDebugRanges(
+    gateway: HealthConnectGateway,
+    grantedPermissions: Set<String>,
+    now: Instant
+): List<MetricDebugRange> =
+    PermissionsViewModel.CLASSES
         .sortedBy { PermissionsViewModel.recordLabel(it) }
         .map { cls ->
             val label = PermissionsViewModel.recordLabel(cls)
             val readPermission = PermissionsViewModel.READ_PERMISSIONS_BY_CLASS[cls]
-            val hasPermission = readPermission != null && grantedPermissions.contains(readPermission)
-            if (!hasPermission) {
-                return@map MetricDebugRange(
-                    label = label,
-                    permissionGranted = false,
-                    oldest = null,
-                    newest = null
-                )
+            if (readPermission == null || readPermission !in grantedPermissions) {
+                return@map MetricDebugRange(label = label, permissionGranted = false)
             }
-            val range = runCatching {
-                readOldestNewest(permissionsViewModel, cls, now)
-            }.getOrNull()
-            MetricDebugRange(
-                label = label,
-                permissionGranted = true,
-                oldest = range?.first,
-                newest = range?.second
-            )
+            try {
+                var newest: Instant? = null
+                // Newest first, so the first record is the newest.
+                gateway.readRecordsInRange(cls, Instant.EPOCH, now, pageSize = 1, maxRecords = 1) { page ->
+                    newest = page.firstOrNull()?.let(::recordTimestamp)
+                }
+                MetricDebugRange(
+                    label = label,
+                    permissionGranted = true,
+                    oldest = gateway.oldestRecordTime(cls, Instant.EPOCH, now),
+                    newest = newest
+                )
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
+                Log.w(SETTINGS_TAG, "Failed to read debug range for ${cls.simpleName} (${exception.errorLabel()})")
+                MetricDebugRange(label = label, permissionGranted = true, readFailed = true)
+            }
         }
-}
-
-private suspend fun readOldestNewest(
-    permissionsViewModel: PermissionsViewModel,
-    cls: KClass<out Record>,
-    now: Instant
-): Pair<Instant?, Instant?> {
-    var token: String? = null
-    var oldest: Instant? = null
-    var newest: Instant? = null
-    do {
-        val response = permissionsViewModel.healthConnectClient!!.readRecords(
-            ReadRecordsRequest(
-                recordType = cls,
-                timeRangeFilter = TimeRangeFilter.between(Instant.EPOCH, now),
-                pageToken = token,
-                pageSize = 500
-            )
-        )
-        response.records.forEach { record ->
-            val timestamp = recordTimestamp(record) ?: return@forEach
-            if (newest == null || timestamp.isAfter(newest)) newest = timestamp
-            if (oldest == null || timestamp.isBefore(oldest)) oldest = timestamp
-        }
-        token = response.pageToken
-    } while (token != null)
-    return oldest to newest
-}
-
