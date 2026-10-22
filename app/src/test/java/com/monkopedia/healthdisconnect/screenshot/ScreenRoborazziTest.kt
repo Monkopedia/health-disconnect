@@ -2,7 +2,9 @@ package com.monkopedia.healthdisconnect.screenshot
 
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Mass
@@ -409,6 +411,30 @@ abstract class BaseScreenRoborazziTest {
         val healthDataModel = mockHealthDataModel()
         every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(PermissionsViewModel.CLASSES.take(6))
         captureScreen("create_view_options") {
+            CreateViewView(viewModel = viewModel, healthDataModel = healthDataModel)
+        }
+    }
+
+    @Test
+    fun createViewProbeFailedScreen() {
+        val viewModel = mockk<DataViewAdapterViewModel>()
+        val healthDataModel = mockHealthDataModel()
+        every { healthDataModel.collectMetricsWithData(any()) } returns flowOf(emptyList())
+        every { healthDataModel.collectMetricProbeFailures() } returns flowOf(
+            listOf(
+                HealthDataModel.MetricProbeFailure(
+                    StepsRecord::class,
+                    HealthDataModel.ReadFailure.OTHER,
+                    "IllegalArgumentException"
+                ),
+                HealthDataModel.MetricProbeFailure(
+                    HeartRateRecord::class,
+                    HealthDataModel.ReadFailure.RATE_LIMITED,
+                    "IllegalStateException"
+                )
+            )
+        )
+        captureScreen("create_view_probe_failed") {
             CreateViewView(viewModel = viewModel, healthDataModel = healthDataModel)
         }
     }
@@ -1063,6 +1089,7 @@ abstract class BaseScreenRoborazziTest {
         every { healthDataModel.collectRecordCount(any()) } returns flowOf(HealthDataModel.RecordCount(0))
         every { healthDataModel.collectAggregatedSeries(any()) } returns flowOf(emptyList())
         every { healthDataModel.collectChartLoadIssues(any()) } returns flowOf(HealthDataModel.ChartLoadIssues())
+        every { healthDataModel.collectMetricProbeFailures() } returns flowOf(emptyList())
         every { healthDataModel.aggregateMetricSeriesList(any(), any()) } returns emptyList()
         every { healthDataModel.aggregateMetricSeries(any(), any()) } returns null
         every { healthDataModel.recordSelectionLabel(any()) } returns "Metric"

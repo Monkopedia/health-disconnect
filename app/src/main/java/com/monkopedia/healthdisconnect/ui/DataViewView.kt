@@ -679,7 +679,9 @@ fun DataViewView(
     }
 
     if (showAddMetricDialog) {
-        val available = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
+        // Remembered: an empty cached result re-probes on every collect (38 reads), so collect once
+        // per dialog opening, not on every recomposition.
+        val available = remember { healthDataModel.collectMetricsWithData() }.collectAsState(initial = null).value
         val typesWithData = (available ?: PermissionsViewModel.CLASSES).toList()
         val existingSelectionKeys = selectedSelections.map { it.selectionKey() }.toSet()
         AlertDialog(
@@ -728,7 +730,9 @@ fun DataViewView(
 
     val metricToReplace = replaceMetricTargetKey
     if (metricToReplace != null) {
-        val available = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
+        // Remembered: an empty cached result re-probes on every collect (38 reads), so collect once
+        // per dialog opening, not on every recomposition.
+        val available = remember { healthDataModel.collectMetricsWithData() }.collectAsState(initial = null).value
         val typesWithData = (available ?: PermissionsViewModel.CLASSES).toList()
         val targetSelection = selectedSelections.firstOrNull { it.selectionKey() == metricToReplace }
         AlertDialog(
