@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,8 +40,14 @@ fun CreateViewView(
     headerPageOffset: Float = 0f,
     showHeader: Boolean = true
 ) {
-    val itemsWithData = healthDataModel.collectMetricsWithData().collectAsState(initial = null).value
+    // Remembered so the probe is scheduled once per entry, not on every recomposition (a pager swipe
+    // recomposes per frame); entering with an empty cached result re-probes — see issue #123.
+    val itemsWithData = remember(healthDataModel) { healthDataModel.collectMetricsWithData() }
+        .collectAsState(initial = null).value
+    val probeFailures = remember(healthDataModel) { healthDataModel.collectMetricProbeFailures() }
+        .collectAsState(initial = emptyList()).value
     val scope = rememberCoroutineScope()
+    var retrying by remember { mutableStateOf(false) }
     var pendingMetricChoice by remember { mutableStateOf<PendingMetricChoice?>(null) }
     var headerWidthPx by remember { mutableStateOf(0f) }
     val density = LocalDensity.current
@@ -93,6 +100,19 @@ fun CreateViewView(
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.padding(bottom = 8.dp)
         )
+        if (probeFailures.isNotEmpty()) {
+            MetricProbeFailureNotice(
+                failures = probeFailures,
+                retrying = retrying,
+                onRetry = {
+                    retrying = true
+                    scope.launch {
+                        healthDataModel.refreshMetricsWithData()
+                        retrying = false
+                    }
+                }
+            )
+        }
         if (itemsWithData == null) {
             LoadingScreen()
         } else {
@@ -107,12 +127,15 @@ fun CreateViewView(
                 onPick = { option -> chooseForCreate(option) },
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 emptyContent = {
-                    Text(
-                        text = stringResource(R.string.create_view_no_data),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 16.dp)
-                    )
+                    // With failed probes, "no data" is unknown, not established; the notice says so.
+                    if (probeFailures.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.create_view_no_data),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    }
                 }
             )
         }
@@ -127,5 +150,43 @@ fun CreateViewView(
             },
             onDismiss = { pendingMetricChoice = null }
         )
+    }
+}
+
+/**
+ * Names the record types whose availability probe failed, and whether Health Connect's read quota
+ * was the cause, so a user's report can tell us which failure it was (issues #121, #123). For other
+ * failures each type carries its exception kind — never the message, which can quote a record.
+ */
+@Composable
+private fun MetricProbeFailureNotice(
+    failures: List<HealthDataModel.MetricProbeFailure>,
+    retrying: Boolean,
+    onRetry: () -> Unit
+) {
+    val (rateLimited, other) = failures.partition { it.failure == HealthDataModel.ReadFailure.RATE_LIMITED }
+    val noticeStyle = MaterialTheme.typography.bodySmall
+    if (rateLimited.isNotEmpty()) {
+        Text(
+            stringResource(
+                R.string.create_view_probe_rate_limited,
+                rateLimited.joinToString { PermissionsViewModel.recordLabel(it.recordClass) }
+            ),
+            style = noticeStyle,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+    if (other.isNotEmpty()) {
+        Text(
+            stringResource(
+                R.string.create_view_probe_read_failed,
+                other.joinToString { "${PermissionsViewModel.recordLabel(it.recordClass)} (${it.errorLabel})" }
+            ),
+            style = noticeStyle,
+            color = MaterialTheme.colorScheme.error
+        )
+    }
+    TextButton(onClick = onRetry, enabled = !retrying) {
+        Text(stringResource(R.string.create_view_probe_retry))
     }
 }

@@ -107,11 +107,8 @@ class HealthDataModel @JvmOverloads constructor(
         val truncatedSince: Instant? = null
     ) {
         /** A rate limit outranks any other failure: it is the one the user can wait out. */
-        fun withFailure(exception: Exception): ChartLoadIssues = when {
-            readFailure == ReadFailure.RATE_LIMITED -> this
-            exception.isHealthConnectRateLimit() -> copy(readFailure = ReadFailure.RATE_LIMITED)
-            else -> copy(readFailure = ReadFailure.OTHER)
-        }
+        fun withFailure(exception: Exception): ChartLoadIssues =
+            if (readFailure == ReadFailure.RATE_LIMITED) this else copy(readFailure = ReadFailure.of(exception))
 
         /** With several truncated series, the data is complete only from the latest start. */
         fun withTruncation(since: Instant): ChartLoadIssues =
@@ -126,11 +123,32 @@ class HealthDataModel @JvmOverloads constructor(
     enum class ReadFailure {
         /** Health Connect refused reads because this app exhausted its read quota. */
         RATE_LIMITED,
-        OTHER
+        OTHER;
+
+        companion object {
+            fun of(exception: Exception): ReadFailure =
+                if (exception.isHealthConnectRateLimit()) RATE_LIMITED else OTHER
+        }
     }
 
+    /**
+     * A record type whose "has any data?" probe failed, so Create View cannot tell whether it has
+     * data and says so instead of "No health data found" (issue #123).
+     */
+    data class MetricProbeFailure(
+        val recordClass: KClass<out Record>,
+        val failure: ReadFailure,
+        /** The exception's [errorLabel]: its kind, never its message, which can quote a record. */
+        val errorLabel: String
+    )
+
+    private data class MetricAvailability(
+        val withData: List<KClass<out Record>>,
+        val probeFailures: List<MetricProbeFailure>
+    )
+
     private val metricsLock = Any()
-    private val metricsWithData: MutableStateFlow<List<KClass<out Record>>?> = MutableStateFlow(null)
+    private val metricsWithData: MutableStateFlow<MetricAvailability?> = MutableStateFlow(null)
     private val chartLoadIssues = MutableStateFlow<Map<Int, ChartLoadIssues>>(emptyMap())
     private var metricsLoading = false
     private var metricsLastRefreshTick = Int.MIN_VALUE
@@ -163,10 +181,18 @@ class HealthDataModel @JvmOverloads constructor(
             ?: readNewestRecords(cls, start, end, MAX_LISTED_RECORDS, onPage)
     }
 
+    /**
+     * The record types that have data. Probes Health Connect first when there is no cached result,
+     * when the cached one is empty, or when [refreshTick] is newer than the last probe.
+     */
     fun collectMetricsWithData(refreshTick: Int = 0): Flow<List<KClass<out Record>>> {
         scheduleMetricsRefresh(refreshTick)
-        return metricsWithData.filterNotNull()
+        return metricsWithData.filterNotNull().map { it.withData }
     }
+
+    /** The record types whose latest availability probe failed — see [MetricProbeFailure]. */
+    fun collectMetricProbeFailures(): Flow<List<MetricProbeFailure>> =
+        metricsWithData.filterNotNull().map { it.probeFailures }.distinctUntilChanged()
 
     /**
      * Human-readable label for [selection], or null when its record type can no longer be resolved
@@ -264,7 +290,11 @@ class HealthDataModel @JvmOverloads constructor(
 
     private fun scheduleMetricsRefresh(refreshTick: Int = 0) {
         val shouldRefresh = synchronized(metricsLock) {
-            val needsRefresh = metricsWithData.value == null || refreshTick > metricsLastRefreshTick
+            // An empty result is re-probed rather than served from cache: it may predate the
+            // permission grant or a sync that brought the data, and it stuck until the process
+            // restarted (issue #123).
+            val needsRefresh = metricsWithData.value?.withData.isNullOrEmpty() ||
+                refreshTick > metricsLastRefreshTick
             if (metricsLoading || !needsRefresh) {
                 false
             } else {
@@ -303,17 +333,17 @@ class HealthDataModel @JvmOverloads constructor(
      * SecurityException, and a record the library refuses to reconstruct (one stored with
      * `startTime == endTime`, say) throws IllegalArgumentException — and one such record used to
      * make the app permanently unlaunchable. See issue #89.
+     *
+     * Every failure but a missing permission is also reported in [MetricAvailability.probeFailures],
+     * so Create View can say a type could not be read rather than that there is no data (#123).
      */
-    private suspend fun loadMetricsWithData(): List<KClass<out Record>> {
-        val counts = withContext(ioDispatcher) {
+    private suspend fun loadMetricsWithData(): MetricAvailability {
+        val probes = withContext(ioDispatcher) {
             coroutineScope {
                 PermissionsViewModel.CLASSES.map {
                     async {
-                        val hasRecords = try {
-                            gateway.hasRecordsForType(
-                                cls = it,
-                                now = timeProvider.now()
-                            )
+                        try {
+                            MetricProbe(it, gateway.hasRecordsForType(cls = it, now = timeProvider.now()))
                         } catch (exception: Exception) {
                             if (exception is CancellationException) {
                                 throw exception
@@ -327,15 +357,29 @@ class HealthDataModel @JvmOverloads constructor(
                                 "No data reported for ${it.simpleName} " +
                                     "(${exception.errorLabel()}); other metrics are unaffected"
                             )
-                            false
+                            // A read permission the user chose not to grant is not a failed read.
+                            val failure = if (exception is SecurityException) {
+                                null
+                            } else {
+                                MetricProbeFailure(it, ReadFailure.of(exception), exception.errorLabel())
+                            }
+                            MetricProbe(it, hasRecords = false, failure = failure)
                         }
-                        it to hasRecords
                     }
                 }.awaitAll()
             }
         }
-        return counts.filter { it.second }.map { it.first }
+        return MetricAvailability(
+            withData = probes.filter { it.hasRecords }.map { it.recordClass },
+            probeFailures = probes.mapNotNull { it.failure }
+        )
     }
+
+    private class MetricProbe(
+        val recordClass: KClass<out Record>,
+        val hasRecords: Boolean,
+        val failure: MetricProbeFailure? = null
+    )
 
     fun collectData(view: DataView, refreshTick: Int = 0): Flow<List<Record>> {
         return cachePolicy.collectData(

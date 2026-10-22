@@ -23,6 +23,9 @@
     <string name="create_view_title">Create View</string>
     <string name="create_view_select_base_metric">Select a base metric:</string>
     <string name="create_view_no_data">No health data found.\n\nHealth Disconnect reads data from Health Connect. Make sure another app (like Google Fit, Samsung Health, or Fitbit) is syncing data to Health Connect.</string>
+    <string name="create_view_probe_rate_limited">Health Connect is temporarily limiting how often this app can read, so these data types could not be checked: %1$s.</string>
+    <string name="create_view_probe_read_failed">These data types could not be read from Health Connect: %1$s.</string>
+    <string name="create_view_probe_retry">Try again</string>
     <string name="rename_view_title">Rename View</string>
 
     <string name="permissions_no_sdk_title">No Health Connect Found!</string>
