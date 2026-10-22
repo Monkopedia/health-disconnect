@@ -203,9 +203,9 @@ class HealthDataModelCacheTest {
     }
 
     private fun metricsLoading(model: HealthDataModel): Boolean {
-        val field = HealthDataModel::class.java.getDeclaredField("metricsLoading")
+        val field = HealthDataModel::class.java.getDeclaredField("inFlightMetricsProbe")
         field.isAccessible = true
-        return field.getBoolean(model)
+        return (field.get(model) as kotlinx.coroutines.Deferred<*>?)?.isActive == true
     }
 
     private fun stepsRecord(marker: Long): StepsRecord {

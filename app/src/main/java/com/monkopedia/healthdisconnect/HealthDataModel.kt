@@ -21,6 +21,7 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import kotlin.reflect.KClass
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -34,7 +35,6 @@ import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class HealthDataPermissionDeniedException(
@@ -150,7 +150,7 @@ class HealthDataModel @JvmOverloads constructor(
     private val metricsLock = Any()
     private val metricsWithData: MutableStateFlow<MetricAvailability?> = MutableStateFlow(null)
     private val chartLoadIssues = MutableStateFlow<Map<Int, ChartLoadIssues>>(emptyMap())
-    private var metricsLoading = false
+    private var inFlightMetricsProbe: Deferred<Unit>? = null
     private var metricsLastRefreshTick = Int.MIN_VALUE
 
     private val ioDispatcher = dispatchers.io
@@ -266,44 +266,31 @@ class HealthDataModel @JvmOverloads constructor(
      * pull-to-refresh in `DataViewView`. Neither had error handling of its own, so an escaping
      * exception was a crash — issue #89, a launch crash for anyone whose Health Connect store makes
      * one of the 38 reads fail. The guard lives here rather than at the call sites so a third
-     * caller cannot reintroduce it; [scheduleMetricsRefresh] applies the same policy.
+     * caller cannot reintroduce it; [startMetricsProbe] applies it to every probe. A call made while
+     * a probe is in flight waits for that probe instead of starting another.
      */
     suspend fun refreshMetricsWithData() {
-        try {
-            val values = loadMetricsWithData()
-            synchronized(metricsLock) {
-                metricsWithData.value = values
-                metricsLastRefreshTick = maxOf(metricsLastRefreshTick, 0)
-            }
-        } catch (exception: Exception) {
-            if (exception is CancellationException) {
-                throw exception
-            }
-            // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
-            Log.w(LOG_TAG, "Failed to refresh metrics with data (${exception.errorLabel()})")
-        } finally {
-            synchronized(metricsLock) {
-                metricsLoading = false
-            }
-        }
+        startMetricsProbe(refreshTick = 0).await()
     }
 
     private fun scheduleMetricsRefresh(refreshTick: Int = 0) {
-        val shouldRefresh = synchronized(metricsLock) {
+        synchronized(metricsLock) {
             // An empty result is re-probed rather than served from cache: it may predate the
             // permission grant or a sync that brought the data, and it stuck until the process
             // restarted (issue #123).
             val needsRefresh = metricsWithData.value?.withData.isNullOrEmpty() ||
                 refreshTick > metricsLastRefreshTick
-            if (metricsLoading || !needsRefresh) {
-                false
-            } else {
-                metricsLoading = true
-                true
-            }
+            if (needsRefresh) startMetricsProbe(refreshTick)
         }
-        if (!shouldRefresh) return
-        viewModelScope.launch(ioDispatcher) {
+    }
+
+    /**
+     * The probe in flight, or a new one. A probe is 38 Health Connect reads against a rate-limited
+     * quota (issue #112), so a request that arrives while one is running — a double-tapped retry,
+     * a recomposition — joins it rather than starting a second.
+     */
+    private fun startMetricsProbe(refreshTick: Int): Deferred<Unit> = synchronized(metricsLock) {
+        inFlightMetricsProbe?.takeIf { it.isActive } ?: viewModelScope.async<Unit>(ioDispatcher) {
             try {
                 val values = loadMetricsWithData()
                 synchronized(metricsLock) {
@@ -316,12 +303,8 @@ class HealthDataModel @JvmOverloads constructor(
                 }
                 // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
                 Log.w(LOG_TAG, "Failed to refresh metrics with data (${exception.errorLabel()})")
-            } finally {
-                synchronized(metricsLock) {
-                    metricsLoading = false
-                }
             }
-        }
+        }.also { inFlightMetricsProbe = it }
     }
 
     /**
@@ -496,7 +479,7 @@ class HealthDataModel @JvmOverloads constructor(
 
     internal fun clearCachesForTest() {
         synchronized(metricsLock) {
-            metricsLoading = false
+            inFlightMetricsProbe = null
             metricsLastRefreshTick = Int.MIN_VALUE
             metricsWithData.value = null
         }
