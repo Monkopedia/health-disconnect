@@ -2,19 +2,38 @@ package com.monkopedia.healthdisconnect
 
 import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.NutritionRecord
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Mass
 import androidx.health.connect.client.units.Percentage
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.TimeZone
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class RecordPresentationFormattingTest {
+
+    private val originalTimeZone = TimeZone.getDefault()
+
+    // Details render instants in the device zone; pin it so the expected wall-clock text is fixed.
+    @Before
+    fun pinTimeZone() {
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+    }
+
+    @After
+    fun restoreTimeZone() {
+        TimeZone.setDefault(originalTimeZone)
+    }
 
     @Test
     fun formatAxisValue_usesThreeSignificantFigures() {
@@ -80,5 +99,33 @@ class RecordPresentationFormattingTest {
         assertTrue(details, details.contains("Sodium: 1500 mg"))
         assertTrue(details, details.contains("VitaminD: 20 mcg"))
         assertTrue(details, details.contains("Protein: 12 g"))
+    }
+
+    @Test
+    fun recordDetailsText_rendersInstantAsDateTimeNotRoundedYear() {
+        val record = WeightRecord(
+            weight = Mass.kilograms(72.5),
+            time = Instant.parse("2026-02-23T10:15:00Z"),
+            zoneOffset = ZoneOffset.UTC,
+            metadata = Metadata.manualEntry()
+        )
+        val details = recordDetailsText(record)
+        assertTrue(details, details.lines().contains("Time: Feb 23, 2026 10:15 AM"))
+        assertFalse(details, details.contains("2030"))
+    }
+
+    @Test
+    fun recordDetailsText_rendersStartAndEndTimesAsDateTimes() {
+        val record = StepsRecord(
+            startTime = Instant.parse("2026-02-23T10:00:00Z"),
+            startZoneOffset = ZoneOffset.UTC,
+            endTime = Instant.parse("2026-02-23T14:45:00Z"),
+            endZoneOffset = ZoneOffset.UTC,
+            count = 500,
+            metadata = Metadata.manualEntry()
+        )
+        val lines = recordDetailsText(record).lines()
+        assertTrue(lines.toString(), lines.contains("StartTime: Feb 23, 2026 10:00 AM"))
+        assertTrue(lines.toString(), lines.contains("EndTime: Feb 23, 2026 2:45 PM"))
     }
 }

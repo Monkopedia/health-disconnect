@@ -129,10 +129,10 @@ fun recordTimestamp(record: Record): Instant? {
     }
 }
 
-fun recordTimestampLabel(record: Record): String? {
-    return recordTimestamp(record)?.atZone(ZoneId.systemDefault())
-        ?.format(DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a"))
-}
+fun recordTimestampLabel(record: Record): String? = recordTimestamp(record)?.let(::formatInstant)
+
+private fun formatInstant(instant: Instant): String =
+    instant.atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a"))
 
 fun recordPrimaryValueLabel(record: Record): String? {
     return when (record) {
@@ -249,6 +249,8 @@ fun parseMeasurementFromText(text: String): ParsedMeasurementText? {
 private fun formatDetailValue(value: Any): String {
     return when (value) {
         is Number -> formatAxisValue(value.toDouble())
+        // Before the measurement parser: it reads "2026-02-23T10:15:00Z" as 2026 and rounds it to 2030.
+        is Instant -> formatInstant(value)
         else -> {
             val text = value.toString()
             val parsed = parseMeasurementFromText(text)
