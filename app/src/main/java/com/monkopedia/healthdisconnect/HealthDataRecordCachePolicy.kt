@@ -7,7 +7,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.atomic.AtomicLong
 
 interface HealthDataRecordCachePolicy {
@@ -25,7 +27,7 @@ interface HealthDataRecordCachePolicy {
 
     data class CachedRecordState(
         val data: MutableStateFlow<List<Record>?> = MutableStateFlow(null),
-        var loading: Boolean = false,
+        val loading: MutableStateFlow<Boolean> = MutableStateFlow(false),
         var lastRefreshTick: Int = Int.MIN_VALUE,
         var lastAccessTick: Long = 0L
     )
@@ -63,7 +65,16 @@ class DefaultHealthDataRecordCachePolicy(
             }
         }
         scheduleCacheLoad(view, refreshTick, cached, recordLoader, ioScope, ioDispatcher)
-        return cached.data.filterNotNull()
+        return channelFlow {
+            // The load in flight may belong to another screen's scope, and leaving that screen
+            // cancels it (issue #105). Once it ends, start one in this collector's scope if the
+            // entry still needs it.
+            launch {
+                cached.loading.first { !it }
+                scheduleCacheLoad(view, refreshTick, cached, recordLoader, ioScope, ioDispatcher)
+            }
+            cached.data.filterNotNull().collect { send(it) }
+        }
     }
 
     override fun clear() {
@@ -83,26 +94,35 @@ class DefaultHealthDataRecordCachePolicy(
         val shouldRefresh = synchronized(recordCacheLock) {
             cache.lastAccessTick = recordCacheAccessCounter.incrementAndGet()
             val needsRefresh = cache.data.value == null || refreshTick > cache.lastRefreshTick
-            if (cache.loading || !needsRefresh) {
+            if (cache.loading.value || !needsRefresh) {
                 false
             } else {
-                cache.loading = true
+                cache.loading.value = true
                 true
             }
         }
         if (!shouldRefresh) return
         ioScope.launch(ioDispatcher) {
-            val records = recordLoader(view) { partial ->
-                synchronized(recordCacheLock) {
-                    cache.data.value = partial
+            try {
+                val records = recordLoader(view) { partial ->
+                    synchronized(recordCacheLock) {
+                        cache.data.value = partial
+                    }
                 }
-            }
-            synchronized(recordCacheLock) {
-                cache.data.value = records
-                cache.lastRefreshTick = maxOf(cache.lastRefreshTick, refreshTick)
-                cache.loading = false
-                cache.lastAccessTick = recordCacheAccessCounter.incrementAndGet()
-                evictRecordCacheLocked()
+                synchronized(recordCacheLock) {
+                    cache.data.value = records
+                    cache.lastRefreshTick = maxOf(cache.lastRefreshTick, refreshTick)
+                }
+            } finally {
+                // Released on every exit, including the cancellation of ioScope when the screen
+                // that started the load is left (issue #105); otherwise no later load is ever
+                // scheduled and the entry can never be evicted. lastRefreshTick is advanced only
+                // on success above, so an abandoned load is retried.
+                synchronized(recordCacheLock) {
+                    cache.loading.value = false
+                    cache.lastAccessTick = recordCacheAccessCounter.incrementAndGet()
+                    evictRecordCacheLocked()
+                }
             }
         }
     }
@@ -110,7 +130,7 @@ class DefaultHealthDataRecordCachePolicy(
     private fun evictRecordCacheLocked() {
         if (recordCache.size <= maxCachedViews) return
         val removals = recordCache.entries
-            .filter { !it.value.loading }
+            .filter { !it.value.loading.value }
             .sortedBy { it.value.lastAccessTick }
             .take(recordCache.size - maxCachedViews)
         removals.forEach { (key, _) -> recordCache.remove(key) }
