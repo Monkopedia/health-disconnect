@@ -50,6 +50,7 @@ import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.ui.CreateViewView
 import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
+import com.monkopedia.healthdisconnect.ui.LocalPagerCameraDistance
 import org.koin.androidx.compose.koinViewModel
 import kotlinx.coroutines.Job
 import kotlin.math.PI
@@ -107,6 +108,7 @@ fun DataViewAdapter(
     val createViewTitle = stringResource(R.string.create_view_title)
     val headerOverlayHeight = 56.dp
     val pageLiftPx = with(LocalDensity.current) { 45.dp.toPx() }
+    val pageCameraDistance = LocalPagerCameraDistance.current
     var headerClickJob by remember { mutableStateOf<Job?>(null) }
     var renameTargetId by remember { mutableStateOf<Int?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -130,12 +132,23 @@ fun DataViewAdapter(
                         val curvedLiftOffset = 1f - cos(clampedOffset * (PI.toFloat() / 2f))
                         val scale = 1f - (0.06f * easedOffset)
                         val alpha = (1f - (0.95f * clampedOffset)).coerceIn(0f, 1f)
-                        scaleX = scale
+                        val tiltDegrees = signedOffset * 7f
+                        // The tilt is projected through a camera [pageCameraDistance] away. At the
+                        // infinite end of that seam the projection has an exact closed form: an
+                        // infinitely distant camera renders a rotation of t about Y as a
+                        // horizontal scale of cos(t) about the pivot, with no perspective row at
+                        // all. Compose cannot express that -- RenderNode.setCameraDistance rejects
+                        // a non-finite distance -- so the limit is applied directly. Only the
+                        // screenshot harness asks for it; see LocalPagerCameraDistance and #73.
+                        val projected = pageCameraDistance.isFinite()
+                        scaleX = if (projected) scale else scale * cos(tiltDegrees * (PI.toFloat() / 180f))
                         scaleY = scale
                         this.alpha = alpha
                         translationY = -pageLiftPx * curvedLiftOffset
-                        rotationY = signedOffset * 7f
-                        cameraDistance = 24f * density
+                        rotationY = if (projected) tiltDegrees else 0f
+                        if (projected) {
+                            cameraDistance = pageCameraDistance * density
+                        }
                     }
             ) {
                 if (page < viewCount) {
