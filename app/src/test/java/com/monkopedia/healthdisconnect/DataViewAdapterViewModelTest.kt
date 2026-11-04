@@ -43,6 +43,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import org.junit.After
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
@@ -194,6 +195,43 @@ class DataViewAdapterViewModelTest {
 
         assertEquals(listOf(1, 3), infoDao.allOrderedSnapshot().map { it.id })
         assertTrue("view row for the retired id came back", viewDao.getById(2) == null)
+    }
+
+    @Test
+    fun `deleteView drops queued pin requests for that view only`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+        viewModel.createView(WeightRecord::class)
+        viewModel.createView(StepsRecord::class)
+        app.enqueuePendingWidgetRequest(viewId = 2, updateWindowName = null)
+        app.enqueuePendingWidgetRequest(viewId = 1, updateWindowName = null)
+
+        viewModel.deleteView(2)
+
+        assertEquals(1, app.pendingWidgetRequestCount())
+        assertEquals(1, app.consumePendingWidgetRequest()?.viewId)
+    }
+
+    @Test
+    fun `createView falls back to the table maxima when the id counter is corrupt`() = runBlocking {
+        val counterFile = File(app.filesDir, "corrupt_view_id_state.preferences_pb")
+        counterFile.writeBytes(byteArrayOf(0x7f, 0x13, 0x00, 0x42, 0x09))
+        try {
+            val viewModel = DataViewAdapterViewModel(
+                app = app,
+                savedStateHandle = SavedStateHandle(),
+                appDatabase = appDb,
+                dataViewDao = viewDao,
+                dataViewInfoDao = infoDao,
+                runLegacyMigrationOnInit = false,
+                viewIdStateStore = DataViewAdapterViewModel.viewIdStateDataStoreAt(counterFile)
+            )
+            viewModel.createView(WeightRecord::class)
+            viewModel.createView(StepsRecord::class)
+
+            assertEquals(listOf(1, 2), infoDao.allOrderedSnapshot().map { it.id })
+        } finally {
+            counterFile.delete()
+        }
     }
 
     @Test

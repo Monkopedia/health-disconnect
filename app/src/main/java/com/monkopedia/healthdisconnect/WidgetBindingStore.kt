@@ -141,19 +141,28 @@ suspend fun Context.unbindWidgets(appWidgetIds: IntArray) {
     }
 }
 
-/** Unbinds every widget bound to [viewId] in one edit, returning the widget ids it unbound. */
+/**
+ * Unbinds every widget bound to [viewId] and drops any queued pin request (#100) for it, in one
+ * edit, returning the widget ids it unbound. A pin accepted after its view was deleted would
+ * otherwise bind the new widget to the dead id.
+ */
 suspend fun Context.unbindWidgetsForView(viewId: Int): IntArray {
     var unbound = IntArray(0)
     widgetBindingsDataStore.edit { prefs ->
         val state = prefs.widgetBindingsStateOrDefault()
         val (removed, kept) = state.widgetToView.entries.partition { it.value == viewId }
-        if (removed.isEmpty()) return@edit
+        val pending = state.pendingRequests.filter { it.viewId != viewId }
+        val droppedPending = state.pendingRequests.size - pending.size
+        if (removed.isEmpty() && droppedPending == 0) return@edit
         unbound = removed.map { it.key }.toIntArray()
         prefs[widgetBindingsJson] = encodeWidgetBindingsState(
-            state.copy(widgetToView = kept.associate { it.key to it.value })
+            state.copy(
+                widgetToView = kept.associate { it.key to it.value },
+                pendingRequests = pending
+            )
         )
         logWidgetFlow(
-            "unbindWidgetsForView viewId=$viewId count=${unbound.size} totalBindings=${kept.size}"
+            "unbindWidgetsForView viewId=$viewId count=${unbound.size} droppedPending=$droppedPending totalBindings=${kept.size}"
         )
     }
     return unbound
