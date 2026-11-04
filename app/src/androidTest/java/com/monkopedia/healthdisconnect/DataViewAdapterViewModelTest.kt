@@ -1,7 +1,9 @@
 package com.monkopedia.healthdisconnect
 
 import android.app.Application
+import androidx.datastore.preferences.core.edit
 import androidx.health.connect.client.records.DistanceRecord
+import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.viewIdStateDataStore
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.monkopedia.healthdisconnect.model.ChartSettings
@@ -134,5 +136,7 @@ class DataViewAdapterViewModelTest {
         File(datastoreDir, "dataInfoStore.preferences_pb").delete()
         File(datastoreDir, "dataStore.preferences_pb").delete()
         AppDatabase.getInstance(app).clearAllTables()
+        // DataStore caches in-process, so deleting its file would not reset the id counter.
+        app.viewIdStateDataStore.edit { it.clear() }
     }
 }

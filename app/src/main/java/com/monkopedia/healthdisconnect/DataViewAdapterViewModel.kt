@@ -2,9 +2,15 @@ package com.monkopedia.healthdisconnect
 
 import android.app.Application
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.dataStore
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.health.connect.client.records.Record
 import androidx.lifecycle.AndroidViewModel
@@ -29,11 +35,14 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.updateAndGet
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.monkopedia.healthdisconnect.room.DataViewEntity
 import com.monkopedia.healthdisconnect.room.DataViewInfoEntity
+import java.io.File
 import kotlin.coroutines.cancellation.CancellationException
 
 class DataViewAdapterViewModel(
@@ -42,7 +51,8 @@ class DataViewAdapterViewModel(
     private val appDatabase: AppDatabase = AppDatabase.getInstance(app),
     private val dataViewDao: DataViewDao = appDatabase.dataViewDao(),
     private val dataViewInfoDao: DataViewInfoDao = appDatabase.dataViewInfoDao(),
-    private val runLegacyMigrationOnInit: Boolean = true
+    private val runLegacyMigrationOnInit: Boolean = true,
+    private val viewIdStateStore: DataStore<Preferences> = app.viewIdStateDataStore
 ) : AndroidViewModel(app) {
 
     private val context = getApplication<Application>()
@@ -252,7 +262,14 @@ class DataViewAdapterViewModel(
             // ordering == id. No shipped build can have written a legacy store that diverges.)
             // Deriving the id from ordering when it does diverge mints an id that already exists,
             // and the REPLACE insert then destroys the existing saved view.
-            val newId = maxOf(maxId, maxOrdering) + 1
+            //
+            // MAX(id) alone is not monotonic either: deleting the highest view lowers it, and the
+            // next create would re-issue the freed id and silently re-point anything still holding
+            // it, such as a widget binding (#104). So the last issued id is persisted, and reserved
+            // before the inserts so that a rollback costs a gap rather than a reissue.
+            val lastIssuedId = viewIdStateStore.data.first()[lastIssuedViewIdKey] ?: 0
+            val newId = maxOf(maxId, maxOrdering, lastIssuedId) + 1
+            viewIdStateStore.edit { it[lastIssuedViewIdKey] = newId }
             dataViewDao.insert(
                 DataViewEntity(
                     id = newId,
@@ -280,12 +297,33 @@ class DataViewAdapterViewModel(
         triggerWidgetRefreshForView(id)
     }
 
-    suspend fun deleteView(id: Int) {
+    // Callers launch this from a screen's scope, and deleting the last view closes that screen, which
+    // cancels the scope as soon as the row delete commits (#104 review). So the whole operation runs
+    // non-cancellable, and the widgets are unbound before the rows go: a delete that completes never
+    // leaves a widget pointing at the dead id.
+    suspend fun deleteView(id: Int) = withContext(NonCancellable) {
+        val widgetIds = context.unbindWidgetsForView(id)
         appDatabase.withTransaction {
             dataViewDao.deleteById(id)
             dataViewInfoDao.deleteById(id)
         }
         flows.value = flows.value - id
+        refreshUnboundWidgets(id, widgetIds)
+    }
+
+    // A widget bound to a deleted view would otherwise keep that id forever (#104). Unbinding drops
+    // it to the "needs configuration" placeholder, whose tap leads back into the view picker.
+    private fun refreshUnboundWidgets(viewId: Int, widgetIds: IntArray) {
+        if (widgetIds.isEmpty()) return
+        HealthDataWidgetScheduler.cancelWidgetJobs(context, widgetIds)
+        HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+            context = context,
+            appWidgetIds = widgetIds,
+            delayMillis = 0L
+        )
+        logWidgetFlow(
+            "DataViewAdapterViewModel.refreshUnboundWidgets viewId=$viewId widgets=${widgetIds.joinToString(",")}"
+        )
     }
 
     // A deleted row emits null; drop it so collectors keep their last view until they are disposed
@@ -314,6 +352,21 @@ class DataViewAdapterViewModel(
         val Context.dataViewInfoDataStore by dataStore("dataInfoStore", DataViewListSerializer)
         val Context.dataViewDataStore by dataStore("dataStore", DataViewSerializer)
         val Context.migrationStateDataStore by preferencesDataStore("migration_state")
+        // A corrupt counter must not block every createView. Resetting it is safe: the id is
+        // max(MAX(id), MAX(ordering), counter) + 1, so an empty counter falls back to #86's formula,
+        // which never collides with a live row (same tolerance the view stores got in #70).
+        private val viewIdStateCorruptionHandler =
+            ReplaceFileCorruptionHandler<Preferences> { emptyPreferences() }
+        internal val Context.viewIdStateDataStore by preferencesDataStore(
+            "view_id_state",
+            corruptionHandler = viewIdStateCorruptionHandler
+        )
+        internal fun viewIdStateDataStoreAt(file: File): DataStore<Preferences> =
+            PreferenceDataStoreFactory.create(
+                corruptionHandler = viewIdStateCorruptionHandler,
+                produceFile = { file }
+            )
+        internal val lastIssuedViewIdKey = intPreferencesKey("last_issued_view_id")
         internal val legacyMigrationCompleteKey = booleanPreferencesKey("legacy_migration_complete")
         internal val legacyViewNameMigrationKey = booleanPreferencesKey("legacy_view_name_migration_complete")
         private const val TAG = "DataViewAdapterViewModel"

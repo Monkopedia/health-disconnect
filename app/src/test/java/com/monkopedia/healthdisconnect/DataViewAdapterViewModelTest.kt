@@ -13,6 +13,11 @@ import androidx.test.core.app.ApplicationProvider
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.dataViewDataStore
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.dataViewInfoDataStore
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.migrationStateDataStore
+import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.viewIdStateDataStore
+import com.monkopedia.healthdisconnect.HealthDataWidgetUpdater.RoomWidgetBindingLoader
+import com.monkopedia.healthdisconnect.HealthDataWidgetUpdater.WidgetBindingLoadResult
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.BloodGlucoseRecord
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.DataViewInfoList
 import com.monkopedia.healthdisconnect.model.DataView
@@ -38,6 +43,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import org.junit.After
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertThrows
@@ -78,6 +84,7 @@ class DataViewAdapterViewModelTest {
             app.dataViewInfoDataStore.updateData { DataViewInfoList(emptyMap(), emptyList()) }
             app.dataViewDataStore.updateData { DataViewList(emptyMap()) }
             app.migrationStateDataStore.edit { it.clear() }
+            app.viewIdStateDataStore.edit { it.clear() }
             app.unbindWidgets(app.widgetBindingsSnapshot().keys.toIntArray())
         }
         val scheduler = app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
@@ -90,6 +97,7 @@ class DataViewAdapterViewModelTest {
             app.dataViewInfoDataStore.updateData { DataViewInfoList(emptyMap(), emptyList()) }
             app.dataViewDataStore.updateData { DataViewList(emptyMap()) }
             app.migrationStateDataStore.edit { it.clear() }
+            app.viewIdStateDataStore.edit { it.clear() }
             app.unbindWidgets(app.widgetBindingsSnapshot().keys.toIntArray())
             appDb.clearAllTables()
         }
@@ -130,6 +138,100 @@ class DataViewAdapterViewModelTest {
         val updated = awaitViews(viewModel) { it.dataViews.isEmpty() }
         assertEquals(0, updated.dataViews.size)
         assertEquals(emptyList<Int>(), updated.ordering)
+    }
+
+    /**
+     * #104: a widget pinned to a view kept that view's id after the view was deleted, and the next
+     * createView re-issued the id, so the widget silently started rendering an unrelated metric.
+     */
+    @Test
+    fun `widget bound to a deleted view does not pick up the next created view`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+        viewModel.createView(WeightRecord::class)
+        viewModel.createView(StepsRecord::class)
+        val stepsId = infoDao.allOrderedSnapshot().single { it.name == "Steps" }.id
+        app.bindWidgetToView(appWidgetId = 42, viewId = stepsId)
+
+        viewModel.deleteView(stepsId)
+        viewModel.createView(BloodGlucoseRecord::class)
+        val glucoseId = infoDao.allOrderedSnapshot().single { it.name == "Blood glucose" }.id
+
+        val binding = RoomWidgetBindingLoader.loadBinding(app, 42)
+        assertTrue(
+            "widget pinned to Steps now renders view $glucoseId (Blood glucose): $binding",
+            binding !is WidgetBindingLoadResult.BoundView
+        )
+    }
+
+    @Test
+    fun `deleteView unbinds only the widgets bound to that view`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+        viewModel.createView(WeightRecord::class)
+        viewModel.createView(StepsRecord::class)
+        app.bindWidgetToView(appWidgetId = 41, viewId = 1)
+        app.bindWidgetToView(appWidgetId = 42, viewId = 2)
+        app.bindWidgetToView(appWidgetId = 43, viewId = 2)
+
+        viewModel.deleteView(2)
+
+        assertEquals(mapOf(41 to 1), app.widgetBindingsSnapshot())
+        assertEquals(WidgetBindingLoadResult.Unbound, RoomWidgetBindingLoader.loadBinding(app, 42))
+        // Redrawn now, rather than showing the deleted chart until its next periodic refresh.
+        val scheduler = app.getSystemService(Context.JOB_SCHEDULER_SERVICE) as JobScheduler
+        val refreshed = scheduler.allPendingJobs
+            .filter { !it.isPeriodic }
+            .map { it.extras.getInt(HealthDataWidgetContract.EXTRA_WIDGET_ID) }
+        assertEquals(setOf(42, 43), refreshed.toSet())
+    }
+
+    @Test
+    fun `createView never reissues the id of a deleted view`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+        viewModel.createView(WeightRecord::class)
+        viewModel.createView(StepsRecord::class)
+
+        viewModel.deleteView(2)
+        viewModel.createView(BloodGlucoseRecord::class)
+
+        assertEquals(listOf(1, 3), infoDao.allOrderedSnapshot().map { it.id })
+        assertTrue("view row for the retired id came back", viewDao.getById(2) == null)
+    }
+
+    @Test
+    fun `deleteView drops queued pin requests for that view only`() = runBlocking {
+        val viewModel = dataViewAdapterViewModel()
+        viewModel.createView(WeightRecord::class)
+        viewModel.createView(StepsRecord::class)
+        app.enqueuePendingWidgetRequest(viewId = 2, updateWindowName = null)
+        app.enqueuePendingWidgetRequest(viewId = 1, updateWindowName = null)
+
+        viewModel.deleteView(2)
+
+        assertEquals(1, app.pendingWidgetRequestCount())
+        assertEquals(1, app.consumePendingWidgetRequest()?.viewId)
+    }
+
+    @Test
+    fun `createView falls back to the table maxima when the id counter is corrupt`() = runBlocking {
+        val counterFile = File(app.filesDir, "corrupt_view_id_state.preferences_pb")
+        counterFile.writeBytes(byteArrayOf(0x7f, 0x13, 0x00, 0x42, 0x09))
+        try {
+            val viewModel = DataViewAdapterViewModel(
+                app = app,
+                savedStateHandle = SavedStateHandle(),
+                appDatabase = appDb,
+                dataViewDao = viewDao,
+                dataViewInfoDao = infoDao,
+                runLegacyMigrationOnInit = false,
+                viewIdStateStore = DataViewAdapterViewModel.viewIdStateDataStoreAt(counterFile)
+            )
+            viewModel.createView(WeightRecord::class)
+            viewModel.createView(StepsRecord::class)
+
+            assertEquals(listOf(1, 2), infoDao.allOrderedSnapshot().map { it.id })
+        } finally {
+            counterFile.delete()
+        }
     }
 
     @Test
