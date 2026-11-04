@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.datastore.dataStore
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.health.connect.client.records.Record
 import androidx.lifecycle.AndroidViewModel
@@ -252,7 +253,14 @@ class DataViewAdapterViewModel(
             // ordering == id. No shipped build can have written a legacy store that diverges.)
             // Deriving the id from ordering when it does diverge mints an id that already exists,
             // and the REPLACE insert then destroys the existing saved view.
-            val newId = maxOf(maxId, maxOrdering) + 1
+            //
+            // MAX(id) alone is not monotonic either: deleting the highest view lowers it, and the
+            // next create would re-issue the freed id and silently re-point anything still holding
+            // it, such as a widget binding (#104). So the last issued id is persisted, and reserved
+            // before the inserts so that a rollback costs a gap rather than a reissue.
+            val lastIssuedId = context.viewIdStateDataStore.data.first()[lastIssuedViewIdKey] ?: 0
+            val newId = maxOf(maxId, maxOrdering, lastIssuedId) + 1
+            context.viewIdStateDataStore.edit { it[lastIssuedViewIdKey] = newId }
             dataViewDao.insert(
                 DataViewEntity(
                     id = newId,
@@ -286,6 +294,23 @@ class DataViewAdapterViewModel(
             dataViewInfoDao.deleteById(id)
         }
         flows.value = flows.value - id
+        unbindWidgetsForDeletedView(id)
+    }
+
+    // A widget bound to a deleted view would otherwise keep that id forever (#104). Unbinding drops
+    // it to the "needs configuration" placeholder, whose tap leads back into the view picker.
+    private suspend fun unbindWidgetsForDeletedView(viewId: Int) {
+        val widgetIds = context.unbindWidgetsForView(viewId)
+        if (widgetIds.isEmpty()) return
+        HealthDataWidgetScheduler.cancelWidgetJobs(context, widgetIds)
+        HealthDataWidgetScheduler.schedulePostUpdateRefresh(
+            context = context,
+            appWidgetIds = widgetIds,
+            delayMillis = 0L
+        )
+        logWidgetFlow(
+            "DataViewAdapterViewModel.unbindWidgetsForDeletedView viewId=$viewId widgets=${widgetIds.joinToString(",")}"
+        )
     }
 
     // A deleted row emits null; drop it so collectors keep their last view until they are disposed
@@ -314,6 +339,8 @@ class DataViewAdapterViewModel(
         val Context.dataViewInfoDataStore by dataStore("dataInfoStore", DataViewListSerializer)
         val Context.dataViewDataStore by dataStore("dataStore", DataViewSerializer)
         val Context.migrationStateDataStore by preferencesDataStore("migration_state")
+        internal val Context.viewIdStateDataStore by preferencesDataStore("view_id_state")
+        internal val lastIssuedViewIdKey = intPreferencesKey("last_issued_view_id")
         internal val legacyMigrationCompleteKey = booleanPreferencesKey("legacy_migration_complete")
         internal val legacyViewNameMigrationKey = booleanPreferencesKey("legacy_view_name_migration_complete")
         private const val TAG = "DataViewAdapterViewModel"

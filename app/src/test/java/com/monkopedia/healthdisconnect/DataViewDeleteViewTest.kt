@@ -10,11 +10,13 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.datastore.preferences.core.edit
 import androidx.health.connect.client.records.WeightRecord
 import androidx.lifecycle.SavedStateHandle
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.monkopedia.healthdisconnect.DataViewAdapterViewModel.Companion.viewIdStateDataStore
 import com.monkopedia.healthdisconnect.room.AppDatabase
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
 import io.mockk.every
@@ -52,6 +54,7 @@ class DataViewDeleteViewTest {
         appDb = Room.inMemoryDatabaseBuilder(app, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
+        runBlocking { app.viewIdStateDataStore.edit { it.clear() } }
     }
 
     @After

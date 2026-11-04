@@ -141,6 +141,24 @@ suspend fun Context.unbindWidgets(appWidgetIds: IntArray) {
     }
 }
 
+/** Unbinds every widget bound to [viewId] in one edit, returning the widget ids it unbound. */
+suspend fun Context.unbindWidgetsForView(viewId: Int): IntArray {
+    var unbound = IntArray(0)
+    widgetBindingsDataStore.edit { prefs ->
+        val state = prefs.widgetBindingsStateOrDefault()
+        val (removed, kept) = state.widgetToView.entries.partition { it.value == viewId }
+        if (removed.isEmpty()) return@edit
+        unbound = removed.map { it.key }.toIntArray()
+        prefs[widgetBindingsJson] = encodeWidgetBindingsState(
+            state.copy(widgetToView = kept.associate { it.key to it.value })
+        )
+        logWidgetFlow(
+            "unbindWidgetsForView viewId=$viewId count=${unbound.size} totalBindings=${kept.size}"
+        )
+    }
+    return unbound
+}
+
 suspend fun Context.widgetViewId(appWidgetId: Int): Int? {
     return widgetBindingsSnapshot()[appWidgetId]
 }
