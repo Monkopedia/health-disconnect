@@ -19,7 +19,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -140,6 +147,9 @@ internal fun GraphStatePlaceholder(
 internal fun MetricOverTimeChart(
     seriesList: List<HealthDataModel.MetricSeries>,
     settings: ChartSettings,
+    selectedSlot: Int?,
+    onSelectedSlotChange: (Int?) -> Unit,
+    onOpenEntries: (() -> Unit)? = null,
     onShareClick: (() -> Unit)? = null
 ) {
     if (seriesList.isEmpty()) return
@@ -173,6 +183,20 @@ internal fun MetricOverTimeChart(
 
     fun rangeFor(index: Int): ValueRange = geometry.rangeFor(index)
 
+    // A slot from before the data changed may no longer exist.
+    val activeSlot = selectedSlot?.takeIf { it < geometry.slotCount }
+    val guideColor = MaterialTheme.colorScheme.onSurface
+    // The gesture detectors outlive recompositions (restarting them would cancel a drag mid-way),
+    // so they read the latest geometry/selection through these rather than capturing them.
+    val currentGeometry by rememberUpdatedState(geometry)
+    val currentSlot by rememberUpdatedState(activeSlot)
+    val currentOnSelect by rememberUpdatedState(onSelectedSlotChange)
+    fun PointerInputScope.slotAt(x: Float): Int? {
+        val plotPad = 8.dp.toPx()
+        val plotWidth = (size.width - 2 * plotPad).coerceAtLeast(1f)
+        return currentGeometry.nearestSlot((x - plotPad) / plotWidth)
+    }
+
     Box(modifier = Modifier.fillMaxWidth()) {
         Canvas(
             modifier = Modifier
@@ -184,6 +208,24 @@ internal fun MetricOverTimeChart(
                     top = 8.dp,
                     bottom = 8.dp
                 )
+                .testTag("data_view_chart_plot")
+                .pointerInput(Unit) {
+                    // Tapping the selected bucket again clears it.
+                    detectTapGestures { offset ->
+                        val slot = slotAt(offset.x)
+                        currentOnSelect(if (slot == currentSlot) null else slot)
+                    }
+                }
+                // Dragging scrubs only once something is selected. While idle a horizontal swipe
+                // that starts on the chart still pages between views; vertical drags always go to
+                // the screen's scroll, because a vertical slop consumed by the list cancels this.
+                .pointerInput(activeSlot != null) {
+                    if (activeSlot == null) return@pointerInput
+                    detectHorizontalDragGestures { change, _ ->
+                        change.consume()
+                        currentOnSelect(slotAt(change.position.x))
+                    }
+                }
         ) {
             val leftPad = 8.dp.toPx()
             val rightPad = 8.dp.toPx()
@@ -284,6 +326,29 @@ internal fun MetricOverTimeChart(
                         }
                     }
                 }
+                if (activeSlot != null) {
+                    val x = leftPad + chartWidth * geometry.slotXFraction(activeSlot)
+                    drawLine(
+                        color = guideColor,
+                        start = Offset(x, topPad),
+                        end = Offset(x, topPad + chartHeight),
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))
+                    )
+                    seriesList.forEachIndexed { seriesIndex, series ->
+                        val index = geometry.pointIndexAt(seriesIndex, activeSlot) ?: return@forEachIndexed
+                        val color = seriesColors[seriesIndex % seriesColors.size]
+                        // A band marks its max and min with hollow dots around the filled avg dot.
+                        listOfNotNull(series.bandMax, series.bandMin).forEach { edge ->
+                            val center = pointToOffset(edge[index], seriesIndex)
+                            drawCircle(Color.White, radius = 4.dp.toPx(), center = center)
+                            drawCircle(color, radius = 4.dp.toPx(), center = center, style = Stroke(2.dp.toPx()))
+                        }
+                        val center = pointToOffset(series.points[index], seriesIndex)
+                        drawCircle(Color.White, radius = 7.5.dp.toPx(), center = center)
+                        drawCircle(color, radius = 5.dp.toPx(), center = center)
+                    }
+                }
             } else {
                 val slotWidth = chartWidth / allDates.size
                 val barGroupWidth = slotWidth * 0.75f
@@ -291,16 +356,29 @@ internal fun MetricOverTimeChart(
                 val baselineY = topPad + chartHeight
                 allDates.forEachIndexed { dateIndex, date ->
                     val groupLeft = leftPad + (slotWidth * dateIndex) + ((slotWidth - barGroupWidth) / 2f)
+                    // A selection keeps its bars at full colour and dims the rest.
+                    val alpha = if (activeSlot == null || activeSlot == dateIndex) 1f else DIMMED_BAR_ALPHA
+                    var groupTop = baselineY
                     seriesList.forEachIndexed { seriesIndex, series ->
                         val value = series.points.firstOrNull { it.date == date }?.value ?: return@forEachIndexed
                         val yNorm = geometry.normalized(value, seriesIndex)
                         val barTop = topPad + chartHeight - (yNorm * chartHeight)
                         val left = groupLeft + (barWidth * seriesIndex)
+                        groupTop = minOf(groupTop, barTop)
                         drawRect(
-                            color = seriesColors[seriesIndex % seriesColors.size],
+                            color = seriesColors[seriesIndex % seriesColors.size].copy(alpha = alpha),
                             topLeft = Offset(left, barTop),
                             size = Size(barWidth, baselineY - barTop),
                             style = Fill
+                        )
+                    }
+                    if (activeSlot == dateIndex) {
+                        val outline = 2.dp.toPx()
+                        drawRect(
+                            color = guideColor,
+                            topLeft = Offset(groupLeft - outline, groupTop - outline),
+                            size = Size(barGroupWidth + 2 * outline, baselineY - groupTop + outline),
+                            style = Stroke(outline)
                         )
                     }
                 }
@@ -361,56 +439,21 @@ internal fun MetricOverTimeChart(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        val summaryRows = buildList {
-            seriesList.forEachIndexed { index, series ->
-                val rowColor = seriesColors[index % seriesColors.size].copy(alpha = 0.9f)
-                if (series.showMaxLabel) {
-                    val formattedMax = formatValueWithUnit(
-                        value = series.peakValueInWindow,
-                        unit = series.unit
-                    )
-                    add(
-                        stringResource(
-                            R.string.data_view_max_format,
-                            "\u25A0 ${series.label}",
-                            formattedMax,
-                            ""
-                        ) to rowColor
-                    )
-                }
-                if (series.showMinLabel) {
-                    val formattedMin = formatValueWithUnit(
-                        value = series.minValueInWindow,
-                        unit = series.unit
-                    )
-                    add(
-                        stringResource(
-                            R.string.data_view_min_format,
-                            "\u25A0 ${series.label}",
-                            formattedMin,
-                            ""
-                        ) to rowColor
-                    )
-                }
-            }
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            summaryRows.forEach { (text, color) ->
-                Text(
-                    text = text,
-                    color = color,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
+        ChartReadoutPanel(
+            geometry = geometry,
+            seriesColors = seriesColors,
+            selectedSlot = activeSlot,
+            onClear = { onSelectedSlotChange(null) },
+            onOpenEntries = onOpenEntries,
+            modifier = Modifier.weight(1f)
+        )
         if (onShareClick != null) {
             IconButton(
                 onClick = onShareClick,
                 modifier = Modifier
-                    .padding(start = 8.dp, top = 1.dp)
+                    .padding(start = 4.dp)
                     .testTag("data_view_graph_share_button")
             ) {
                 Icon(
@@ -422,6 +465,9 @@ internal fun MetricOverTimeChart(
     }
     Spacer(Modifier.height(6.dp))
 }
+
+/** Alpha of the unselected bars while one bar is selected. */
+private const val DIMMED_BAR_ALPHA = 0.35f
 
 /** Alpha applied to a series color for the filled BAND envelope. */
 private const val BAND_FILL_ALPHA = 0.16f

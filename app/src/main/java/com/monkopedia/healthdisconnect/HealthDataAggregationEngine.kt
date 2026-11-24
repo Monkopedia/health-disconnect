@@ -402,7 +402,9 @@ class DefaultHealthDataAggregationEngine(
             showMinLabel = settings.showMinLabel,
             yAxisMode = settings.yAxisMode,
             bandMin = band?.first?.let(::applySmoothing),
-            bandMax = band?.second?.let(::applySmoothing)
+            bandMax = band?.second?.let(::applySmoothing),
+            bucketSize = settings.bucketSize,
+            aggregation = settings.aggregation
         )
     }
 

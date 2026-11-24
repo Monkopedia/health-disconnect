@@ -1,6 +1,7 @@
 package com.monkopedia.healthdisconnect.ui
 
 import com.monkopedia.healthdisconnect.HealthDataModel
+import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.TimeWindow
@@ -10,6 +11,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import kotlin.math.abs
 
 /**
  * Surface-independent chart geometry shared by every renderer (on-screen Compose chart,
@@ -114,6 +116,57 @@ internal class ChartGeometry private constructor(
                 if (sortedInstants.size > 1) index.toFloat() / (sortedInstants.size - 1).toFloat() else 0f
             }
         }
+    }
+
+    /**
+     * How many positions a tap can select, left to right: each distinct bucket instant on a line
+     * chart, each bar slot (one per calendar day, as the bars are laid out) on a bar chart.
+     */
+    val slotCount: Int
+        get() = if (settings.chartType == ChartType.BARS) sortedDates.size else sortedInstants.size
+
+    /** Horizontal centre of selectable [slot] as a 0..1 fraction of the plot width. */
+    fun slotXFraction(slot: Int): Float =
+        if (settings.chartType == ChartType.BARS) {
+            (slot + 0.5f) / sortedDates.size
+        } else {
+            xFraction(sortedInstants[slot])
+        }
+
+    /** The slot nearest [xFraction] by x alone — the inverse of [slotXFraction]. */
+    fun nearestSlot(xFraction: Float): Int? =
+        nearestByX(List(slotCount, ::slotXFraction), xFraction)
+
+    /** Start of the bucket at [slot]: a bar slot starts at its local midnight. */
+    fun slotStart(slot: Int, zoneId: ZoneId = ZoneId.systemDefault()): Instant =
+        if (settings.chartType == ChartType.BARS) {
+            sortedDates[slot].atStartOfDay(zoneId).toInstant()
+        } else {
+            sortedInstants[slot]
+        }
+
+    /**
+     * The span one slot covers: the finest series bucket, but never finer than a day on a bar chart,
+     * whose slots are calendar days.
+     */
+    val slotBucket: BucketSize
+        get() {
+            val finest = seriesList.minOf { it.bucketSize }
+            return if (settings.chartType == ChartType.BARS) maxOf(finest, BucketSize.DAY) else finest
+        }
+
+    /**
+     * Index into series [seriesIndex]'s points of its value at [slot], or null when that series has
+     * no bucket there (another series supplied the slot).
+     */
+    fun pointIndexAt(seriesIndex: Int, slot: Int): Int? {
+        val points = seriesList[seriesIndex].points
+        val index = if (settings.chartType == ChartType.BARS) {
+            points.indexOfFirst { it.date == sortedDates[slot] }
+        } else {
+            points.indexOfFirst { it.instant == sortedInstants[slot] }
+        }
+        return index.takeIf { it >= 0 }
     }
 
     /**
@@ -287,3 +340,10 @@ internal class ChartGeometry private constructor(
         }
     }
 }
+
+/**
+ * Index of the entry in [xFractions] closest to [x], or null when there are none. Ties go to the
+ * left-most entry. Selection is by x alone: a tap anywhere in a column picks that column's bucket.
+ */
+internal fun nearestByX(xFractions: List<Float>, x: Float): Int? =
+    xFractions.indices.minByOrNull { abs(xFractions[it] - x) }

@@ -110,8 +110,17 @@
     <string name="data_view_discard">Discard</string>
     <string name="data_view_cancel">Cancel</string>
     <string name="data_view_normalized">Normalized</string>
-    <string name="data_view_max_format">%1$s max: %2$s%3$s</string>
-    <string name="data_view_min_format">%1$s min: %2$s%3$s</string>
+    <string name="chart_readout_hint">Tap the graph for details</string>
+    <string name="chart_readout_max">Max</string>
+    <string name="chart_readout_min">Min</string>
+    <string name="chart_readout_average">Average</string>
+    <string name="chart_readout_total">Total</string>
+    <!-- A readout caption naming which series a value belongs to, e.g. "Steps · Max". -->
+    <string name="chart_readout_series_caption">%1$s · %2$s</string>
+    <!-- The selected bar of a weekly chart, e.g. "Week of Jan 12 – 18". -->
+    <string name="chart_readout_week_of">Week of %1$s</string>
+    <string name="chart_readout_no_value">–</string>
+    <string name="chart_readout_clear">Clear selection</string>
     <string name="data_view_entry_details_title">Entry Details</string>
     <string name="data_view_close">Close</string>
     <string name="data_view_last_refreshed">Last refreshed: %1$s</string>

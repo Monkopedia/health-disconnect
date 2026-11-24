@@ -1,6 +1,10 @@
 package com.monkopedia.healthdisconnect.screenshot
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.Record
@@ -44,6 +48,7 @@ import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
+import com.monkopedia.healthdisconnect.ui.MetricOverTimeChart
 import com.monkopedia.healthdisconnect.ui.LocalClock
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
@@ -1025,6 +1030,110 @@ abstract class BaseScreenRoborazziTest {
                 healthDataModel = healthDataModel,
                 permissionsViewModel = mockPermissionsViewModelForScreens()
             )
+        }
+    }
+
+    // The chart readout panel (#137), idle and with a bucket selected, for each chart kind. These
+    // render the chart component directly with the selection hoisted, since a screenshot cannot tap.
+
+    @Test
+    fun chartReadoutLineIdleScreen() {
+        captureReadout("chart_readout_line_idle", readoutLineSeries(), readoutLineSettings(), selectedSlot = null)
+    }
+
+    @Test
+    fun chartReadoutLineSelectedScreen() {
+        captureReadout("chart_readout_line_selected", readoutLineSeries(), readoutLineSettings(), selectedSlot = 6)
+    }
+
+    @Test
+    fun chartReadoutBarsIdleScreen() {
+        captureReadout("chart_readout_bars_idle", readoutBarSeries(), readoutBarSettings(), selectedSlot = null)
+    }
+
+    @Test
+    fun chartReadoutBarsSelectedScreen() {
+        captureReadout("chart_readout_bars_selected", readoutBarSeries(), readoutBarSettings(), selectedSlot = 1)
+    }
+
+    @Test
+    fun chartReadoutBandIdleScreen() {
+        captureReadout("chart_readout_band_idle", readoutBandSeries(), readoutBandSettings(), selectedSlot = null)
+    }
+
+    @Test
+    fun chartReadoutBandSelectedScreen() {
+        captureReadout("chart_readout_band_selected", readoutBandSeries(), readoutBandSettings(), selectedSlot = 3)
+    }
+
+    private fun readoutLineSettings() = ChartSettings(timeWindow = TimeWindow.HOURS_24, bucketSize = BucketSize.HOUR)
+
+    private fun readoutLineSeries() = HealthDataModel.MetricSeries(
+        label = "Heart rate",
+        unit = "bpm",
+        points = hourlyIntradayPoints(),
+        bucketSize = BucketSize.HOUR
+    )
+
+    private fun readoutBarSettings() = ChartSettings(
+        chartType = ChartType.BARS,
+        aggregation = AggregationMode.SUM,
+        bucketSize = BucketSize.WEEK,
+        yAxisMode = YAxisMode.START_AT_ZERO,
+        timeWindow = TimeWindow.DAYS_90
+    )
+
+    /** Four Monday-started weeks of step totals; the second spans a month boundary. */
+    private fun readoutBarSeries() = HealthDataModel.MetricSeries(
+        label = "Steps",
+        unit = "count",
+        points = listOf(41_200.0, 52_340.0, 38_800.0, 47_100.0).mapIndexed { week, total ->
+            HealthDataModel.MetricPoint(LocalDate.of(2026, 1, 19).plusWeeks(week.toLong()), total)
+        },
+        yAxisMode = YAxisMode.START_AT_ZERO,
+        bucketSize = BucketSize.WEEK,
+        aggregation = AggregationMode.SUM
+    )
+
+    private fun readoutBandSettings() = ChartSettings(
+        aggregation = AggregationMode.MIN_MAX_AVG,
+        timeWindow = TimeWindow.DAYS_7
+    )
+
+    /** A week of daily heart-rate min/avg/max ending at the frozen clock. */
+    private fun readoutBandSeries(): HealthDataModel.MetricSeries {
+        val today = FIXED_NOW.atZone(ZoneId.of("UTC")).toLocalDate()
+        val dates = (0..6).map { today.minusDays(6L - it) }
+        val avg = listOf(71.0, 69.0, 74.0, 78.0, 72.0, 70.0, 73.0)
+        val lows = listOf(55.0, 54.0, 57.0, 52.0, 56.0, 55.0, 58.0)
+        val highs = listOf(118.0, 112.0, 124.0, 141.0, 120.0, 115.0, 122.0)
+        return HealthDataModel.MetricSeries(
+            label = "Heart rate",
+            unit = "bpm",
+            points = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, avg[i]) },
+            bandMin = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, lows[i]) },
+            bandMax = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, highs[i]) },
+            aggregation = AggregationMode.MIN_MAX_AVG
+        )
+    }
+
+    private fun captureReadout(
+        name: String,
+        series: HealthDataModel.MetricSeries,
+        settings: ChartSettings,
+        selectedSlot: Int?
+    ) {
+        captureScreen(name) {
+            Column(Modifier.padding(horizontal = 11.dp, vertical = 16.dp)) {
+                MetricOverTimeChart(
+                    seriesList = listOf(series),
+                    settings = settings,
+                    selectedSlot = selectedSlot,
+                    onSelectedSlotChange = {},
+                    onOpenEntries = {},
+                    onShareClick = {}
+                )
+            }
         }
     }
 

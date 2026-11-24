@@ -1,6 +1,7 @@
 package com.monkopedia.healthdisconnect.ui
 
 import com.monkopedia.healthdisconnect.HealthDataModel
+import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.TimeWindow
@@ -10,6 +11,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -372,4 +374,120 @@ class ChartGeometryTest {
         assertEquals(listOf(today.minusDays(2), today.minusDays(1), today), g.sortedDates)
     }
 
+    // --- Tap/drag hit-testing for the chart readout ---
+
+    @Test
+    fun nearestByX_isNullWithNoEntries() {
+        assertNull(nearestByX(emptyList(), 0.5f))
+    }
+
+    @Test
+    fun nearestByX_singleEntryWinsFromAnywhere() {
+        listOf(-3f, 0f, 0.5f, 1f, 7f).forEach { x ->
+            assertEquals(0, nearestByX(listOf(0.5f), x))
+        }
+    }
+
+    @Test
+    fun nearestByX_picksClosestAndClampsPastTheEdges() {
+        val xs = listOf(0f, 0.5f, 1f)
+        assertEquals(0, nearestByX(xs, -0.2f))
+        assertEquals(0, nearestByX(xs, 0.2f))
+        assertEquals(1, nearestByX(xs, 0.3f))
+        assertEquals(1, nearestByX(xs, 0.74f))
+        assertEquals(2, nearestByX(xs, 0.76f))
+        assertEquals(2, nearestByX(xs, 1.4f))
+        // An exact midpoint resolves to the left-hand entry rather than flickering.
+        assertEquals(0, nearestByX(xs, 0.25f))
+    }
+
+    @Test
+    fun lineSlots_invertTheContinuousAxis() {
+        // DAYS_7 ending today: the axis runs today-7 .. today, so each day is 1/7 of the width.
+        val g = geometry(
+            listOf(
+                series(
+                    "HR", "bpm",
+                    listOf(point(today.minusDays(7), 1.0), point(today.minusDays(3), 2.0), point(today, 3.0))
+                )
+            ),
+            xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
+            settings = ChartSettings(timeWindow = TimeWindow.DAYS_7)
+        )
+        assertEquals(3, g.slotCount)
+        assertEquals(4f / 7f, g.slotXFraction(1), 1e-6f)
+        (0 until g.slotCount).forEach { assertEquals(it, g.nearestSlot(g.slotXFraction(it))) }
+        // Selection is by x only: the gap is split at its midpoint in time, not by value.
+        assertEquals(0, g.nearestSlot(1.9f / 7f))
+        assertEquals(1, g.nearestSlot(2.1f / 7f))
+        assertEquals(2, g.nearestSlot(1.2f))
+    }
+
+    @Test
+    fun lineSlots_aLonePointIsSelectedFromAnywhere() {
+        val g = geometry(
+            listOf(series("HR", "bpm", listOf(point(today.minusDays(2), 60.0)))),
+            xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
+            settings = ChartSettings(timeWindow = TimeWindow.DAYS_7)
+        )
+        assertEquals(0.5f, g.slotXFraction(0))
+        assertEquals(0, g.nearestSlot(0f))
+        assertEquals(0, g.nearestSlot(1f))
+    }
+
+    @Test
+    fun barSlots_areTheBarCentres() {
+        val g = geometry(
+            listOf(series("Steps", "count", (0..3).map { point(today.minusDays(3L - it), it.toDouble()) })),
+            xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
+            settings = ChartSettings(chartType = ChartType.BARS, timeWindow = TimeWindow.DAYS_30)
+        )
+        assertEquals(listOf(0.125f, 0.375f, 0.625f, 0.875f), List(g.slotCount, g::slotXFraction))
+        assertEquals(1, g.nearestSlot(0.3f))
+        assertEquals(3, g.nearestSlot(0.99f))
+        assertEquals(today.minusDays(1).startOfDay(), g.slotStart(2, zone))
+    }
+
+    @Test
+    fun pointIndexAt_isNullWhereASeriesHasNoBucket() {
+        val g = geometry(
+            listOf(
+                series("A", "u", listOf(point(today.minusDays(2), 1.0), point(today, 2.0))),
+                series("B", "u", listOf(point(today.minusDays(1), 3.0)))
+            ),
+            xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
+            settings = ChartSettings(timeWindow = TimeWindow.DAYS_7)
+        )
+        assertNull(g.pointIndexAt(0, 1))
+        assertEquals(0, g.pointIndexAt(1, 1))
+        assertEquals(1, g.pointIndexAt(0, 2))
+    }
+
+    @Test
+    fun slotBucket_isTheFinestSeriesBucketButAtLeastADayForBars() {
+        val hourly = HealthDataModel.MetricSeries(
+            label = "HR",
+            unit = "bpm",
+            points = listOf(point(today, 1.0)),
+            bucketSize = BucketSize.HOUR
+        )
+        val weekly = hourly.copy(bucketSize = BucketSize.WEEK)
+        assertEquals(BucketSize.HOUR, geometry(listOf(weekly, hourly)).slotBucket)
+        assertEquals(
+            BucketSize.DAY,
+            geometry(listOf(hourly), settings = ChartSettings(chartType = ChartType.BARS)).slotBucket
+        )
+    }
+
+    @Test
+    fun formatBucketLabel_namesEachBucketSize() {
+        val utc = ZoneId.of("UTC")
+        fun at(iso: String) = Instant.parse(iso)
+        assertEquals("Feb 14, 4:05 PM", formatBucketLabel(at("2026-02-14T16:05:00Z"), BucketSize.MINUTE, false, utc))
+        assertEquals("Thu, Feb 12", formatBucketLabel(at("2026-02-12T00:00:00Z"), BucketSize.DAY, false, utc))
+        assertEquals("Thu, Feb 12, 2026", formatBucketLabel(at("2026-02-12T00:00:00Z"), BucketSize.DAY, true, utc))
+        assertEquals("Jan 12 – 18", formatBucketLabel(at("2026-01-12T00:00:00Z"), BucketSize.WEEK, false, utc))
+        assertEquals("Jan 26 – Feb 1", formatBucketLabel(at("2026-01-26T00:00:00Z"), BucketSize.WEEK, false, utc))
+        assertEquals("February 2026", formatBucketLabel(at("2026-02-01T00:00:00Z"), BucketSize.MONTH, false, utc))
+    }
 }
