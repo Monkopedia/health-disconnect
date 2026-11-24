@@ -7,6 +7,7 @@ import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.StepsRecord
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
@@ -711,7 +712,11 @@ class HealthDataModel @JvmOverloads constructor(
          * min/max/avg result stays one logical series carrying its band rather than three series.
          */
         val bandMin: List<MetricPoint>? = null,
-        val bandMax: List<MetricPoint>? = null
+        val bandMax: List<MetricPoint>? = null,
+        /** The bucket each point spans, so a selected point can say which day/week/month it is. */
+        val bucketSize: BucketSize = BucketSize.DAY,
+        /** How each bucket was reduced; a chart only sums its buckets into a total for [AggregationMode.SUM]. */
+        val aggregation: AggregationMode = AggregationMode.AVERAGE
     ) {
         /** True when this series carries a min–max envelope to draw around its avg line. */
         val hasBand: Boolean get() = bandMin != null && bandMax != null

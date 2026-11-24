@@ -181,6 +181,9 @@ fun DataViewView(
     ) { healthDataModel.collectAggregatedSeries(view!!) }
     val recordCount by recordCountFlow.collectAsState(initial = null)
     val metricSeriesList by metricSeriesFlow.collectAsState(initial = null)
+    // The tapped chart bucket. Plain (not saveable) state, cleared whenever the plotted data or
+    // its layout changes and dropped when the screen leaves composition.
+    var chartSelection by remember(view!!.id, view!!.chartSettings, metricSeriesList) { mutableStateOf<Int?>(null) }
     val chartLoadIssuesFlow = remember(view!!.id) { healthDataModel.collectChartLoadIssues(view!!.id) }
     val chartLoadIssues by chartLoadIssuesFlow.collectAsState(initial = HealthDataModel.ChartLoadIssues())
     val isShowingChart = rememberSaveable(view!!.id) { mutableStateOf(true) }
@@ -603,6 +606,9 @@ fun DataViewView(
                                 MetricOverTimeChart(
                                     seriesList = metricSeriesList!!,
                                     settings = view!!.chartSettings,
+                                    selectedSlot = chartSelection,
+                                    onSelectedSlotChange = { chartSelection = it },
+                                    onOpenEntries = { onOpenEntriesRequested(view!!.id) },
                                     onShareClick = if (hasGraphShareData) {
                                         {
                                             if (isGraphShareInProgress) return@MetricOverTimeChart

@@ -72,6 +72,32 @@ fun formatValueWithUnit(value: Double, unit: String?): String {
     return "${formatAxisValue(value)} $abbreviatedUnit"
 }
 
+/**
+ * [value] with [unit] at full precision for reading off an exact number (the chart readout), unlike
+ * [formatValueWithUnit]'s 3 significant figures for axis labels: locale digit grouping, whole
+ * numbers without decimals (`52,340 ct`), and otherwise the unit's natural precision — none for
+ * counted or per-minute units (`72 bpm`), one decimal for the rest (`72.5 kg`).
+ */
+fun formatExactValueWithUnit(value: Double, unit: String?): String {
+    val normalizedUnit = unit?.trim().takeUnless { it.isNullOrBlank() }
+    if (normalizedUnit != null && isMinuteUnit(normalizedUnit)) return formatMinutesWithUnit(value)
+    val abbreviatedUnit = normalizedUnit?.let(::abbreviateUnit)
+    val format = java.text.NumberFormat.getNumberInstance().apply {
+        maximumFractionDigits = if (abbreviatedUnit in WHOLE_NUMBER_UNITS) 0 else 1
+        roundingMode = java.math.RoundingMode.HALF_UP
+    }
+    val number = format.format(value)
+    return when (abbreviatedUnit) {
+        null -> number
+        "%" -> "$number%"
+        else -> "$number $abbreviatedUnit"
+    }
+}
+
+/** Units whose readings are naturally whole numbers, so a fractional bucket average rounds away. */
+private val WHOLE_NUMBER_UNITS =
+    setOf("ct", "bpm", "rpm", "kcal", "cal", "kJ", "J", "mmHg", "mg/dL", "mg", "mcg", "mL", "m")
+
 fun recordDetailsText(record: Record): String {
     val lines = mutableListOf<String>()
     lines += "Type: ${record::class.simpleName ?: "Record"}"

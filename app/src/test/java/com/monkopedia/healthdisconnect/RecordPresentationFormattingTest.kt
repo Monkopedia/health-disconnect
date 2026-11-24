@@ -128,4 +128,24 @@ class RecordPresentationFormattingTest {
         assertTrue(lines.toString(), lines.contains("StartTime: Feb 23, 2026 10:00 AM"))
         assertTrue(lines.toString(), lines.contains("EndTime: Feb 23, 2026 2:45 PM"))
     }
+
+    @Test
+    fun formatExactValueWithUnit_keepsFullPrecisionWithGrouping() {
+        val previous = java.util.Locale.getDefault()
+        java.util.Locale.setDefault(java.util.Locale.US)
+        try {
+            assertEquals("52,340", formatExactValueWithUnit(52_340.0, null))
+            assertEquals("52,340 ct", formatExactValueWithUnit(52_340.0, "count"))
+            assertEquals("72.5 kg", formatExactValueWithUnit(72.46, "kilograms"))
+            assertEquals("72 kg", formatExactValueWithUnit(72.0, "kg"))
+            assertEquals("4.3 km", formatExactValueWithUnit(4.25, "km"))
+            // Per-minute and counted units have no natural decimals, so a bucket average rounds.
+            assertEquals("72 bpm", formatExactValueWithUnit(72.4, "bpm"))
+            assertEquals("18.5%", formatExactValueWithUnit(18.46, "percent"))
+            // The axis formatter is untouched: it still rounds to 3 significant figures.
+            assertEquals("52300 ct", formatValueWithUnit(52_340.0, "count"))
+        } finally {
+            java.util.Locale.setDefault(previous)
+        }
+    }
 }
