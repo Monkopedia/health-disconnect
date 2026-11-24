@@ -40,7 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.monkopedia.healthdisconnect.R
-import com.monkopedia.healthdisconnect.formatValueWithUnit
+import com.monkopedia.healthdisconnect.formatExactValueWithUnit
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartType
@@ -234,7 +234,7 @@ private fun readoutRows(geometry: ChartGeometry, seriesColors: List<Color>, slot
             }
             return ReadoutRow(color, caption, stats.toList())
         }
-        fun format(value: Double?) = value?.let { formatValueWithUnit(it, series.unit) } ?: noValue
+        fun format(value: Double?) = value?.let { formatExactValueWithUnit(it, series.unit) } ?: noValue
         val bandMin = series.bandMin
         val bandMax = series.bandMax
         if (slot == null) {
