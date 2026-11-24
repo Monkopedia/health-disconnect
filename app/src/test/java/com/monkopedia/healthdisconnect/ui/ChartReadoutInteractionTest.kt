@@ -33,6 +33,7 @@ import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.monkopedia.healthdisconnect.HealthDataModel
+import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.ui.theme.HealthDisconnectTheme
@@ -205,5 +206,78 @@ class ChartReadoutInteractionTest {
             assertEquals(2, selection)
             assertEquals(0, pagerState.currentPage)
         }
+    }
+
+    @Test
+    fun tapHitTestingHonoursThePlotInsetOnADenseChart() {
+        // An hour of minute buckets: slots ~5dp apart, so the 8dp plot inset is worth more than a
+        // slot. On the 7-day chart above the spacing would hide an inset bug.
+        val now = clock.instant()
+        val dense = HealthDataModel.MetricSeries(
+            label = "Heart rate",
+            unit = "bpm",
+            points = (0 until 60).map { HealthDataModel.MetricPoint(now.minusSeconds((59L - it) * 60), 70.0 + it) },
+            bucketSize = BucketSize.MINUTE
+        )
+        val settings = ChartSettings(timeWindow = TimeWindow.HOURS_1, bucketSize = BucketSize.MINUTE)
+        val geometry = ChartGeometry.create(listOf(dense), settings, ChartGeometry.XAxisMode.CONTINUOUS_DATE, now, zone)
+        composeRule.setContent {
+            CompositionLocalProvider(LocalClock provides clock) {
+                HealthDisconnectTheme(dynamicColor = false) {
+                    Surface {
+                        MetricOverTimeChart(
+                            seriesList = listOf(dense),
+                            settings = settings,
+                            selectedSlot = selection,
+                            onSelectedSlotChange = { selection = it }
+                        )
+                    }
+                }
+            }
+        }
+        listOf(2, 57).forEach { slot ->
+            plot().performTouchInput {
+                val pad = 8.dp.toPx()
+                click(Offset(pad + (width - 2 * pad) * geometry.slotXFraction(slot), centerY))
+            }
+            composeRule.runOnIdle { assertEquals(slot, selection) }
+        }
+    }
+
+    @Test
+    fun dataChangingDuringTheFadeOutDoesNotIndexTheNewData() {
+        // Regression (#138 review): DataViewView clears the selection in the same frame the series
+        // change, while the outgoing selected content is still fading out. That content used to
+        // re-read slot 25 against the new 5-point geometry and crash.
+        fun daily(n: Int) = HealthDataModel.MetricSeries(
+            label = "HR",
+            unit = "bpm",
+            points = (0 until n).map { HealthDataModel.MetricPoint(today.minusDays((n - 1L) - it), 100.0 + it) }
+        )
+        var data by mutableStateOf(daily(30))
+        selection = 25
+        composeRule.setContent {
+            CompositionLocalProvider(LocalClock provides clock) {
+                HealthDisconnectTheme(dynamicColor = false) {
+                    Surface {
+                        MetricOverTimeChart(
+                            seriesList = listOf(data),
+                            settings = ChartSettings(timeWindow = TimeWindow.DAYS_30),
+                            selectedSlot = selection,
+                            onSelectedSlotChange = { selection = it }
+                        )
+                    }
+                }
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnUiThread {
+            data = daily(5)
+            selection = null
+        }
+        repeat(20) { composeRule.mainClock.advanceTimeByFrame() }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.onNodeWithText("Tap the graph for details", useUnmergedTree = true).assertIsDisplayed()
     }
 }
