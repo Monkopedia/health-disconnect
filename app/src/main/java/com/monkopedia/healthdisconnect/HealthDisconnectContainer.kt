@@ -1,6 +1,7 @@
 package com.monkopedia.healthdisconnect
 
 import java.time.Instant
+import java.time.ZoneId
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 
@@ -18,6 +19,9 @@ class DefaultDispatcherProvider : CoroutineDispatcherProvider {
 
 interface TimeProvider {
     fun now(): Instant
+
+    /** The zone that turns [now] into local days and hours. Read per call, so a zone change applies. */
+    fun zone(): ZoneId = ZoneId.systemDefault()
 }
 
 class SystemTimeProvider : TimeProvider {

@@ -31,6 +31,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.Period
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.flow.first
@@ -52,19 +53,30 @@ import org.robolectric.RobolectricTestRunner
  * window, one read per 500. These tests run the real [DefaultHealthConnectGateway] paging code
  * against a fake [HealthConnectClient] holding three years of per-minute-style wearable steps
  * (1,000 records a day, 1,095,000 records, 2,190 pages), and count the Health Connect calls.
+ *
+ * "Now" and the zone are fixed and shared by the fake and the model (issue #131): read from the
+ * wall clock and host zone, the day counts moved by one whenever the window straddled a DST change.
  */
 @RunWith(RobolectricTestRunner::class)
 class HealthConnectReadBudgetTest {
 
+    private class FixedTime(private val now: Instant, private val zone: ZoneId) : TimeProvider {
+        override fun now() = now
+        override fun zone() = zone
+    }
+
     /**
-     * Fake Health Connect holding [days] days of [recordsPerDay] evenly-spaced step records ending
-     * now, each of [STEPS_PER_RECORD] steps. Records are built per page, never all at once. Every
-     * call counts against [quota]; past it, a call throws what connect-client 1.1.0 throws for
+     * Fake Health Connect holding [days] local days of [recordsPerDay] evenly-spaced step records
+     * ending at [time]'s now, each of [STEPS_PER_RECORD] steps. Days are calendar days in [time]'s
+     * zone, so a window across a DST change is an hour longer or shorter than days × 24h. Records
+     * are built per page, never all at once. Every call counts against [quota]; past it, a call
+     * throws what connect-client 1.1.0 throws for
      * the platform's ERROR_RATE_LIMIT_EXCEEDED: `ExceptionConverter.toKtException` has no case for
      * that code, so it becomes an IllegalStateException wrapping the HealthConnectException.
      * It also holds [WEIGHT_RECORDS] weight records, read in one page.
      */
     private class FakeStepsStore(
+        val time: TimeProvider = FixedTime(NOW, ZONE),
         private val days: Int = 3 * 365,
         private val recordsPerDay: Int = 1_000,
         private val quota: Int = Int.MAX_VALUE,
@@ -77,14 +89,17 @@ class HealthConnectReadBudgetTest {
     ) {
         val total = days * recordsPerDay
         var calls = 0
-        private val spacing = Duration.ofDays(1).dividedBy(recordsPerDay.toLong())
-        private val oldest = Instant.now().minus(Duration.ofDays(days.toLong()))
+        private val oldest = daysBeforeNow(days)
+        private val spacing = Duration.between(oldest, time.now()).dividedBy(total.toLong())
         private val metadata = Metadata.manualEntry()
 
         val client: HealthConnectClient = mockk {
             coEvery { readRecords(any<ReadRecordsRequest<Record>>()) } answers { readPage(firstArg()) }
             coEvery { aggregateGroupByPeriod(any()) } answers { aggregateByPeriod(firstArg()) }
         }
+
+        private fun daysBeforeNow(days: Int): Instant =
+            time.now().atZone(time.zone()).minusDays(days.toLong()).toInstant()
 
         private fun spend() {
             if (++calls > quota) throw overQuota()
@@ -107,7 +122,7 @@ class HealthConnectReadBudgetTest {
             if (request.recordType == WeightRecord::class) {
                 val weights = (1..WEIGHT_RECORDS).map { daysAgo ->
                     WeightRecord(
-                        time = Instant.now().minus(Duration.ofDays(daysAgo.toLong())),
+                        time = daysBeforeNow(daysAgo),
                         zoneOffset = ZoneOffset.UTC,
                         weight = Mass.kilograms(70.0),
                         metadata = metadata
@@ -153,7 +168,8 @@ class HealthConnectReadBudgetTest {
     private fun model(store: FakeStepsStore) = HealthDataModel(
         app = ApplicationProvider.getApplicationContext<Application>(),
         autoRefreshMetrics = false,
-        healthConnectGateway = DefaultHealthConnectGateway(store.client)
+        healthConnectGateway = DefaultHealthConnectGateway(store.client),
+        timeProvider = store.time
     )
 
     private fun stepsView(
@@ -198,6 +214,27 @@ class HealthConnectReadBudgetTest {
     }
 
     @Test
+    fun `a three-year daily chart has one point per local day in any zone and across DST`() = runBlocking {
+        val instants = listOf(
+            "2026-11-01T05:59:00Z", // 01:59 EDT, a minute before New York falls back
+            "2026-11-01T06:01:00Z", // 01:01 EST, a minute after
+            "2026-11-03T04:30:00Z", // 23:30 EST, two days after: the issue's off-by-one
+            "2027-03-14T06:59:00Z", // 01:59 EST, a minute before New York springs forward
+            "2027-03-14T07:01:00Z" // 03:01 EDT, a minute after
+        ).map(Instant::parse)
+        for (zone in listOf(ZONE, ZoneOffset.UTC)) {
+            for (now in instants) {
+                val store = FakeStepsStore(time = FixedTime(now, zone))
+
+                val points = model(store).collectAggregatedSeries(stepsView(AggregationMode.SUM))
+                    .toList().last().single().points
+
+                assertEquals("$now in $zone", 3 * 365 + 1, points.size)
+            }
+        }
+    }
+
+    @Test
     fun `a three-year average-steps chart is served from daily totals too`() = runBlocking {
         for (bucketSize in listOf(BucketSize.DAY, BucketSize.WEEK)) {
             val store = FakeStepsStore()
@@ -209,7 +246,7 @@ class HealthConnectReadBudgetTest {
             assertTrue("$bucketSize: expected ≤ 5 calls, made ${store.calls}", store.calls <= 5)
             assertEquals(AGGREGATED_STEPS_PER_PERIOD.toDouble(), series.points.first().value, 0.0)
             // Nothing was cut short: the chart reaches back to the first day of data.
-            assertTrue(Duration.between(series.points.first().instant, Instant.now()) > Duration.ofDays(3 * 365 - 7))
+            assertTrue(Duration.between(series.points.first().instant, NOW) > Duration.ofDays(3 * 365 - 7))
         }
     }
 
@@ -226,7 +263,7 @@ class HealthConnectReadBudgetTest {
         assertTrue("expected ≤ 201 calls, made ${store.calls}", store.calls <= 201)
         // The cap keeps the newest 100,000 records — 100 days at this density — and says so.
         val since = model.collectChartLoadIssues(112).first().truncatedSince!!
-        val shownDays = Duration.between(since, Instant.now()).toDays()
+        val shownDays = Duration.between(since, NOW).toDays()
         assertTrue("truncated at $shownDays days", shownDays in 99..100)
         assertEquals(since.truncatedTo(ChronoUnit.HOURS), series.points.first().instant.truncatedTo(ChronoUnit.HOURS))
     }
@@ -238,7 +275,7 @@ class HealthConnectReadBudgetTest {
 
         // The export used to read every record; it now shares the chart's cap, so it must carry
         // the same "since" the chart shows rather than silently starting later.
-        val shownDays = Duration.between(export.issues.truncatedSince!!, Instant.now()).toDays()
+        val shownDays = Duration.between(export.issues.truncatedSince!!, NOW).toDays()
         assertTrue("truncated at $shownDays days", shownDays in 99..100)
     }
 
@@ -362,6 +399,9 @@ class HealthConnectReadBudgetTest {
     }
 
     private companion object {
+        /** 23:30 in New York two days after DST ended: the instant issue #131 failed at. */
+        val NOW: Instant = Instant.parse("2026-11-03T04:30:00Z")
+        val ZONE: ZoneId = ZoneId.of("America/New_York")
         const val STEPS_PER_RECORD = 10L
         const val AGGREGATED_STEPS_PER_PERIOD = 4_321L
         const val IN_PROGRESS_STEPS = 7L
