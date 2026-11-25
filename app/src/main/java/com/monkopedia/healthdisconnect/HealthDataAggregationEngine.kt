@@ -31,6 +31,7 @@ interface HealthDataAggregationEngine {
     fun collectAggregatedSeries(
         view: DataView,
         now: Instant,
+        zoneId: ZoneId,
         maxSeries: Int,
         pageReader: suspend (
             cls: KClass<out Record>,
@@ -162,6 +163,7 @@ class DefaultHealthDataAggregationEngine(
     override fun collectAggregatedSeries(
         view: DataView,
         now: Instant,
+        zoneId: ZoneId,
         maxSeries: Int,
         pageReader: suspend (
             cls: KClass<out Record>,
@@ -171,7 +173,6 @@ class DefaultHealthDataAggregationEngine(
         ) -> Unit,
         dailyTotalsReader: DailyTotalsReader?
     ): Flow<List<HealthDataModel.MetricSeries>> = channelFlow {
-        val zoneId = ZoneId.systemDefault()
         val viewWindowStart = windowStart(view.chartSettings.timeWindow, now)
         val selectedByType = view.records.mapNotNull { selection ->
             val cls = PermissionsViewModel.classForFqn(selection.fqn)

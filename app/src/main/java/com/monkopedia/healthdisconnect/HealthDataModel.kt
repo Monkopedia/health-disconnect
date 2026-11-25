@@ -545,7 +545,7 @@ class HealthDataModel @JvmOverloads constructor(
         if (cls != StepsRecord::class) return null
         if (bucketSize == BucketSize.MINUTE || bucketSize == BucketSize.HOUR) return null
         val day = Period.ofDays(1)
-        val zoneId = ZoneId.systemDefault()
+        val zoneId = timeProvider.zone()
         val oldest = gateway.oldestRecordTime(cls, start, end) ?: return emptyList()
         var from = oldest.atZone(zoneId).toLocalDate().atStartOfDay()
         val until = end.atZone(zoneId).toLocalDateTime()
@@ -674,6 +674,7 @@ class HealthDataModel @JvmOverloads constructor(
         return aggregationEngine.collectAggregatedSeries(
             view = view,
             now = timeProvider.now(),
+            zoneId = timeProvider.zone(),
             maxSeries = MAX_CHART_SERIES,
             pageReader = pageReader,
             dailyTotalsReader = dailyTotalsReader
