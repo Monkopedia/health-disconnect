@@ -121,11 +121,6 @@
     <string name="chart_readout_week_of">Week of %1$s</string>
     <string name="chart_readout_no_value">–</string>
     <string name="chart_readout_clear">Clear selection</string>
-    <!-- Spoken for the time under a band bucket's max, e.g. "Max at 4:05 PM". -->
-    <string name="chart_readout_max_at">Max at %1$s</string>
-    <string name="chart_readout_min_at">Min at %1$s</string>
-    <!-- Shown under a band bucket's values when the time of its max and min could not be read. -->
-    <string name="chart_readout_time_unavailable">Time unavailable</string>
     <!-- Opens the selected day zoomed in, e.g. "Show Thu hour by hour". -->
     <string name="chart_readout_show_day_hourly">Show %1$s hour by hour</string>
     <string name="chart_readout_show_week_daily">Show this week day by day</string>

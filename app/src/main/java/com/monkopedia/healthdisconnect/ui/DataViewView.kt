@@ -186,7 +186,6 @@ fun DataViewView(
     // The tapped chart bucket. Plain (not saveable) state, cleared whenever the plotted data or
     // its layout changes and dropped when the screen leaves composition.
     var chartSelection by remember(view!!.id, view!!.chartSettings, metricSeriesList) { mutableStateOf<Int?>(null) }
-    val extremeTimes = rememberExtremeTimesState(metricSeriesList, healthDataModel::bandExtremeTimes)
     val chartLoadIssuesFlow = remember(view!!.id) { healthDataModel.collectChartLoadIssues(view!!.id) }
     val chartLoadIssues by chartLoadIssuesFlow.collectAsState(initial = HealthDataModel.ChartLoadIssues())
     val isShowingChart = rememberSaveable(view!!.id) { mutableStateOf(true) }
@@ -612,7 +611,6 @@ fun DataViewView(
                                     selectedSlot = chartSelection,
                                     onSelectedSlotChange = { chartSelection = it },
                                     onOpenEntries = { onOpenEntriesRequested(view!!.id) },
-                                    extremeTimes = extremeTimes,
                                     onOpenRange = { onOpenRangeRequested(view!!.id, it) },
                                     onShareClick = if (hasGraphShareData) {
                                         {

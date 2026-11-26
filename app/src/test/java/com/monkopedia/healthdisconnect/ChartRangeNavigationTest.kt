@@ -108,7 +108,6 @@ class ChartRangeNavigationTest {
         every { it.collectChartLoadIssues(any()) } returns flowOf(HealthDataModel.ChartLoadIssues())
         every { it.collectSeriesInRange(any(), any()) } returns
             flowOf(HealthDataModel.LoadedSeries(listOf(hourly), HealthDataModel.ChartLoadIssues()))
-        coEvery { it.bandExtremeTimes(any(), any(), any()) } returns listOf(null)
     }
     private val permissionsViewModel = mockk<PermissionsViewModel>(relaxed = true).also {
         every { it.grantedPermissions } returns MutableStateFlow(setOf(PermissionsViewModel.HISTORY_PERMISSION))

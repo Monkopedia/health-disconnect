@@ -5,7 +5,6 @@ import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
-import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import java.time.temporal.ChronoUnit
@@ -145,12 +144,11 @@ class DefaultHealthDataAggregationEngine(
                     )
                 }
                 val band = bandFor(mode) {
-                    grouped.map { (instant, values) ->
-                        instant to (values.minOf { it.value } to values.maxOf { it.value })
+                    grouped.mapValues { (_, values) ->
+                        BucketAccumulator().apply { values.forEach { add(it.value, it.timestamp) } }
                     }
                 }
                 buildMetricSeries(
-                    source = selection.source(),
                     label = selection.label,
                     unit = measurements.firstNotNullOfOrNull { it.unitLabel },
                     aggregated = aggregated,
@@ -211,7 +209,8 @@ class DefaultHealthDataAggregationEngine(
                 metricState.metricSettings.bucketSize,
                 zoneId
             )
-            metricState.buckets.getOrPut(bucketInstant) { BucketAccumulator() }.add(measurement.value)
+            metricState.buckets.getOrPut(bucketInstant) { BucketAccumulator() }
+                .add(measurement.value, measurement.timestamp)
         }
 
         /**
@@ -232,6 +231,7 @@ class DefaultHealthDataAggregationEngine(
                 val bucketSize = metricState.metricSettings.bucketSize
                 val totals = dailyTotalsReader(metricState.recordClass, queryStart, now, bucketSize)
                     ?: return false
+                metricState.fromDailyTotals = true
                 totals.forEach { fold(metricState, it) }
                 val mode = metricState.metricSettings.aggregation
                 val plotted = metricState.buckets.mapValues { (_, bucket) -> bucket.aggregated(mode) }
@@ -348,39 +348,40 @@ class DefaultHealthDataAggregationEngine(
             val aggregated = instants.map { instant ->
                 HealthDataModel.MetricPoint(instant = instant, value = state.buckets.getValue(instant).aggregated(mode))
             }
-            val band = bandFor(mode) {
-                instants.map { instant ->
-                    val bucket = state.buckets.getValue(instant)
-                    instant to (bucket.min to bucket.max)
-                }
-            }
+            val band = bandFor(mode) { state.buckets }
             buildMetricSeries(
-                source = state.source(),
                 label = state.label,
                 unit = state.unit,
                 aggregated = aggregated,
                 band = band,
                 peakValue = state.peakValue ?: 0.0,
                 minValue = state.minValue ?: 0.0,
-                settings = state.metricSettings
+                settings = state.metricSettings,
+                fromDailyTotals = state.fromDailyTotals
             )
         }
     }
 
+    /** A min/max/avg series' per-bucket envelope, and when each bucket's max and min were read. */
+    private class Band(
+        val min: List<HealthDataModel.MetricPoint>,
+        val max: List<HealthDataModel.MetricPoint>,
+        val times: List<HealthDataModel.BandExtremeTimes>
+    )
+
     /**
-     * For [AggregationMode.MIN_MAX_AVG] materializes the per-bucket (min, max) envelope from
-     * [entries]; null for every other mode. Kept in one place so the streaming and the batch
+     * For [AggregationMode.MIN_MAX_AVG] materializes the per-bucket envelope from [buckets] (in
+     * bucket order); null for every other mode. Kept in one place so the streaming and the batch
      * aggregation paths produce identical band shapes.
      */
-    private inline fun bandFor(
-        mode: AggregationMode,
-        entries: () -> List<Pair<Instant, Pair<Double, Double>>>
-    ): Pair<List<HealthDataModel.MetricPoint>, List<HealthDataModel.MetricPoint>>? {
+    private inline fun bandFor(mode: AggregationMode, buckets: () -> Map<Instant, BucketAccumulator>): Band? {
         if (mode != AggregationMode.MIN_MAX_AVG) return null
-        val bucketBounds = entries()
-        val min = bucketBounds.map { (instant, bounds) -> HealthDataModel.MetricPoint(instant, bounds.first) }
-        val max = bucketBounds.map { (instant, bounds) -> HealthDataModel.MetricPoint(instant, bounds.second) }
-        return min to max
+        val entries = buckets().entries
+        return Band(
+            min = entries.map { (instant, bucket) -> HealthDataModel.MetricPoint(instant, bucket.min) },
+            max = entries.map { (instant, bucket) -> HealthDataModel.MetricPoint(instant, bucket.max) },
+            times = entries.map { (_, bucket) -> HealthDataModel.BandExtremeTimes(bucket.maxAt, bucket.minAt) }
+        )
     }
 
     /**
@@ -388,14 +389,14 @@ class DefaultHealthDataAggregationEngine(
      * the avg line and (when present) both band edges so the envelope stays aligned with the line.
      */
     private fun buildMetricSeries(
-        source: RecordSelection,
         label: String,
         unit: String?,
         aggregated: List<HealthDataModel.MetricPoint>,
-        band: Pair<List<HealthDataModel.MetricPoint>, List<HealthDataModel.MetricPoint>>?,
+        band: Band?,
         peakValue: Double,
         minValue: Double,
-        settings: MetricChartSettings
+        settings: MetricChartSettings,
+        fromDailyTotals: Boolean = false
     ): HealthDataModel.MetricSeries {
         fun applySmoothing(points: List<HealthDataModel.MetricPoint>): List<HealthDataModel.MetricPoint> =
             when (settings.smoothing) {
@@ -411,25 +412,41 @@ class DefaultHealthDataAggregationEngine(
             showMaxLabel = settings.showMaxLabel,
             showMinLabel = settings.showMinLabel,
             yAxisMode = settings.yAxisMode,
-            bandMin = band?.first?.let(::applySmoothing),
-            bandMax = band?.second?.let(::applySmoothing),
+            bandMin = band?.min?.let(::applySmoothing),
+            bandMax = band?.max?.let(::applySmoothing),
+            // A smoothed edge averages neighbouring buckets, so no reading has its value; a day
+            // bucket of daily totals holds one value, the day itself.
+            bandTimes = band?.times?.takeIf {
+                settings.smoothing == com.monkopedia.healthdisconnect.model.SmoothingMode.OFF &&
+                    !(fromDailyTotals && settings.bucketSize == BucketSize.DAY)
+            },
+            bandTimesAreDays = fromDailyTotals,
             bucketSize = settings.bucketSize,
-            aggregation = settings.aggregation,
-            source = source
+            aggregation = settings.aggregation
         )
     }
 
-    private data class BucketAccumulator(
-        var sum: Double = 0.0,
-        var count: Int = 0,
-        var min: Double = Double.POSITIVE_INFINITY,
-        var max: Double = Double.NEGATIVE_INFINITY
-    ) {
-        fun add(value: Double) {
+    private class BucketAccumulator {
+        var sum = 0.0
+        var count = 0
+        var min = Double.POSITIVE_INFINITY
+        var max = Double.NEGATIVE_INFINITY
+
+        /** When [min] and [max] were read; the earliest such reading on a tie. */
+        var minAt: Instant = Instant.MAX
+        var maxAt: Instant = Instant.MAX
+
+        fun add(value: Double, at: Instant) {
             sum += value
             count += 1
-            min = kotlin.math.min(min, value)
-            max = kotlin.math.max(max, value)
+            if (value < min || (value == min && at < minAt)) {
+                min = value
+                minAt = at
+            }
+            if (value > max || (value == max && at < maxAt)) {
+                max = value
+                maxAt = at
+            }
         }
 
         fun aggregated(mode: AggregationMode): Double {
@@ -452,17 +469,15 @@ class DefaultHealthDataAggregationEngine(
         var unit: String? = null,
         var peakValue: Double? = null,
         var minValue: Double? = null,
-        val buckets: TreeMap<Instant, BucketAccumulator> = TreeMap()
-    ) {
-        fun source() = RecordSelection(recordClass.qualifiedName.orEmpty(), metricSettings, metricKey)
-    }
+        val buckets: TreeMap<Instant, BucketAccumulator> = TreeMap(),
+        /** Served from Health Connect's daily totals: each value is a whole day, not a reading. */
+        var fromDailyTotals: Boolean = false
+    )
 
     private data class AggregationMetricSelection(
         val recordClass: KClass<out Record>,
         val label: String,
         val metricKey: String?,
         val metricSettings: MetricChartSettings
-    ) {
-        fun source() = RecordSelection(recordClass.qualifiedName.orEmpty(), metricSettings, metricKey)
-    }
+    )
 }

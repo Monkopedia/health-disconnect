@@ -90,7 +90,6 @@ fun ChartRangeScreen(
     }
     val loaded by seriesFlow.collectAsState(initial = null)
     var selection by remember(loaded?.series) { mutableStateOf<Int?>(null) }
-    val extremeTimes = rememberExtremeTimesState(loaded?.series, healthDataModel::bandExtremeTimes)
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -150,7 +149,6 @@ fun ChartRangeScreen(
                         selectedSlot = selection,
                         onSelectedSlotChange = { selection = it },
                         window = range,
-                        extremeTimes = extremeTimes,
                         onOpenRange = onOpenRange
                     )
                 }

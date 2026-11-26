@@ -48,7 +48,6 @@ import com.monkopedia.healthdisconnect.ui.ChartRangeScreen
 import com.monkopedia.healthdisconnect.ui.CreateViewView
 import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
-import com.monkopedia.healthdisconnect.ui.ExtremeTimesState
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.MetricOverTimeChart
@@ -60,7 +59,6 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
@@ -1067,32 +1065,7 @@ abstract class BaseScreenRoborazziTest {
 
     @Test
     fun chartReadoutBandSelectedScreen() {
-        // The times of the bucket's max and min, already read.
-        val times = ExtremeTimesState { _, _, _ -> awaitCancellation() }.apply {
-            val day = readoutBandDay()
-            known[day] = listOf(
-                HealthDataModel.BandExtremeTimes(maxAt = day.plusSeconds(16 * 3_600L + 5 * 60), minAt = day.plusSeconds(3 * 3_600L + 12 * 60))
-            )
-        }
-        captureReadout(
-            "chart_readout_band_selected",
-            readoutBandSeries(),
-            readoutBandSettings(),
-            selectedSlot = 3,
-            extremeTimes = times
-        )
-    }
-
-    @Test
-    fun chartReadoutBandSelectedTimesPendingScreen() {
-        // The values show at once; the times are still being read.
-        captureReadout(
-            "chart_readout_band_selected_times_pending",
-            readoutBandSeries(),
-            readoutBandSettings(),
-            selectedSlot = 3,
-            extremeTimes = ExtremeTimesState { _, _, _ -> awaitCancellation() }
-        )
+        captureReadout("chart_readout_band_selected", readoutBandSeries(), readoutBandSettings(), selectedSlot = 3)
     }
 
     @Test
@@ -1190,7 +1163,12 @@ abstract class BaseScreenRoborazziTest {
             points = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, avg[i]) },
             bandMin = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, lows[i]) },
             bandMax = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, highs[i]) },
-            aggregation = AggregationMode.MIN_MAX_AVG
+            aggregation = AggregationMode.MIN_MAX_AVG,
+            // Each day's max read at 4:05 PM and min at 3:12 AM.
+            bandTimes = dates.map {
+                val day = it.atStartOfDay(ZoneId.of("UTC")).toInstant()
+                HealthDataModel.BandExtremeTimes(maxAt = day.plusSeconds(16 * 3_600L + 5 * 60), minAt = day.plusSeconds(3 * 3_600L + 12 * 60))
+            }
         )
     }
 
@@ -1198,8 +1176,7 @@ abstract class BaseScreenRoborazziTest {
         name: String,
         series: HealthDataModel.MetricSeries,
         settings: ChartSettings,
-        selectedSlot: Int?,
-        extremeTimes: ExtremeTimesState? = null
+        selectedSlot: Int?
     ) {
         captureScreen(name) {
             Column(Modifier.padding(horizontal = 11.dp, vertical = 16.dp)) {
@@ -1210,7 +1187,6 @@ abstract class BaseScreenRoborazziTest {
                     onSelectedSlotChange = {},
                     onOpenEntries = {},
                     onShareClick = {},
-                    extremeTimes = extremeTimes,
                     onOpenRange = {}
                 )
             }

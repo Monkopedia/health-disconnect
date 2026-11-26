@@ -154,7 +154,6 @@ internal fun MetricOverTimeChart(
     onShareClick: (() -> Unit)? = null,
     /** The range this chart draws, when it is one range of a view rather than its own window. */
     window: ChartRange? = null,
-    extremeTimes: ExtremeTimesState? = null,
     /** Opens a selected band bucket drawn on its own, with finer buckets. */
     onOpenRange: ((ChartRange) -> Unit)? = null
 ) {
@@ -455,7 +454,6 @@ internal fun MetricOverTimeChart(
             onClear = { onSelectedSlotChange(null) },
             onOpenEntries = onOpenEntries,
             modifier = Modifier.weight(1f),
-            extremeTimes = extremeTimes,
             onOpenRange = onOpenRange
         )
         if (onShareClick != null) {
