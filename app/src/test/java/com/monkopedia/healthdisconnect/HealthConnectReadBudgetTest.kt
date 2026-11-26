@@ -30,6 +30,7 @@ import io.mockk.mockk
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.Period
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -39,6 +40,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -396,6 +398,32 @@ class HealthConnectReadBudgetTest {
 
         val denied = failure.exceptionOrNull() as HealthDataPermissionDeniedException
         assertEquals(setOf(StepsRecord::class.qualifiedName), denied.deniedRecordTypes)
+    }
+
+    @Test
+    fun `a band of daily step totals names the day of each max and min, and a day band none`() = runBlocking {
+        // Issue #137: a daily total has no time of its own, only its day.
+        val week = model(FakeStepsStore()).collectAggregatedSeries(stepsView(AggregationMode.MIN_MAX_AVG, BucketSize.WEEK))
+            .toList().last().single()
+
+        assertTrue(week.bandTimesAreDays)
+        val times = week.bandTimes!!
+        assertEquals(week.points.size, times.size)
+        week.points.zip(times).forEach { (point, extremes) ->
+            listOf(extremes.maxAt, extremes.minAt).forEach { day ->
+                val local = day.atZone(ZONE)
+                assertEquals(LocalTime.MIDNIGHT, local.toLocalTime())
+                assertTrue(!day.isBefore(point.instant) && day.isBefore(point.instant.atZone(ZONE).plusWeeks(1).toInstant()))
+            }
+        }
+        // This week's lowest day is today, still in progress.
+        assertEquals(NOW.atZone(ZONE).toLocalDate(), times.last().minAt.atZone(ZONE).toLocalDate())
+
+        // A day bucket's value is the day itself.
+        val day = model(FakeStepsStore()).collectAggregatedSeries(stepsView(AggregationMode.MIN_MAX_AVG, BucketSize.DAY))
+            .toList().last().single()
+        assertNotNull(day.bandMax)
+        assertNull(day.bandTimes)
     }
 
     private companion object {

@@ -13,6 +13,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.monkopedia.healthdisconnect.ui.ChartRangeRoute
+import com.monkopedia.healthdisconnect.ui.ChartRangeScreen
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
@@ -55,7 +57,8 @@ fun LazyNavigation(
                         modifier = Modifier.safeDrawingPadding(),
                         initialViewId = initialViewId,
                         showSettings = { navController.navigate(Routes.Settings) },
-                        onOpenEntries = { viewId -> navController.navigate(Routes.entries(viewId)) }
+                        onOpenEntries = { viewId -> navController.navigate(Routes.entries(viewId)) },
+                        onOpenRange = { viewId, range -> navController.navigate(ChartRangeRoute.of(viewId, range)) }
                     )
                 }
                 composable(Routes.Settings) {
@@ -69,6 +72,19 @@ fun LazyNavigation(
                     EntriesRouteScreen(
                         viewId = viewId,
                         onBack = { navController.popBackStack() }
+                    )
+                }
+                composable(
+                    route = ChartRangeRoute.PATTERN,
+                    arguments = ChartRangeRoute.arguments
+                ) { backStackEntry ->
+                    val arguments = backStackEntry.arguments ?: return@composable
+                    val viewId = ChartRangeRoute.viewId(arguments)
+                    ChartRangeScreen(
+                        viewId = viewId,
+                        range = ChartRangeRoute.range(arguments),
+                        onBack = { navController.popBackStack() },
+                        onOpenRange = { navController.navigate(ChartRangeRoute.of(viewId, it)) }
                     )
                 }
             }

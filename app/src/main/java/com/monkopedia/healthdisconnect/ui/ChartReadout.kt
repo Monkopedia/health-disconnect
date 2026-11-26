@@ -40,20 +40,28 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.formatExactValueWithUnit
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.ChartType
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-/** One labelled number in a readout row; [caption] is null when the row's own caption says it. */
-private data class ReadoutStat(val caption: String?, val value: String)
+/**
+ * One labelled number in a readout row; [caption] is null when the row's own caption says it.
+ * [time] is when a selected band bucket's max or min was read.
+ */
+private data class ReadoutStat(val caption: String?, val value: String, val time: String? = null)
 
 /** One series' line in the readout: its colour dot, an optional caption, and one or three stats. */
 private data class ReadoutRow(val color: Color, val caption: String?, val stats: List<ReadoutStat>)
+
+/** The readout's link to the selected bucket drawn on its own: [range] with finer buckets. */
+private data class ZoomLink(val label: String, val range: ChartRange)
 
 /**
  * Everything the panel shows, already formatted. The panel animates on this snapshot rather than
@@ -65,7 +73,8 @@ private data class ReadoutContent(
     val heading: String,
     val rows: List<ReadoutRow>,
     val isSelection: Boolean,
-    val linksToEntries: Boolean
+    val linksToEntries: Boolean,
+    val zoom: ZoomLink? = null
 )
 
 /**
@@ -84,7 +93,8 @@ internal fun ChartReadoutPanel(
     selectedSlot: Int?,
     onClear: () -> Unit,
     onOpenEntries: (() -> Unit)?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenRange: ((ChartRange) -> Unit)? = null
 ) {
     BoxWithConstraints(
         modifier = modifier
@@ -103,9 +113,10 @@ internal fun ChartReadoutPanel(
             },
             rows = readoutRows(geometry, seriesColors, selectedSlot),
             isSelection = selectedSlot != null,
-            // A band's bucket is a whole day of readings; its drill-down link arrives with the
-            // hour-by-hour view, so only plain values link to the entries list here.
-            linksToEntries = onOpenEntries != null && geometry.seriesList.none { it.hasBand }
+            // A band's bucket is many readings, so it links to the bucket drawn on its own instead.
+            linksToEntries = onOpenEntries != null && geometry.seriesList.none { it.hasBand },
+            zoom = selectedSlot?.takeIf { onOpenRange != null && geometry.seriesList.any { it.hasBand } }
+                ?.let { zoomLink(geometry, it) }
         )
         AnimatedContent(
             targetState = content,
@@ -118,56 +129,77 @@ internal fun ChartReadoutPanel(
             // ✕ sits beside the heading (as in the mock) instead of taking a column of its own.
             val clearBesideHeading = shown.isSelection && shown.rows.any { it.stats.size > 1 }
             Box {
-                Row(
-                    modifier = Modifier.padding(start = 14.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                Column {
+                    Row(
+                        modifier = Modifier.padding(
+                            start = 14.dp,
+                            end = 4.dp,
+                            top = 10.dp,
+                            bottom = if (shown.zoom != null) 0.dp else 10.dp
+                        ),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = shown.heading,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = if (clearBesideHeading) Modifier.padding(end = 40.dp) else Modifier
-                        )
-                        shown.rows.forEach { ReadoutRowContent(it, compact) }
-                    }
-                    if (shown.isSelection) {
-                        // On a narrow phone the labelled link would squeeze the value into wrapping,
-                        // so it shrinks to its arrow there.
-                        if (onOpenEntries != null && shown.linksToEntries) {
-                            val viewEntries = stringResource(R.string.data_view_view_entries)
-                            if (compact) {
-                                IconButton(
-                                    onClick = onOpenEntries,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .testTag("chart_readout_view_entries")
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                                        contentDescription = viewEntries,
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            } else {
-                                TextButton(
-                                    onClick = onOpenEntries,
-                                    modifier = Modifier.testTag("chart_readout_view_entries")
-                                ) {
-                                    Text(viewEntries)
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                                        contentDescription = null
-                                    )
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = shown.heading,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = if (clearBesideHeading) Modifier.padding(end = 40.dp) else Modifier
+                            )
+                            shown.rows.forEach { ReadoutRowContent(it, compact) }
+                        }
+                        if (shown.isSelection) {
+                            // On a narrow phone the labelled link would squeeze the value into wrapping,
+                            // so it shrinks to its arrow there.
+                            if (onOpenEntries != null && shown.linksToEntries) {
+                                val viewEntries = stringResource(R.string.data_view_view_entries)
+                                if (compact) {
+                                    IconButton(
+                                        onClick = onOpenEntries,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .testTag("chart_readout_view_entries")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                            contentDescription = viewEntries,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                } else {
+                                    TextButton(
+                                        onClick = onOpenEntries,
+                                        modifier = Modifier.testTag("chart_readout_view_entries")
+                                    ) {
+                                        Text(viewEntries)
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                            contentDescription = null
+                                        )
+                                    }
                                 }
                             }
+                            if (!clearBesideHeading) ClearSelectionButton(onClear)
                         }
-                        if (!clearBesideHeading) ClearSelectionButton(onClear)
+                    }
+                    shown.zoom?.let { zoom ->
+                        TextButton(
+                            onClick = { onOpenRange?.invoke(zoom.range) },
+                            modifier = Modifier
+                                .padding(start = 2.dp, bottom = 2.dp)
+                                .testTag("chart_readout_zoom")
+                        ) {
+                            Text(zoom.label)
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                                contentDescription = null
+                            )
+                        }
                     }
                 }
                 if (clearBesideHeading) {
@@ -232,7 +264,7 @@ private fun ReadoutRowContent(row: ReadoutRow, compact: Boolean) {
                 }
                 // Each stat stays on one line so idle and selected keep the same height; a narrow
                 // panel steps the values down a size so "141 bpm" fits a third of a small phone.
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(STAT_SPACING)) {
                     row.stats.forEach { stat ->
                         Column(Modifier.weight(1f)) {
                             Text(
@@ -253,12 +285,49 @@ private fun ReadoutRowContent(row: ReadoutRow, compact: Boolean) {
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            // Two lines at most: a week or month's "Tue Feb 10, 4:05 PM" wraps in a
+                            // third of a small phone rather than losing the time.
+                            stat.time?.let {
+                                Text(
+                                    text = it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun zoomLink(geometry: ChartGeometry, slot: Int): ZoomLink? {
+    val zoneId = ZoneId.systemDefault()
+    val start = geometry.slotStart(slot, zoneId)
+    val range = ChartRange.zoomInto(start, geometry.slotBucket, zoneId) ?: return null
+    val local = start.atZone(zoneId)
+    val label = when (geometry.slotBucket) {
+        BucketSize.WEEK -> stringResource(R.string.chart_readout_show_week_daily)
+        BucketSize.MONTH ->
+            stringResource(R.string.chart_readout_show_month_daily, local.format(DateTimeFormatter.ofPattern("MMMM")))
+        else -> stringResource(R.string.chart_readout_show_day_hourly, local.format(DateTimeFormatter.ofPattern("EEE")))
+    }
+    return ZoomLink(label, range)
+}
+
+/**
+ * How a band bucket's max/min time reads: the clock time, with the date once the bucket spans
+ * several days, or only the date when the band is of whole days. Null for a day of daily totals.
+ */
+private fun extremeTimePattern(series: HealthDataModel.MetricSeries): String? = when {
+    series.bandTimesAreDays -> "EEE MMM d".takeIf { series.bucketSize > BucketSize.DAY }
+    series.bucketSize == BucketSize.MINUTE -> "h:mm:ss a"
+    series.bucketSize > BucketSize.DAY -> "EEE MMM d, h:mm a"
+    else -> "h:mm a"
 }
 
 @Composable
@@ -288,12 +357,13 @@ private fun readoutRows(geometry: ChartGeometry, seriesColors: List<Color>, slot
         val bandMax = series.bandMax
         if (slot == null) {
             when {
-                // The average of the bucket averages: what the plotted avg line averages to.
+                // Every reading counts once: a mean of the bucket averages would let one reading
+                // in a quiet hour weigh as much as a busy hour's hundred.
                 bandMin != null && bandMax != null -> listOf(
                     row(
                         null,
                         ReadoutStat(max, format(bandMax.maxOfOrNull { it.value })),
-                        ReadoutStat(average, format(series.points.map { it.value }.average())),
+                        ReadoutStat(average, format(series.averageInWindow)),
                         ReadoutStat(min, format(bandMin.minOfOrNull { it.value }))
                     )
                 )
@@ -309,12 +379,15 @@ private fun readoutRows(geometry: ChartGeometry, seriesColors: List<Color>, slot
         } else {
             val index = geometry.pointIndexAt(seriesIndex, slot)
             if (bandMin != null && bandMax != null) {
+                val times = index?.let { series.bandTimes?.get(it) }
+                val formatter = extremeTimePattern(series)?.let(DateTimeFormatter::ofPattern)
+                fun time(at: Instant?) = formatter?.let { at?.atZone(ZoneId.systemDefault())?.format(it) }
                 listOf(
                     row(
                         null,
-                        ReadoutStat(max, format(index?.let { bandMax[it].value })),
+                        ReadoutStat(max, format(index?.let { bandMax[it].value }), time(times?.maxAt)),
                         ReadoutStat(average, format(index?.let { series.points[it].value })),
-                        ReadoutStat(min, format(index?.let { bandMin[it].value }))
+                        ReadoutStat(min, format(index?.let { bandMin[it].value }), time(times?.minAt))
                     )
                 )
             } else {
@@ -362,6 +435,8 @@ internal fun formatBucketLabel(
 }
 
 private const val READOUT_FADE_MS = 180
+
+private val STAT_SPACING = 8.dp
 
 /** Below this panel width the "View entries" link drops its label. */
 private val COMPACT_PANEL_WIDTH = 300.dp

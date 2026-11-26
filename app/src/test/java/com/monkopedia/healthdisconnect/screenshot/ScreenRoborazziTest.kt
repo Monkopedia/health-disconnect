@@ -8,6 +8,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.records.metadata.Metadata
@@ -19,6 +20,8 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import com.monkopedia.healthdisconnect.DataViewAdapterViewModel
 import com.monkopedia.healthdisconnect.AppThemeMode
 import com.monkopedia.healthdisconnect.AppThemeViewModel
+import com.monkopedia.healthdisconnect.DefaultHealthDataAggregationEngine
+import com.monkopedia.healthdisconnect.DefaultHealthRecordMeasurementExtractor
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.LazyNavigation
 import com.monkopedia.healthdisconnect.LazyNavigationModel
@@ -30,6 +33,7 @@ import com.monkopedia.healthdisconnect.UpdateRequired
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
@@ -43,6 +47,7 @@ import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.ViewType
 import com.monkopedia.healthdisconnect.model.YAxisMode
+import com.monkopedia.healthdisconnect.ui.ChartRangeScreen
 import com.monkopedia.healthdisconnect.ui.CreateViewView
 import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
@@ -1066,6 +1071,34 @@ abstract class BaseScreenRoborazziTest {
         captureReadout("chart_readout_band_selected", readoutBandSeries(), readoutBandSettings(), selectedSlot = 3)
     }
 
+    @Test
+    fun chartRangeHourByHourScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            chartSettings = readoutBandSettings()
+        )
+        val viewModel = mockDataViewAdapterViewModel(info = DataViewInfo(id = 1, name = "Heart rate"), view = dataView)
+        val healthDataModel = mockHealthDataModel()
+        val day = readoutBandDay()
+        val range = ChartRange(day, day.plusSeconds(24 * 3_600L), BucketSize.HOUR)
+        // The same readings as the band readout's week, drawn hour by hour for its selected day.
+        val hourly = readoutBandSeries(range)
+        every { healthDataModel.collectSeriesInRange(dataView, range) } returns
+            flowOf(HealthDataModel.LoadedSeries(listOf(hourly), HealthDataModel.ChartLoadIssues()))
+        captureScreen("chart_range_hour_by_hour") {
+            ChartRangeScreen(
+                viewId = 1,
+                range = range,
+                onBack = {},
+                onOpenRange = {},
+                viewModel = viewModel,
+                healthDataModel = healthDataModel
+            )
+        }
+    }
+
     private fun readoutLineSettings() = ChartSettings(timeWindow = TimeWindow.HOURS_24, bucketSize = BucketSize.HOUR)
 
     private fun readoutLineSeries() = HealthDataModel.MetricSeries(
@@ -1100,21 +1133,68 @@ abstract class BaseScreenRoborazziTest {
         timeWindow = TimeWindow.DAYS_7
     )
 
-    /** A week of daily heart-rate min/avg/max ending at the frozen clock. */
-    private fun readoutBandSeries(): HealthDataModel.MetricSeries {
-        val today = FIXED_NOW.atZone(ZoneId.of("UTC")).toLocalDate()
-        val dates = (0..6).map { today.minusDays(6L - it) }
-        val avg = listOf(71.0, 69.0, 74.0, 78.0, 72.0, 70.0, 73.0)
-        val lows = listOf(55.0, 54.0, 57.0, 52.0, 56.0, 55.0, 58.0)
-        val highs = listOf(118.0, 112.0, 124.0, 141.0, 120.0, 115.0, 122.0)
-        return HealthDataModel.MetricSeries(
-            label = "Heart rate",
-            unit = "bpm",
-            points = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, avg[i]) },
-            bandMin = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, lows[i]) },
-            bandMax = dates.mapIndexed { i, d -> HealthDataModel.MetricPoint(d, highs[i]) },
-            aggregation = AggregationMode.MIN_MAX_AVG
+    /** The start of the band readout's selected day (slot 3), in the screenshots' UTC. */
+    private fun readoutBandDay(): Instant =
+        FIXED_NOW.atZone(ZoneId.of("UTC")).toLocalDate().minusDays(3).atStartOfDay(ZoneId.of("UTC")).toInstant()
+
+    /**
+     * A week of heart-rate readings ending at the frozen clock: hourly overnight, every half hour by
+     * day, every five minutes through a late-afternoon run. Feb 12's run peaks at 141 bpm at 4:05 PM
+     * and its night bottoms out at 52 bpm at 3:12 AM.
+     */
+    private fun readoutHeartRateReadings(): List<Record> {
+        val utc = ZoneId.of("UTC")
+        val selectedDay = readoutBandDay()
+        val start = selectedDay.minusSeconds(3 * 86_400L)
+        return generateSequence(start) { at ->
+            val hour = at.atZone(utc).hour
+            at.plusSeconds(60L * if (hour < 6) 60 else if (hour in 15..16) 5 else 30)
+        }.takeWhile { it < FIXED_NOW }.map { at ->
+            val local = at.atZone(utc)
+            val day = local.dayOfYear
+            val minutes = local.hour * 60 + local.minute
+            val bpm = when (local.hour) {
+                in 0..5 -> 57.0 + day % 3
+                15, 16 -> 96.0 + 18.0 * kotlin.math.sin(minutes / 40.0) + day % 4
+                else -> 70.0 + 6.0 * kotlin.math.sin(minutes / 90.0) + day % 3
+            }
+            restingHeartRate(at, bpm.toLong())
+        }.toList() + restingHeartRate(selectedDay.plusSeconds(3 * 3_600L + 12 * 60), 52) +
+            restingHeartRate(selectedDay.plusSeconds(16 * 3_600L + 5 * 60), 141)
+    }
+
+    private fun restingHeartRate(at: Instant, bpm: Long): Record = RestingHeartRateRecord(
+        time = at,
+        zoneOffset = java.time.ZoneOffset.UTC,
+        beatsPerMinute = bpm,
+        metadata = Metadata.manualEntry()
+    )
+
+    /**
+     * The band readout's heart-rate week as the app aggregates it, or, given [range], that range
+     * alone: both come from [readoutHeartRateReadings], so the two screens' numbers agree.
+     */
+    private fun readoutBandSeries(range: ChartRange? = null): HealthDataModel.MetricSeries {
+        val settings = MetricChartSettings(
+            aggregation = AggregationMode.MIN_MAX_AVG,
+            timeWindow = TimeWindow.ALL,
+            bucketSize = range?.bucketSize ?: BucketSize.DAY
         )
+        val view = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(RestingHeartRateRecord::class.qualifiedName!!, settings)),
+            // The batch aggregation windows by the view's own setting from the real clock; the
+            // readings are dated to the frozen one, so take them all.
+            chartSettings = readoutBandSettings().copy(timeWindow = TimeWindow.ALL)
+        )
+        val readings = readoutHeartRateReadings().filter {
+            range == null || (it as RestingHeartRateRecord).time.let { at -> at >= range.start && at < range.end }
+        }
+        return DefaultHealthDataAggregationEngine(DefaultHealthRecordMeasurementExtractor())
+            .aggregateMetricSeriesList(view, readings)
+            .single()
+            .copy(label = "Heart rate")
     }
 
     private fun captureReadout(
@@ -1131,7 +1211,8 @@ abstract class BaseScreenRoborazziTest {
                     selectedSlot = selectedSlot,
                     onSelectedSlotChange = {},
                     onOpenEntries = {},
-                    onShareClick = {}
+                    onShareClick = {},
+                    onOpenRange = {}
                 )
             }
         }

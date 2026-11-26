@@ -74,6 +74,7 @@ import com.monkopedia.healthdisconnect.writeEntriesCsvToCache
 import org.koin.androidx.compose.koinViewModel
 import com.monkopedia.healthdisconnect.recordDetailsText
 import com.monkopedia.healthdisconnect.model.BucketSize
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ViewType
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
@@ -104,7 +105,8 @@ fun DataViewView(
     permissionsViewModel: PermissionsViewModel = koinViewModel(),
     headerPageOffset: Float = 0f,
     showHeader: Boolean = true,
-    onOpenEntriesRequested: (Int) -> Unit = {}
+    onOpenEntriesRequested: (Int) -> Unit = {},
+    onOpenRangeRequested: (viewId: Int, range: ChartRange) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     // Error strings resolved at composition rather than via context.getString in the action
@@ -609,6 +611,7 @@ fun DataViewView(
                                     selectedSlot = chartSelection,
                                     onSelectedSlotChange = { chartSelection = it },
                                     onOpenEntries = { onOpenEntriesRequested(view!!.id) },
+                                    onOpenRange = { onOpenRangeRequested(view!!.id, it) },
                                     onShareClick = if (hasGraphShareData) {
                                         {
                                             if (isGraphShareInProgress) return@MetricOverTimeChart
@@ -986,14 +989,14 @@ fun DataViewView(
     }
 }
 
-private fun HealthDataModel.ReadFailure.messageRes(): Int = when (this) {
+internal fun HealthDataModel.ReadFailure.messageRes(): Int = when (this) {
     HealthDataModel.ReadFailure.RATE_LIMITED -> R.string.data_view_chart_rate_limited
     HealthDataModel.ReadFailure.OTHER -> R.string.data_view_chart_read_failed
 }
 
 /** Says why a drawn chart may show less than the data Health Connect holds (issue #112). */
 @Composable
-private fun ChartLoadIssueNotices(issues: HealthDataModel.ChartLoadIssues) {
+internal fun ChartLoadIssueNotices(issues: HealthDataModel.ChartLoadIssues) {
     issues.readFailure?.let { failure ->
         Text(
             stringResource(failure.messageRes()),

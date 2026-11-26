@@ -9,12 +9,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
 import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.YAxisMode
+import com.monkopedia.healthdisconnect.model.zoomedTo
 import java.time.Instant
 import java.time.LocalDate
 import java.time.Period
@@ -30,7 +32,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.last
 import kotlinx.coroutines.flow.map
@@ -118,8 +122,11 @@ class HealthDataModel @JvmOverloads constructor(
         val isComplete: Boolean get() = readFailure == null && truncatedSince == null
     }
 
-    /** An aggregated export: the chart's series, and what they could not include. */
-    data class ExportedSeries(val series: List<MetricSeries>, val issues: ChartLoadIssues)
+    /** A chart's series, and what they could not include. */
+    data class LoadedSeries(val series: List<MetricSeries>, val issues: ChartLoadIssues)
+
+    /** When a band bucket's max and min were recorded. */
+    data class BandExtremeTimes(val maxAt: Instant, val minAt: Instant)
 
     enum class ReadFailure {
         /** Health Connect refused reads because this app exhausted its read quota. */
@@ -392,14 +399,30 @@ class HealthDataModel @JvmOverloads constructor(
      * not include, so the export can tell the user it is incomplete rather than silently starting
      * later than the window they chose.
      */
-    suspend fun loadAggregatedSeriesForExport(view: DataView): ExportedSeries {
+    suspend fun loadAggregatedSeriesForExport(view: DataView): LoadedSeries {
         var issues = ChartLoadIssues()
         val series = chartSeries(
             view = view,
             onReadFailure = { _, exception -> issues = issues.withFailure(exception) },
             onTruncated = { since -> issues = issues.withTruncation(since) }
         ).last()
-        return ExportedSeries(series, issues)
+        return LoadedSeries(series, issues)
+    }
+
+    /**
+     * [view]'s chart over [range] alone, bucketed by [ChartRange.bucketSize], with what it could not
+     * include: a temporary zoom (issue #137) that reads only that range and leaves the saved view
+     * as it is. Its load issues are its own, never reported as the view's ([collectChartLoadIssues]).
+     */
+    fun collectSeriesInRange(view: DataView, range: ChartRange): Flow<LoadedSeries> = flow {
+        var issues = ChartLoadIssues()
+        val series = chartSeries(
+            view = view.zoomedTo(range),
+            range = range,
+            onReadFailure = { _, exception -> issues = issues.withFailure(exception) },
+            onTruncated = { since -> issues = issues.withTruncation(since) }
+        )
+        emitAll(series.map { LoadedSeries(it, issues) })
     }
 
     /**
@@ -632,6 +655,7 @@ class HealthDataModel @JvmOverloads constructor(
      */
     private fun chartSeries(
         view: DataView,
+        range: ChartRange? = null,
         onReadFailure: (KClass<out Record>, Exception) -> Unit,
         onTruncated: (Instant) -> Unit
     ): Flow<List<MetricSeries>> {
@@ -643,6 +667,7 @@ class HealthDataModel @JvmOverloads constructor(
         }
         return collectAggregatedSeries(
             view = view,
+            range = range,
             dailyTotalsReader = { cls, start, end, bucketSize ->
                 reportingFailure(cls) { dailyStepTotals(cls, start, end, bucketSize) }
             },
@@ -661,8 +686,10 @@ class HealthDataModel @JvmOverloads constructor(
         )
     }
 
+    /** [view]'s series over its own time window, or over [range] when one is given. */
     internal fun collectAggregatedSeries(
         view: DataView,
+        range: ChartRange? = null,
         dailyTotalsReader: DailyTotalsReader? = null,
         pageReader: suspend (
             cls: KClass<out Record>,
@@ -671,9 +698,12 @@ class HealthDataModel @JvmOverloads constructor(
             onPage: (List<Record>) -> Unit
         ) -> Unit
     ): Flow<List<MetricSeries>> {
+        val now = timeProvider.now()
         return aggregationEngine.collectAggregatedSeries(
             view = view,
-            now = timeProvider.now(),
+            start = range?.start ?: windowStart(view.chartSettings.timeWindow),
+            // A range reaching into the future reads up to now, so today's bucket is still in progress.
+            now = range?.end?.let { minOf(it, now) } ?: now,
             zoneId = timeProvider.zone(),
             maxSeries = MAX_CHART_SERIES,
             pageReader = pageReader,
@@ -704,6 +734,12 @@ class HealthDataModel @JvmOverloads constructor(
         val points: List<MetricPoint>,
         val peakValueInWindow: Double = points.maxOfOrNull { it.value } ?: 0.0,
         val minValueInWindow: Double = points.minOfOrNull { it.value } ?: 0.0,
+        /**
+         * The mean of every reading in the window, so a bucket with more readings counts for more.
+         * Smoothing does not touch it. A series of daily totals averages its days. The default, the
+         * mean of [points], is only reading-weighted when every bucket holds one reading.
+         */
+        val averageInWindow: Double = points.map { it.value }.average(),
         val showMaxLabel: Boolean = true,
         val showMinLabel: Boolean = false,
         val yAxisMode: YAxisMode = YAxisMode.AUTO,
@@ -717,7 +753,15 @@ class HealthDataModel @JvmOverloads constructor(
         /** The bucket each point spans, so a selected point can say which day/week/month it is. */
         val bucketSize: BucketSize = BucketSize.DAY,
         /** How each bucket was reduced; a chart only sums its buckets into a total for [AggregationMode.SUM]. */
-        val aggregation: AggregationMode = AggregationMode.AVERAGE
+        val aggregation: AggregationMode = AggregationMode.AVERAGE,
+        /**
+         * When each bucket's max and min were read, aligned 1:1 with [points]: the reading that set
+         * [bandMax] and [bandMin]. Null when no reading has those values (a smoothed band, or a day
+         * bucket of daily totals, which is the day itself).
+         */
+        val bandTimes: List<BandExtremeTimes>? = null,
+        /** [bandTimes] are the days of daily totals, so they name a day, not a time of day. */
+        val bandTimesAreDays: Boolean = false
     ) {
         /** True when this series carries a min–max envelope to draw around its avg line. */
         val hasBand: Boolean get() = bandMin != null && bandMax != null

@@ -121,6 +121,14 @@
     <string name="chart_readout_week_of">Week of %1$s</string>
     <string name="chart_readout_no_value">–</string>
     <string name="chart_readout_clear">Clear selection</string>
+    <!-- Opens the selected day zoomed in, e.g. "Show Thu hour by hour". -->
+    <string name="chart_readout_show_day_hourly">Show %1$s hour by hour</string>
+    <string name="chart_readout_show_week_daily">Show this week day by day</string>
+    <!-- Opens the selected month zoomed in, e.g. "Show February day by day". -->
+    <string name="chart_readout_show_month_daily">Show %1$s day by day</string>
+    <!-- The zoomed chart's subtitle, e.g. "Thu, Feb 12 · Hour by hour". -->
+    <string name="chart_range_hourly">%1$s · Hour by hour</string>
+    <string name="chart_range_daily">%1$s · Day by day</string>
     <string name="data_view_entry_details_title">Entry Details</string>
     <string name="data_view_close">Close</string>
     <string name="data_view_last_refreshed">Last refreshed: %1$s</string>
