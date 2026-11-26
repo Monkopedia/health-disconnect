@@ -734,6 +734,12 @@ class HealthDataModel @JvmOverloads constructor(
         val points: List<MetricPoint>,
         val peakValueInWindow: Double = points.maxOfOrNull { it.value } ?: 0.0,
         val minValueInWindow: Double = points.minOfOrNull { it.value } ?: 0.0,
+        /**
+         * The mean of every reading in the window, so a bucket with more readings counts for more.
+         * Smoothing does not touch it. A series of daily totals averages its days. The default, the
+         * mean of [points], is only reading-weighted when every bucket holds one reading.
+         */
+        val averageInWindow: Double = points.map { it.value }.average(),
         val showMaxLabel: Boolean = true,
         val showMinLabel: Boolean = false,
         val yAxisMode: YAxisMode = YAxisMode.AUTO,

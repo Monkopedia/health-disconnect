@@ -155,6 +155,7 @@ class DefaultHealthDataAggregationEngine(
                     band = band,
                     peakValue = measurements.maxOf { it.value },
                     minValue = measurements.minOf { it.value },
+                    averageValue = measurements.map { it.value }.average(),
                     settings = selection.metricSettings
                 )
             }
@@ -204,6 +205,8 @@ class DefaultHealthDataAggregationEngine(
             }
             metricState.peakValue = max(metricState.peakValue ?: measurement.value, measurement.value)
             metricState.minValue = min(metricState.minValue ?: measurement.value, measurement.value)
+            metricState.readingSum += measurement.value
+            metricState.readingCount += 1
             val bucketInstant = toBucketInstant(
                 measurement.timestamp,
                 metricState.metricSettings.bucketSize,
@@ -356,6 +359,7 @@ class DefaultHealthDataAggregationEngine(
                 band = band,
                 peakValue = state.peakValue ?: 0.0,
                 minValue = state.minValue ?: 0.0,
+                averageValue = state.readingSum / state.readingCount,
                 settings = state.metricSettings,
                 fromDailyTotals = state.fromDailyTotals
             )
@@ -395,6 +399,7 @@ class DefaultHealthDataAggregationEngine(
         band: Band?,
         peakValue: Double,
         minValue: Double,
+        averageValue: Double,
         settings: MetricChartSettings,
         fromDailyTotals: Boolean = false
     ): HealthDataModel.MetricSeries {
@@ -409,6 +414,7 @@ class DefaultHealthDataAggregationEngine(
             points = applySmoothing(aggregated),
             peakValueInWindow = peakValue,
             minValueInWindow = minValue,
+            averageInWindow = averageValue,
             showMaxLabel = settings.showMaxLabel,
             showMinLabel = settings.showMinLabel,
             yAxisMode = settings.yAxisMode,
@@ -470,6 +476,9 @@ class DefaultHealthDataAggregationEngine(
         var peakValue: Double? = null,
         var minValue: Double? = null,
         val buckets: TreeMap<Instant, BucketAccumulator> = TreeMap(),
+        /** Every reading folded, for the window's reading-weighted average. */
+        var readingSum: Double = 0.0,
+        var readingCount: Int = 0,
         /** Served from Health Connect's daily totals: each value is a whole day, not a reading. */
         var fromDailyTotals: Boolean = false
     )

@@ -357,12 +357,13 @@ private fun readoutRows(geometry: ChartGeometry, seriesColors: List<Color>, slot
         val bandMax = series.bandMax
         if (slot == null) {
             when {
-                // The average of the bucket averages: what the plotted avg line averages to.
+                // Every reading counts once: a mean of the bucket averages would let one reading
+                // in a quiet hour weigh as much as a busy hour's hundred.
                 bandMin != null && bandMax != null -> listOf(
                     row(
                         null,
                         ReadoutStat(max, format(bandMax.maxOfOrNull { it.value })),
-                        ReadoutStat(average, format(series.points.map { it.value }.average())),
+                        ReadoutStat(average, format(series.averageInWindow)),
                         ReadoutStat(min, format(bandMin.minOfOrNull { it.value }))
                     )
                 )
