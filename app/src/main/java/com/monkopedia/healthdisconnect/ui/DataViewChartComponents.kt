@@ -46,6 +46,7 @@ import com.monkopedia.healthdisconnect.R
 import com.monkopedia.healthdisconnect.chartSeriesColors
 import com.monkopedia.healthdisconnect.formatValueWithUnit
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.YAxisMode
@@ -150,14 +151,20 @@ internal fun MetricOverTimeChart(
     selectedSlot: Int?,
     onSelectedSlotChange: (Int?) -> Unit,
     onOpenEntries: (() -> Unit)? = null,
-    onShareClick: (() -> Unit)? = null
+    onShareClick: (() -> Unit)? = null,
+    /** The range this chart draws, when it is one range of a view rather than its own window. */
+    window: ChartRange? = null,
+    extremeTimes: ExtremeTimesState? = null,
+    /** Opens a selected band bucket drawn on its own, with finer buckets. */
+    onOpenRange: ((ChartRange) -> Unit)? = null
 ) {
     if (seriesList.isEmpty()) return
     val geometry = ChartGeometry.create(
         seriesList = seriesList,
         settings = settings,
         xAxis = ChartGeometry.XAxisMode.CONTINUOUS_DATE,
-        now = LocalClock.current.instant()
+        now = LocalClock.current.instant(),
+        window = window
     )
     val allDates = geometry.sortedDates
     val axisColor: Color = MaterialTheme.colorScheme.outline
@@ -447,7 +454,9 @@ internal fun MetricOverTimeChart(
             selectedSlot = activeSlot,
             onClear = { onSelectedSlotChange(null) },
             onOpenEntries = onOpenEntries,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            extremeTimes = extremeTimes,
+            onOpenRange = onOpenRange
         )
         if (onShareClick != null) {
             IconButton(

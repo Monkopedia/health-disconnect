@@ -30,6 +30,7 @@ import com.monkopedia.healthdisconnect.UpdateRequired
 import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartBackgroundStyle
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
@@ -43,9 +44,11 @@ import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import com.monkopedia.healthdisconnect.model.ViewType
 import com.monkopedia.healthdisconnect.model.YAxisMode
+import com.monkopedia.healthdisconnect.ui.ChartRangeScreen
 import com.monkopedia.healthdisconnect.ui.CreateViewView
 import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
+import com.monkopedia.healthdisconnect.ui.ExtremeTimesState
 import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.MetricOverTimeChart
@@ -57,6 +60,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
@@ -1063,7 +1067,76 @@ abstract class BaseScreenRoborazziTest {
 
     @Test
     fun chartReadoutBandSelectedScreen() {
-        captureReadout("chart_readout_band_selected", readoutBandSeries(), readoutBandSettings(), selectedSlot = 3)
+        // The times of the bucket's max and min, already read.
+        val times = ExtremeTimesState { _, _, _ -> awaitCancellation() }.apply {
+            val day = readoutBandDay()
+            known[day] = listOf(
+                HealthDataModel.BandExtremeTimes(maxAt = day.plusSeconds(16 * 3_600L + 5 * 60), minAt = day.plusSeconds(3 * 3_600L + 12 * 60))
+            )
+        }
+        captureReadout(
+            "chart_readout_band_selected",
+            readoutBandSeries(),
+            readoutBandSettings(),
+            selectedSlot = 3,
+            extremeTimes = times
+        )
+    }
+
+    @Test
+    fun chartReadoutBandSelectedTimesPendingScreen() {
+        // The values show at once; the times are still being read.
+        captureReadout(
+            "chart_readout_band_selected_times_pending",
+            readoutBandSeries(),
+            readoutBandSettings(),
+            selectedSlot = 3,
+            extremeTimes = ExtremeTimesState { _, _, _ -> awaitCancellation() }
+        )
+    }
+
+    @Test
+    fun chartRangeHourByHourScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            chartSettings = readoutBandSettings()
+        )
+        val viewModel = mockDataViewAdapterViewModel(info = DataViewInfo(id = 1, name = "Heart rate"), view = dataView)
+        val healthDataModel = mockHealthDataModel()
+        val day = readoutBandDay()
+        val range = ChartRange(day, day.plusSeconds(24 * 3_600L), BucketSize.HOUR)
+        // A day of hourly heart rate: low overnight, a run in the late afternoon.
+        val hours = (0 until 24).map { day.plusSeconds(it * 3_600L) }
+        val avg = (0 until 24).map { hour ->
+            when (hour) {
+                in 0..5 -> 56.0 + hour % 2
+                16 -> 128.0
+                else -> 68.0 + 6.0 * kotlin.math.sin(hour / 3.0)
+            }
+        }
+        val hourly = HealthDataModel.MetricSeries(
+            label = "Heart rate",
+            unit = "bpm",
+            points = hours.mapIndexed { i, hour -> HealthDataModel.MetricPoint(hour, avg[i]) },
+            bandMin = hours.mapIndexed { i, hour -> HealthDataModel.MetricPoint(hour, avg[i] - 6.0) },
+            bandMax = hours.mapIndexed { i, hour -> HealthDataModel.MetricPoint(hour, avg[i] + if (i == 16) 13.0 else 9.0) },
+            bucketSize = BucketSize.HOUR,
+            aggregation = AggregationMode.MIN_MAX_AVG
+        )
+        every { healthDataModel.collectSeriesInRange(dataView, range) } returns
+            flowOf(HealthDataModel.LoadedSeries(listOf(hourly), HealthDataModel.ChartLoadIssues()))
+        captureScreen("chart_range_hour_by_hour") {
+            ChartRangeScreen(
+                viewId = 1,
+                range = range,
+                onBack = {},
+                onOpenRange = {},
+                viewModel = viewModel,
+                healthDataModel = healthDataModel
+            )
+        }
     }
 
     private fun readoutLineSettings() = ChartSettings(timeWindow = TimeWindow.HOURS_24, bucketSize = BucketSize.HOUR)
@@ -1100,6 +1173,10 @@ abstract class BaseScreenRoborazziTest {
         timeWindow = TimeWindow.DAYS_7
     )
 
+    /** The start of the band readout's selected day (slot 3), in the screenshots' UTC. */
+    private fun readoutBandDay(): Instant =
+        FIXED_NOW.atZone(ZoneId.of("UTC")).toLocalDate().minusDays(3).atStartOfDay(ZoneId.of("UTC")).toInstant()
+
     /** A week of daily heart-rate min/avg/max ending at the frozen clock. */
     private fun readoutBandSeries(): HealthDataModel.MetricSeries {
         val today = FIXED_NOW.atZone(ZoneId.of("UTC")).toLocalDate()
@@ -1121,7 +1198,8 @@ abstract class BaseScreenRoborazziTest {
         name: String,
         series: HealthDataModel.MetricSeries,
         settings: ChartSettings,
-        selectedSlot: Int?
+        selectedSlot: Int?,
+        extremeTimes: ExtremeTimesState? = null
     ) {
         captureScreen(name) {
             Column(Modifier.padding(horizontal = 11.dp, vertical = 16.dp)) {
@@ -1131,7 +1209,9 @@ abstract class BaseScreenRoborazziTest {
                     selectedSlot = selectedSlot,
                     onSelectedSlotChange = {},
                     onOpenEntries = {},
-                    onShareClick = {}
+                    onShareClick = {},
+                    extremeTimes = extremeTimes,
+                    onOpenRange = {}
                 )
             }
         }

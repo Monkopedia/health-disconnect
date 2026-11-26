@@ -2,6 +2,7 @@ package com.monkopedia.healthdisconnect.ui
 
 import com.monkopedia.healthdisconnect.HealthDataModel
 import com.monkopedia.healthdisconnect.model.BucketSize
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.ChartSettings
 import com.monkopedia.healthdisconnect.model.ChartType
 import com.monkopedia.healthdisconnect.model.TimeWindow
@@ -255,13 +256,16 @@ internal class ChartGeometry private constructor(
          *
          * @param now reference "now" used only for the continuous-axis window computation.
          * @param zoneId zone used to snap day-granular axis endpoints to local day boundaries.
+         * @param window an explicit continuous-axis span, for a chart of one range of a view;
+         *   otherwise the axis spans the view's time window ending [now].
          */
         fun create(
             seriesList: List<HealthDataModel.MetricSeries>,
             settings: ChartSettings,
             xAxis: XAxisMode,
             now: Instant = Instant.now(),
-            zoneId: ZoneId = ZoneId.systemDefault()
+            zoneId: ZoneId = ZoneId.systemDefault(),
+            window: ChartRange? = null
         ): ChartGeometry {
             require(seriesList.isNotEmpty()) { "ChartGeometry.create requires at least one series" }
             val allPoints = seriesList.flatMap { it.points }
@@ -290,12 +294,12 @@ internal class ChartGeometry private constructor(
             // unchanged; intraday windows keep the exact instant so the time-of-day axis is precise.
             val windowSeconds = windowSeconds(settings.timeWindow)
             val axisNow = if (isIntraday) now else now.atZone(zoneId).toLocalDate().atStartOfDay(zoneId).toInstant()
-            var axisStart = if (windowSeconds != null) {
-                minOf(axisNow.minusSeconds(windowSeconds), dataMin)
-            } else {
-                dataMin
+            var axisStart = when {
+                window != null -> window.start
+                windowSeconds != null -> minOf(axisNow.minusSeconds(windowSeconds), dataMin)
+                else -> dataMin
             }
-            var axisEnd = maxOf(axisNow, dataMax)
+            var axisEnd = window?.end ?: maxOf(axisNow, dataMax)
             if (!axisStart.isBefore(axisEnd)) {
                 val pad = if (isIntraday) 60L else ChronoUnit.DAYS.duration.seconds
                 axisStart = dataMin.minusSeconds(pad)

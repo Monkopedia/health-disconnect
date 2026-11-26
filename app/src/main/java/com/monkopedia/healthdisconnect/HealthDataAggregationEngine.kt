@@ -5,6 +5,7 @@ import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.MetricChartSettings
+import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.TimeWindow
 import com.monkopedia.healthdisconnect.model.UnitPreference
 import java.time.temporal.ChronoUnit
@@ -28,8 +29,13 @@ interface HealthDataAggregationEngine {
     fun metricDefaultsFromView(view: DataView): MetricChartSettings
     fun aggregateMetricSeriesList(view: DataView, records: List<Record>): List<HealthDataModel.MetricSeries>
     fun aggregateMetricSeries(view: DataView, records: List<Record>): HealthDataModel.MetricSeries?
+    /**
+     * Streams [view]'s series from readings in [start]..[now] (all of them when [start] is null), so
+     * a caller can chart the view's own window or any other range of it.
+     */
     fun collectAggregatedSeries(
         view: DataView,
+        start: Instant?,
         now: Instant,
         zoneId: ZoneId,
         maxSeries: Int,
@@ -144,6 +150,7 @@ class DefaultHealthDataAggregationEngine(
                     }
                 }
                 buildMetricSeries(
+                    source = selection.source(),
                     label = selection.label,
                     unit = measurements.firstNotNullOfOrNull { it.unitLabel },
                     aggregated = aggregated,
@@ -162,6 +169,7 @@ class DefaultHealthDataAggregationEngine(
 
     override fun collectAggregatedSeries(
         view: DataView,
+        start: Instant?,
         now: Instant,
         zoneId: ZoneId,
         maxSeries: Int,
@@ -173,7 +181,6 @@ class DefaultHealthDataAggregationEngine(
         ) -> Unit,
         dailyTotalsReader: DailyTotalsReader?
     ): Flow<List<HealthDataModel.MetricSeries>> = channelFlow {
-        val viewWindowStart = windowStart(view.chartSettings.timeWindow, now)
         val selectedByType = view.records.mapNotNull { selection ->
             val cls = PermissionsViewModel.classForFqn(selection.fqn)
                 ?: return@mapNotNull null
@@ -192,7 +199,7 @@ class DefaultHealthDataAggregationEngine(
             return@channelFlow
         }
 
-        val queryStart = viewWindowStart ?: Instant.EPOCH
+        val queryStart = start ?: Instant.EPOCH
         fun fold(metricState: StreamingMetricState, measurement: MetricMeasurement) {
             if (metricState.unit == null && !measurement.unitLabel.isNullOrBlank()) {
                 metricState.unit = measurement.unitLabel
@@ -212,7 +219,7 @@ class DefaultHealthDataAggregationEngine(
          * returning false when the series still needs raw records. Each day's total is one value
          * in its chart bucket, so SUM charts the bucket's total and AVERAGE/MIN/MAX the average,
          * smallest and largest day in it. Days are stamped at local midnight, which may precede
-         * [viewWindowStart], so they are not window-filtered: the first day is a whole day.
+         * [start], so they are not window-filtered: the first day is a whole day.
          *
          * Max/min are the highest and lowest plotted bucket — single records do not exist here —
          * and min skips the bucket still in progress, whose total is partial. A failed read counts
@@ -258,7 +265,7 @@ class DefaultHealthDataAggregationEngine(
                                 unitPreference = metricState.metricSettings.unitPreference,
                                 metricKey = metricState.metricKey
                             ) ?: return@forEach
-                            if (viewWindowStart != null && measurement.timestamp.isBefore(viewWindowStart)) {
+                            if (start != null && measurement.timestamp.isBefore(start)) {
                                 return@forEach
                             }
                             fold(metricState, measurement)
@@ -348,6 +355,7 @@ class DefaultHealthDataAggregationEngine(
                 }
             }
             buildMetricSeries(
+                source = state.source(),
                 label = state.label,
                 unit = state.unit,
                 aggregated = aggregated,
@@ -380,6 +388,7 @@ class DefaultHealthDataAggregationEngine(
      * the avg line and (when present) both band edges so the envelope stays aligned with the line.
      */
     private fun buildMetricSeries(
+        source: RecordSelection,
         label: String,
         unit: String?,
         aggregated: List<HealthDataModel.MetricPoint>,
@@ -405,7 +414,8 @@ class DefaultHealthDataAggregationEngine(
             bandMin = band?.first?.let(::applySmoothing),
             bandMax = band?.second?.let(::applySmoothing),
             bucketSize = settings.bucketSize,
-            aggregation = settings.aggregation
+            aggregation = settings.aggregation,
+            source = source
         )
     }
 
@@ -443,12 +453,16 @@ class DefaultHealthDataAggregationEngine(
         var peakValue: Double? = null,
         var minValue: Double? = null,
         val buckets: TreeMap<Instant, BucketAccumulator> = TreeMap()
-    )
+    ) {
+        fun source() = RecordSelection(recordClass.qualifiedName.orEmpty(), metricSettings, metricKey)
+    }
 
     private data class AggregationMetricSelection(
         val recordClass: KClass<out Record>,
         val label: String,
         val metricKey: String?,
         val metricSettings: MetricChartSettings
-    )
+    ) {
+        fun source() = RecordSelection(recordClass.qualifiedName.orEmpty(), metricSettings, metricKey)
+    }
 }

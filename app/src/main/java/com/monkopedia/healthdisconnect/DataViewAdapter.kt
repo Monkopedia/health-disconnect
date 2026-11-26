@@ -47,6 +47,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import com.monkopedia.healthdisconnect.R
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.ui.CreateViewView
 import com.monkopedia.healthdisconnect.ui.DataViewView
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
@@ -70,7 +71,8 @@ fun DataViewAdapter(
     initialViewId: Int? = null,
     initialPageOffsetFraction: Float = 0f,
     showSettings: () -> Unit,
-    onOpenEntries: (Int) -> Unit = {}
+    onOpenEntries: (Int) -> Unit = {},
+    onOpenRange: (viewId: Int, range: ChartRange) -> Unit = { _, _ -> }
 ) {
     val listInfo by viewModel.dataViews.collectAsState(initial = null)
     val viewCount = listInfo?.ordering?.size ?: 0
@@ -145,7 +147,8 @@ fun DataViewAdapter(
                         permissionsViewModel = permissionsViewModel,
                         page = page,
                         showHeader = false,
-                        onOpenEntriesRequested = onOpenEntries
+                        onOpenEntriesRequested = onOpenEntries,
+                        onOpenRangeRequested = onOpenRange
                     )
                 } else {
                     CreateViewView(viewModel, healthDataModel, showHeader = false)
