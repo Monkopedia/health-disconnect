@@ -524,6 +524,47 @@ abstract class BaseScreenRoborazziTest {
         }
     }
 
+    /** A selected week's entries (issue #139): the range in the header, cut short by the cap. */
+    @Test
+    fun entriesRouteScopedScreen() {
+        val dataView = DataView(
+            id = 1,
+            type = ViewType.CHART,
+            // Weight, so the list keeps these weight records: CLASSES.first() is not WeightRecord.
+            records = listOf(RecordSelection(WeightRecord::class.qualifiedName!!)),
+        )
+        val viewModel = mockDataViewAdapterViewModel(
+            info = DataViewInfo(id = 1, name = "Weight"),
+            view = dataView
+        )
+        val healthDataModel = mockHealthDataModel()
+        val records = listOf(
+            fakeWeightRecord(72.4, "2026-01-29T08:30:00Z"),
+            fakeWeightRecord(72.1, "2026-01-28T08:30:00Z"),
+            fakeWeightRecord(71.8, "2026-01-27T08:30:00Z")
+        )
+        val week = ChartRange(
+            java.time.Instant.parse("2026-01-26T00:00:00Z"),
+            java.time.Instant.parse("2026-02-02T00:00:00Z"),
+            BucketSize.WEEK
+        )
+        every { healthDataModel.collectEntriesInRange(any(), any()) } returns flowOf(
+            HealthDataModel.LoadedEntries(
+                records,
+                HealthDataModel.ChartLoadIssues(truncatedSince = java.time.Instant.parse("2026-01-27T08:30:00Z"))
+            )
+        )
+        captureScreen("entries_route_scoped") {
+            EntriesRouteScreen(
+                viewId = 1,
+                onBack = {},
+                viewModel = viewModel,
+                healthDataModel = healthDataModel,
+                range = week
+            )
+        }
+    }
+
     @Test
     fun dataViewCollapsedScreen() {
         val viewModel = mockDataViewAdapterViewModel(

@@ -125,6 +125,9 @@ class HealthDataModel @JvmOverloads constructor(
     /** A chart's series, and what they could not include. */
     data class LoadedSeries(val series: List<MetricSeries>, val issues: ChartLoadIssues)
 
+    /** One range's entries, newest first, and what they could not include. */
+    data class LoadedEntries(val records: List<Record>, val issues: ChartLoadIssues)
+
     /** When a band bucket's max and min were recorded. */
     data class BandExtremeTimes(val maxAt: Instant, val minAt: Instant)
 
@@ -424,6 +427,41 @@ class HealthDataModel @JvmOverloads constructor(
         )
         emitAll(series.map { LoadedSeries(it, issues) })
     }
+
+    /**
+     * [view]'s entries in [range] alone (issue #139): a selected bucket's "View entries". It reads
+     * that range from Health Connect rather than filtering [collectData]'s newest
+     * [MAX_LISTED_RECORDS], which an older bucket would fall outside of. The same cap applies per
+     * record type within the range, newest first, and [ChartLoadIssues.truncatedSince] says where a
+     * type stopped. Only records the chart would place in the range are kept, by the same timestamp
+     * it buckets by.
+     */
+    fun collectEntriesInRange(view: DataView, range: ChartRange): Flow<LoadedEntries> = flow {
+        val types = view.records.mapNotNull { PermissionsViewModel.classForFqn(it.fqn) }.distinct()
+        val records = mutableListOf<Record>()
+        var issues = ChartLoadIssues()
+        for (cls in types) {
+            try {
+                var oldest: Instant? = null
+                val truncated = readNewestRecords(cls, range.start, range.end, MAX_LISTED_RECORDS) { page ->
+                    page.filterTo(records) { record ->
+                        val at = recordTimestamp(record) ?: return@filterTo false
+                        oldest = minOf(oldest ?: at, at)
+                        at >= range.start && at < range.end
+                    }
+                }
+                oldest?.takeIf { truncated }?.let { issues = issues.withTruncation(it) }
+            } catch (exception: Exception) {
+                if (exception is CancellationException) {
+                    throw exception
+                }
+                // Log the kind of failure, never the throwable. See errorLabel in StorageJson.kt.
+                Log.w(LOG_TAG, "Failed to read entries in range for ${cls.simpleName} (${exception.errorLabel()})")
+                issues = issues.withFailure(exception)
+            }
+        }
+        emit(LoadedEntries(records.sortedByDescending { recordTimestamp(it) ?: Instant.EPOCH }, issues))
+    }.flowOn(ioDispatcher)
 
     /**
      * The view's series exactly as its chart draws them — see [chartSeries] — so a widget never

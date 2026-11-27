@@ -72,7 +72,8 @@ fun DataViewAdapter(
     initialPageOffsetFraction: Float = 0f,
     showSettings: () -> Unit,
     onOpenEntries: (Int) -> Unit = {},
-    onOpenRange: (viewId: Int, range: ChartRange) -> Unit = { _, _ -> }
+    onOpenRange: (viewId: Int, range: ChartRange) -> Unit = { _, _ -> },
+    onOpenEntriesInRange: (viewId: Int, range: ChartRange) -> Unit = { _, _ -> }
 ) {
     val listInfo by viewModel.dataViews.collectAsState(initial = null)
     val viewCount = listInfo?.ordering?.size ?: 0
@@ -148,7 +149,8 @@ fun DataViewAdapter(
                         page = page,
                         showHeader = false,
                         onOpenEntriesRequested = onOpenEntries,
-                        onOpenRangeRequested = onOpenRange
+                        onOpenRangeRequested = onOpenRange,
+                        onOpenEntriesInRangeRequested = onOpenEntriesInRange
                     )
                 } else {
                     CreateViewView(viewModel, healthDataModel, showHeader = false)

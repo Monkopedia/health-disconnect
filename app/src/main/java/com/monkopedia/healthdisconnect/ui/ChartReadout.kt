@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,6 +48,7 @@ import com.monkopedia.healthdisconnect.model.AggregationMode
 import com.monkopedia.healthdisconnect.model.BucketSize
 import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.ChartType
+import com.monkopedia.healthdisconnect.model.bucketEnd
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -73,7 +75,8 @@ private data class ReadoutContent(
     val heading: String,
     val rows: List<ReadoutRow>,
     val isSelection: Boolean,
-    val linksToEntries: Boolean,
+    /** The selected bucket, whose entries "View entries" lists (issue #139). */
+    val entriesRange: ChartRange? = null,
     val zoom: ZoomLink? = null
 )
 
@@ -92,7 +95,7 @@ internal fun ChartReadoutPanel(
     seriesColors: List<Color>,
     selectedSlot: Int?,
     onClear: () -> Unit,
-    onOpenEntries: (() -> Unit)?,
+    onOpenEntries: ((ChartRange) -> Unit)?,
     modifier: Modifier = Modifier,
     onOpenRange: ((ChartRange) -> Unit)? = null
 ) {
@@ -113,8 +116,7 @@ internal fun ChartReadoutPanel(
             },
             rows = readoutRows(geometry, seriesColors, selectedSlot),
             isSelection = selectedSlot != null,
-            // A band's bucket is many readings, so it links to the bucket drawn on its own instead.
-            linksToEntries = onOpenEntries != null && geometry.seriesList.none { it.hasBand },
+            entriesRange = selectedSlot?.takeIf { onOpenEntries != null }?.let { slotRange(geometry, it) },
             zoom = selectedSlot?.takeIf { onOpenRange != null && geometry.seriesList.any { it.hasBand } }
                 ?.let { zoomLink(geometry, it) }
         )
@@ -127,7 +129,10 @@ internal fun ChartReadoutPanel(
         ) { shown ->
             // A band's Max/Average/Min grid needs the panel's full width on a small phone, so its
             // ✕ sits beside the heading (as in the mock) instead of taking a column of its own.
+            // For the same reason its links sit on a line of their own under the grid.
             val clearBesideHeading = shown.isSelection && shown.rows.any { it.stats.size > 1 }
+            val entriesBelow = shown.entriesRange?.takeIf { clearBesideHeading }
+            val viewEntries = stringResource(R.string.data_view_view_entries)
             Box {
                 Column {
                     Row(
@@ -135,7 +140,7 @@ internal fun ChartReadoutPanel(
                             start = 14.dp,
                             end = 4.dp,
                             top = 10.dp,
-                            bottom = if (shown.zoom != null) 0.dp else 10.dp
+                            bottom = if (shown.zoom != null || entriesBelow != null) 0.dp else 10.dp
                         ),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -156,11 +161,11 @@ internal fun ChartReadoutPanel(
                         if (shown.isSelection) {
                             // On a narrow phone the labelled link would squeeze the value into wrapping,
                             // so it shrinks to its arrow there.
-                            if (onOpenEntries != null && shown.linksToEntries) {
-                                val viewEntries = stringResource(R.string.data_view_view_entries)
+                            val entriesRange = shown.entriesRange
+                            if (onOpenEntries != null && entriesRange != null && !clearBesideHeading) {
                                 if (compact) {
                                     IconButton(
-                                        onClick = onOpenEntries,
+                                        onClick = { onOpenEntries(entriesRange) },
                                         modifier = Modifier
                                             .size(44.dp)
                                             .testTag("chart_readout_view_entries")
@@ -173,7 +178,7 @@ internal fun ChartReadoutPanel(
                                     }
                                 } else {
                                     TextButton(
-                                        onClick = onOpenEntries,
+                                        onClick = { onOpenEntries(entriesRange) },
                                         modifier = Modifier.testTag("chart_readout_view_entries")
                                     ) {
                                         Text(viewEntries)
@@ -187,18 +192,15 @@ internal fun ChartReadoutPanel(
                             if (!clearBesideHeading) ClearSelectionButton(onClear)
                         }
                     }
-                    shown.zoom?.let { zoom ->
-                        TextButton(
-                            onClick = { onOpenRange?.invoke(zoom.range) },
-                            modifier = Modifier
-                                .padding(start = 2.dp, bottom = 2.dp)
-                                .testTag("chart_readout_zoom")
-                        ) {
-                            Text(zoom.label)
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                                contentDescription = null
-                            )
+                    if (shown.zoom != null || entriesBelow != null) {
+                        // Wraps onto a second line where a small phone cannot fit both links.
+                        FlowRow(Modifier.padding(start = 2.dp, bottom = 2.dp)) {
+                            shown.zoom?.let { zoom ->
+                                ReadoutLink(zoom.label, "chart_readout_zoom") { onOpenRange?.invoke(zoom.range) }
+                            }
+                            entriesBelow?.let { range ->
+                                ReadoutLink(viewEntries, "chart_readout_view_entries") { onOpenEntries?.invoke(range) }
+                            }
                         }
                     }
                 }
@@ -207,6 +209,17 @@ internal fun ChartReadoutPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ReadoutLink(label: String, tag: String, onClick: () -> Unit) {
+    TextButton(onClick = onClick, modifier = Modifier.testTag(tag)) {
+        Text(label)
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+            contentDescription = null
+        )
     }
 }
 
@@ -302,6 +315,18 @@ private fun ReadoutRowContent(row: ReadoutRow, compact: Boolean) {
             }
         }
     }
+}
+
+/**
+ * The span the selected slot covers, as the chart buckets it: a bar's day, week or month, or a line
+ * point's bucket down to its minute. Every point is a bucket, so even a minute's point lists the
+ * readings it was folded from.
+ */
+private fun slotRange(geometry: ChartGeometry, slot: Int): ChartRange {
+    val zoneId = ZoneId.systemDefault()
+    val start = geometry.slotStart(slot, zoneId)
+    val bucket = geometry.slotBucket
+    return ChartRange(start, bucket.bucketEnd(start, zoneId), bucket)
 }
 
 @Composable

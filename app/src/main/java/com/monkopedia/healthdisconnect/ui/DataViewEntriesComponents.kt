@@ -71,6 +71,7 @@ import com.monkopedia.healthdisconnect.recordPrimaryValueLabel
 import com.monkopedia.healthdisconnect.recordTimestampLabel
 import com.monkopedia.healthdisconnect.shareEntriesCsv
 import com.monkopedia.healthdisconnect.writeEntriesCsvToCache
+import com.monkopedia.healthdisconnect.model.ChartRange
 import com.monkopedia.healthdisconnect.model.DataView
 import com.monkopedia.healthdisconnect.model.RecordSelection
 import com.monkopedia.healthdisconnect.model.UnitPreference
@@ -135,29 +136,44 @@ fun entriesSection(
     }
 }
 
+/**
+ * View [viewId]'s entries: its newest [HealthDataModel.MAX_LISTED_RECORDS] per record type, or with
+ * [range] set, only that range's (issue #139), read from Health Connect for that range alone so an
+ * old bucket lists its entries too. A range's list names the range in its header and has no export,
+ * which covers the view's whole window.
+ */
 @Composable
 fun EntriesRouteScreen(
     viewId: Int,
     onBack: () -> Unit,
     viewModel: DataViewAdapterViewModel = koinViewModel(),
     healthDataModel: HealthDataModel = koinViewModel(),
-    initialSelectedEntry: Record? = null
+    initialSelectedEntry: Record? = null,
+    range: ChartRange? = null
 ) {
     val context = LocalContext.current
     // Resolved at composition (not via context.getString in the export coroutine) per Compose's
     // LocalContextGetResourceValueCall lint check.
     val exportFailedMessage = stringResource(R.string.data_view_export_failed)
     val actionScope = rememberCoroutineScope()
-    val infoFlow = remember(viewModel, viewId) {
-        viewModel.dataViews.map { it?.dataViews?.get(viewId) }
-    }
-    val info by infoFlow.collectAsState(initial = null)
+    val infos by viewModel.dataViews.collectAsState(initial = null)
+    val info = infos?.dataViews?.get(viewId)
     val view by viewModel.dataView(viewId).collectAsState(initial = null)
+    if (infos != null && info == null) {
+        RouteUnavailableScreen(R.string.route_view_deleted, onBack)
+        return
+    }
     if (view == null) {
         LoadingScreen()
         return
     }
-    val data by healthDataModel.collectData(view!!).collectAsState(initial = null)
+    val loaded by remember(view, range) {
+        range?.let { healthDataModel.collectEntriesInRange(view!!, it) }
+            ?: healthDataModel.collectData(view!!).map {
+                HealthDataModel.LoadedEntries(it, HealthDataModel.ChartLoadIssues())
+            }
+    }.collectAsState(initial = null)
+    val data = loaded?.records
     var selectedEntryForDetails by remember(viewId, initialSelectedEntry) {
         mutableStateOf(initialSelectedEntry)
     }
@@ -171,11 +187,17 @@ fun EntriesRouteScreen(
         data?.filter { recordHasSelectedMetricValue(view!!, it, measurementExtractor) }
     }
 
+    val now = LocalClock.current.instant()
     EntriesScreen(
         infoName = info?.name ?: "",
+        rangeLabel = range?.let {
+            val zoneId = ZoneId.systemDefault()
+            formatBucketLabel(it.start, it.bucketSize, withYear = it.start.atZone(zoneId).year != now.atZone(zoneId).year)
+        },
+        issues = loaded?.issues ?: HealthDataModel.ChartLoadIssues(),
         data = filteredData,
         onBack = onBack,
-        onShareRequested = { showExportModeDialog = true },
+        onShareRequested = { showExportModeDialog = true }.takeIf { range == null },
         isExporting = isExporting,
         valuePreviewForRecord = { record ->
             formatRecordValuePreview(
@@ -290,9 +312,13 @@ fun EntriesRouteScreen(
 @Composable
 private fun EntriesScreen(
     infoName: String,
+    /** The range listed, e.g. `Jan 11 – 17`, or null for the view's newest entries. */
+    rangeLabel: String?,
+    issues: HealthDataModel.ChartLoadIssues,
     data: List<Record>?,
     onBack: () -> Unit,
-    onShareRequested: () -> Unit,
+    /** Null hides the export. */
+    onShareRequested: (() -> Unit)?,
     isExporting: Boolean,
     valuePreviewForRecord: (Record) -> String?,
     onEntrySelected: (Record) -> Unit
@@ -307,12 +333,22 @@ private fun EntriesScreen(
             CenterAlignedTopAppBar(
                 modifier = Modifier.fillMaxWidth(),
                 title = {
-                    Text(
-                        text = stringResource(R.string.data_view_entries_for, infoName),
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = stringResource(R.string.data_view_entries_for, infoName),
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        rangeLabel?.let {
+                            Text(
+                                text = it,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("entries_range_label")
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(
@@ -326,21 +362,23 @@ private fun EntriesScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = onShareRequested,
-                        enabled = !isExporting,
-                        modifier = Modifier.testTag("entries_share_button")
-                    ) {
-                        if (isExporting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Rounded.Share,
-                                contentDescription = stringResource(R.string.data_view_export_share)
-                            )
+                    if (onShareRequested != null) {
+                        IconButton(
+                            onClick = onShareRequested,
+                            enabled = !isExporting,
+                            modifier = Modifier.testTag("entries_share_button")
+                        ) {
+                            if (isExporting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Rounded.Share,
+                                    contentDescription = stringResource(R.string.data_view_export_share)
+                                )
+                            }
                         }
                     }
                 },
@@ -367,6 +405,19 @@ private fun EntriesScreen(
                     .padding(horizontal = 11.dp),
                 contentPadding = PaddingValues(top = 19.dp, bottom = 13.dp)
             ) {
+                if (!issues.isComplete) {
+                    item { EntriesLoadIssueNotices(issues) }
+                }
+                if (data.isEmpty() && rangeLabel != null) {
+                    item {
+                        Text(
+                            text = stringResource(R.string.data_view_entries_range_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("entries_range_empty")
+                        )
+                    }
+                }
                 items(data.size) { index ->
                     val record = data[index]
                     val timestamp = recordTimestampLabel(record)
@@ -506,6 +557,38 @@ private fun recordHasSelectedMetricValue(
                 UnitPreference.METRIC,
                 selection.metricKey
             ) != null
+    }
+}
+
+/**
+ * Says why a range's entries may be fewer than Health Connect holds: a failed read, or a record type
+ * that stopped at [HealthDataModel.MAX_LISTED_RECORDS], newest first. That can stop mid-day, so the
+ * notice gives the time as well as the date.
+ */
+@Composable
+private fun EntriesLoadIssueNotices(issues: HealthDataModel.ChartLoadIssues) {
+    Column(Modifier.padding(bottom = 8.dp).testTag("entries_load_issues")) {
+        issues.readFailure?.let { failure ->
+            Text(
+                stringResource(
+                    when (failure) {
+                        HealthDataModel.ReadFailure.RATE_LIMITED -> R.string.data_view_entries_rate_limited
+                        HealthDataModel.ReadFailure.OTHER -> R.string.data_view_entries_read_failed
+                    }
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        issues.truncatedSince?.let { since ->
+            val at = since.atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT))
+            Text(
+                stringResource(R.string.data_view_entries_range_truncated, at),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

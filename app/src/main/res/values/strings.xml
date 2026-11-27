@@ -129,6 +129,14 @@
     <!-- The zoomed chart's subtitle, e.g. "Thu, Feb 12 · Hour by hour". -->
     <string name="chart_range_hourly">%1$s · Hour by hour</string>
     <string name="chart_range_daily">%1$s · Day by day</string>
+    <!-- Shown when a chart or entries route names a view that has since been deleted. -->
+    <string name="route_view_deleted">This view no longer exists.</string>
+    <string name="route_range_invalid">This time range can\'t be shown.</string>
+    <!-- A selected chart bucket's entries (issue #139). -->
+    <string name="data_view_entries_range_empty">No entries in this range.</string>
+    <string name="data_view_entries_range_truncated">Showing the newest entries in this range, back to %1$s. Older entries were not loaded.</string>
+    <string name="data_view_entries_rate_limited">Health Connect is temporarily limiting how often this app can read, so some entries could not be loaded. Try again later.</string>
+    <string name="data_view_entries_read_failed">Some entries could not be read from Health Connect, so this list may be incomplete.</string>
     <string name="data_view_entry_details_title">Entry Details</string>
     <string name="data_view_close">Close</string>
     <string name="data_view_last_refreshed">Last refreshed: %1$s</string>

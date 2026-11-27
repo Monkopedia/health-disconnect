@@ -106,7 +106,8 @@ fun DataViewView(
     headerPageOffset: Float = 0f,
     showHeader: Boolean = true,
     onOpenEntriesRequested: (Int) -> Unit = {},
-    onOpenRangeRequested: (viewId: Int, range: ChartRange) -> Unit = { _, _ -> }
+    onOpenRangeRequested: (viewId: Int, range: ChartRange) -> Unit = { _, _ -> },
+    onOpenEntriesInRangeRequested: (viewId: Int, range: ChartRange) -> Unit = { _, _ -> }
 ) {
     val context = LocalContext.current
     // Error strings resolved at composition rather than via context.getString in the action
@@ -610,7 +611,7 @@ fun DataViewView(
                                     settings = view!!.chartSettings,
                                     selectedSlot = chartSelection,
                                     onSelectedSlotChange = { chartSelection = it },
-                                    onOpenEntries = { onOpenEntriesRequested(view!!.id) },
+                                    onOpenEntries = { onOpenEntriesInRangeRequested(view!!.id, it) },
                                     onOpenRange = { onOpenRangeRequested(view!!.id, it) },
                                     onShareClick = if (hasGraphShareData) {
                                         {
