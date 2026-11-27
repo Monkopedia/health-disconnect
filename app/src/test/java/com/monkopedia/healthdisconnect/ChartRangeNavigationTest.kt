@@ -136,7 +136,7 @@ class ChartRangeNavigationTest {
                                 val arguments = entry.arguments!!
                                 ChartRangeScreen(
                                     viewId = ChartRangeRoute.viewId(arguments),
-                                    range = ChartRangeRoute.range(arguments),
+                                    range = ChartRangeRoute.range(arguments)!!,
                                     onBack = { navController.popBackStack() },
                                     onOpenRange = {},
                                     viewModel = viewModel,

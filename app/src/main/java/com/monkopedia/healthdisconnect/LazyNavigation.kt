@@ -19,6 +19,7 @@ import com.monkopedia.healthdisconnect.ui.HealthDisconnectIntro
 import com.monkopedia.healthdisconnect.ui.LoadingScreen
 import com.monkopedia.healthdisconnect.ui.SettingsScreen
 import com.monkopedia.healthdisconnect.ui.EntriesRouteScreen
+import com.monkopedia.healthdisconnect.ui.RouteUnavailableScreen
 import org.koin.androidx.compose.koinViewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -58,7 +59,10 @@ fun LazyNavigation(
                         initialViewId = initialViewId,
                         showSettings = { navController.navigate(Routes.Settings) },
                         onOpenEntries = { viewId -> navController.navigate(Routes.entries(viewId)) },
-                        onOpenRange = { viewId, range -> navController.navigate(ChartRangeRoute.of(viewId, range)) }
+                        onOpenRange = { viewId, range -> navController.navigate(ChartRangeRoute.of(viewId, range)) },
+                        onOpenEntriesInRange = { viewId, range ->
+                            navController.navigate(ChartRangeRoute.entriesOf(viewId, range))
+                        }
                     )
                 }
                 composable(Routes.Settings) {
@@ -80,12 +84,30 @@ fun LazyNavigation(
                 ) { backStackEntry ->
                     val arguments = backStackEntry.arguments ?: return@composable
                     val viewId = ChartRangeRoute.viewId(arguments)
-                    ChartRangeScreen(
-                        viewId = viewId,
-                        range = ChartRangeRoute.range(arguments),
-                        onBack = { navController.popBackStack() },
-                        onOpenRange = { navController.navigate(ChartRangeRoute.of(viewId, it)) }
-                    )
+                    when (val range = ChartRangeRoute.range(arguments)) {
+                        null -> RouteUnavailableScreen(R.string.route_range_invalid, onBack = { navController.popBackStack() })
+                        else -> ChartRangeScreen(
+                            viewId = viewId,
+                            range = range,
+                            onBack = { navController.popBackStack() },
+                            onOpenRange = { navController.navigate(ChartRangeRoute.of(viewId, it)) },
+                            onOpenEntries = { navController.navigate(ChartRangeRoute.entriesOf(viewId, it)) }
+                        )
+                    }
+                }
+                composable(
+                    route = ChartRangeRoute.ENTRIES_PATTERN,
+                    arguments = ChartRangeRoute.arguments
+                ) { backStackEntry ->
+                    val arguments = backStackEntry.arguments ?: return@composable
+                    when (val range = ChartRangeRoute.range(arguments)) {
+                        null -> RouteUnavailableScreen(R.string.route_range_invalid, onBack = { navController.popBackStack() })
+                        else -> EntriesRouteScreen(
+                            viewId = ChartRangeRoute.viewId(arguments),
+                            range = range,
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
                 }
             }
         }

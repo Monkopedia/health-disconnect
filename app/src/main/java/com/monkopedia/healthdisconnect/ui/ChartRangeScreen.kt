@@ -1,6 +1,7 @@
 package com.monkopedia.healthdisconnect.ui
 
 import android.os.Bundle
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -38,15 +39,16 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.map
 import org.koin.androidx.compose.koinViewModel
 
 /**
- * The navigation route for one range of a view's chart ([ChartRangeScreen]). Everything the screen
- * needs is in the route, so any screen can open a view's chart for a range.
+ * The navigation routes for one range of a view: its chart ([ChartRangeScreen]) and its entries
+ * ([EntriesRouteScreen], issue #139). Everything the screen needs is in the route, so any screen
+ * can open a view's chart or entries for a range.
  */
 internal object ChartRangeRoute {
     const val PATTERN = "chart/{viewId}/{start}/{end}/{bucket}"
+    const val ENTRIES_PATTERN = "entries/{viewId}/{start}/{end}/{bucket}"
 
     val arguments = listOf(
         navArgument("viewId") { type = NavType.IntType },
@@ -55,16 +57,23 @@ internal object ChartRangeRoute {
         navArgument("bucket") { type = NavType.StringType }
     )
 
-    fun of(viewId: Int, range: ChartRange): String =
-        "chart/$viewId/${range.start.toEpochMilli()}/${range.end.toEpochMilli()}/${range.bucketSize.name}"
+    fun of(viewId: Int, range: ChartRange): String = "chart/$viewId/${range.path}"
+
+    fun entriesOf(viewId: Int, range: ChartRange): String = "entries/$viewId/${range.path}"
+
+    private val ChartRange.path: String
+        get() = "${start.toEpochMilli()}/${end.toEpochMilli()}/${bucketSize.name}"
 
     fun viewId(arguments: Bundle): Int = arguments.getInt("viewId")
 
-    fun range(arguments: Bundle): ChartRange = ChartRange(
-        start = Instant.ofEpochMilli(arguments.getLong("start")),
-        end = Instant.ofEpochMilli(arguments.getLong("end")),
-        bucketSize = BucketSize.valueOf(arguments.getString("bucket").orEmpty())
-    )
+    /** The route's range, or null when it names no bucket size or does not end after it starts. */
+    fun range(arguments: Bundle): ChartRange? {
+        val bucketSize = BucketSize.entries.firstOrNull { it.name == arguments.getString("bucket") }
+            ?: return null
+        val start = Instant.ofEpochMilli(arguments.getLong("start"))
+        val end = Instant.ofEpochMilli(arguments.getLong("end"))
+        return ChartRange(start, end, bucketSize).takeIf { start < end }
+    }
 }
 
 /**
@@ -80,11 +89,17 @@ fun ChartRangeScreen(
     onBack: () -> Unit,
     onOpenRange: (ChartRange) -> Unit,
     viewModel: DataViewAdapterViewModel = koinViewModel(),
-    healthDataModel: HealthDataModel = koinViewModel()
+    healthDataModel: HealthDataModel = koinViewModel(),
+    /** Opens a selected bucket's entries (issue #139). */
+    onOpenEntries: ((ChartRange) -> Unit)? = null
 ) {
-    val infoFlow = remember(viewModel, viewId) { viewModel.dataViews.map { it?.dataViews?.get(viewId) } }
-    val info by infoFlow.collectAsState(initial = null)
+    val infos by viewModel.dataViews.collectAsState(initial = null)
+    val info = infos?.dataViews?.get(viewId)
     val view by viewModel.dataView(viewId).collectAsState(initial = null)
+    if (infos != null && info == null) {
+        RouteUnavailableScreen(R.string.route_view_deleted, onBack)
+        return
+    }
     val seriesFlow = remember(view, range) {
         view?.let { healthDataModel.collectSeriesInRange(it, range) } ?: emptyFlow()
     }
@@ -148,6 +163,7 @@ fun ChartRangeScreen(
                         settings = zoomed.chartSettings,
                         selectedSlot = selection,
                         onSelectedSlotChange = { selection = it },
+                        onOpenEntries = onOpenEntries,
                         window = range,
                         onOpenRange = onOpenRange
                     )
@@ -174,5 +190,41 @@ private fun rangeSubtitle(range: ChartRange, zoneId: ZoneId = ZoneId.systemDefau
     return when (range.bucketSize) {
         BucketSize.MINUTE, BucketSize.HOUR -> stringResource(R.string.chart_range_hourly, span)
         else -> stringResource(R.string.chart_range_daily, span)
+    }
+}
+
+/**
+ * Shown in place of a route's screen when its view was deleted or its range cannot be read: says
+ * so, and back leaves, rather than a spinner that never ends.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun RouteUnavailableScreen(@StringRes message: Int, onBack: () -> Unit) {
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {},
+                navigationIcon = {
+                    IconButton(onClick = onBack, modifier = Modifier.testTag("route_unavailable_back")) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = stringResource(R.string.data_view_back)
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+            )
+        }
+    ) { innerPadding ->
+        Text(
+            text = stringResource(message),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .padding(innerPadding)
+                .padding(24.dp)
+                .testTag("route_unavailable")
+        )
     }
 }

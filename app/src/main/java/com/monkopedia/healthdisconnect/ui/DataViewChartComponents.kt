@@ -150,7 +150,8 @@ internal fun MetricOverTimeChart(
     settings: ChartSettings,
     selectedSlot: Int?,
     onSelectedSlotChange: (Int?) -> Unit,
-    onOpenEntries: (() -> Unit)? = null,
+    /** Opens a selected bucket's entries (issue #139). */
+    onOpenEntries: ((ChartRange) -> Unit)? = null,
     onShareClick: (() -> Unit)? = null,
     /** The range this chart draws, when it is one range of a view rather than its own window. */
     window: ChartRange? = null,
