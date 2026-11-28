@@ -6,6 +6,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.runComposeUiTest
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RestingHeartRateRecord
@@ -473,11 +477,12 @@ abstract class BaseScreenRoborazziTest {
     }
 
     @Test
+    @OptIn(ExperimentalTestApi::class)
     fun entriesRoutePopulatedScreen() {
         val dataView = DataView(
             id = 1,
             type = ViewType.CHART,
-            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            records = listOf(RecordSelection(WeightRecord::class.qualifiedName!!)),
         )
         val viewModel = mockDataViewAdapterViewModel(
             info = DataViewInfo(id = 1, name = "Weight"),
@@ -489,7 +494,7 @@ abstract class BaseScreenRoborazziTest {
             fakeWeightRecord(71.8, "2026-02-04T08:30:00Z")
         )
         every { healthDataModel.collectData(any(), any()) } returns flowOf(records)
-        captureScreen("entries_route_populated") {
+        val screen: @Composable () -> Unit = {
             EntriesRouteScreen(
                 viewId = 1,
                 onBack = {},
@@ -497,6 +502,14 @@ abstract class BaseScreenRoborazziTest {
                 healthDataModel = healthDataModel
             )
         }
+        // Issue #143: the list drops records that are not of the view's own metric, so a fixture of
+        // the wrong type recorded an empty list as "populated" and still passed. Fail before
+        // capturing unless every fixture record is drawn as a row.
+        runComposeUiTest {
+            setContent { ScreenFrame(content = screen) }
+            onNodeWithTag("entries_item_row_${records.lastIndex}").assertIsDisplayed()
+        }
+        captureScreen("entries_route_populated", content = screen)
     }
 
     @Test
@@ -504,7 +517,7 @@ abstract class BaseScreenRoborazziTest {
         val dataView = DataView(
             id = 1,
             type = ViewType.CHART,
-            records = listOf(RecordSelection(PermissionsViewModel.CLASSES.first())),
+            records = listOf(RecordSelection(WeightRecord::class.qualifiedName!!)),
         )
         val viewModel = mockDataViewAdapterViewModel(
             info = DataViewInfo(id = 1, name = "Weight"),
@@ -1261,11 +1274,17 @@ abstract class BaseScreenRoborazziTest {
 
     private fun captureScreen(name: String, darkTheme: Boolean = false, content: @Composable () -> Unit) {
         captureRoboImage("src/test/screenshots/${name}_$sizeBucket.png") {
-            CompositionLocalProvider(LocalClock provides FIXED_CLOCK) {
-                HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
-                    Surface {
-                        content()
-                    }
+            ScreenFrame(darkTheme, content)
+        }
+    }
+
+    /** The frame every capture renders in, shared so a pre-capture assertion sees the same screen. */
+    @Composable
+    private fun ScreenFrame(darkTheme: Boolean = false, content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalClock provides FIXED_CLOCK) {
+            HealthDisconnectTheme(darkTheme = darkTheme, dynamicColor = false) {
+                Surface {
+                    content()
                 }
             }
         }
